@@ -147,8 +147,7 @@ naming no `api_key_env` keeps the variables that Runtime logs in with, and a Run
 login file is untouched. A reviewer's key is not handed to the child it judges.
 
 To give a child another variable, declare its name in your configuration. A model cannot
-ask for one: `create` refuses it, and so does a GraphTraj inline role, where a dispatching
-model could otherwise name it:
+ask for one through `create`, which refuses it:
 
 ```yaml
 pass_env: [GH_TOKEN]              # a child with no connection

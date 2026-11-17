@@ -10,12 +10,10 @@ covers the shared representation, provenance, RL observations and stream boundar
 `validate_session` raise `ValueError` for invalid values without mutating input.
 `snapshot_event` returns a detached validated copy; `retain_native` preserves a
 native JSON record and `native_record` retrieves it. These remain schema and
-mapping operations. `graphtraj.sessions.storage` provides `SessionStore` for
-project-local archives and `StreamWriter` for compact, checkpointed assistant
-streams. The agents feature `session_read` (graftling PUBLIC_API 1.2) reads an
-archive's ordered events as a slice or a keyword search, with durable unfinished
-output, redacted; GraphTraj's `tasks` `session_read` is a transitional forwarder
-to it that keeps the old `after`/`limit` pages. Live Runtime collection and migration are separate
+mapping operations. `graftling.sessions.archive` keeps the archives
+(`JsonlSessionStore`, `SessionArchive`). The agents feature `session_read`
+(graftling PUBLIC_API 1.2) reads an archive's ordered events as a slice or a
+keyword search, with durable unfinished output, redacted. Live Runtime collection and migration are separate
 consumers; the structural examples are not live-collection evidence.
 
 ## Fixed upstream and attribution
@@ -35,7 +33,7 @@ The DSH definitions are translated from
   log, derived message surface, fork prefix, persistence separation.
 
 Copyright (c) 2026 DeepSeek. The upstream MIT license is retained and distributed
-in `src/graphtraj/sessions/DSH-LICENSE`. The Python implementation adds archive
+in `src/graftling/sessions/DSH-LICENSE`. The Python implementation adds archive
 provenance, RL records and the `extra_fields` container; it does not claim the upstream defines these additions.
 
 ## Values and versions
@@ -61,8 +59,7 @@ Version 4 files remain readable (`upgrade_header`, `upgrade_event`,
 fields of the same names and `extra_fields.graphtraj` (`version`, `projectId`,
 `agentId`, `taskIds`); `graphtraj/*` types lose the prefix. Only version 5 is
 written; a store reopened from a version 4 file rewrites it whole as version 5
-on its next change. `tests/fixtures/sessions_v4/` keeps these examples in their
-version 4 form.
+on its next change.
 
 Events use `type`, contiguous zero-based `seq`, epoch-ms `time`, and `data`.
 The original fields, nulls and unknown JSON values survive snapshots. Unknown
@@ -320,8 +317,7 @@ This operation cannot rewrite already published history. Unknown ancestry stays
 pending and remains readable from an exported archive if its native source disappears.
 
 Who may call `session_read` is the host's policy: by default a caller's own
-Session and its ancestors' and descendants'; in a GraphTraj project every verified
-project caller reads the project's archived Sessions, and the human desktop reads
-its own project. Use bounded slices for large native records; Runtime clients can spill oversized
+Session and its ancestors' and descendants'; a host may widen it through its
+read policy (`AgentControl(session_reads=...)`, PUBLIC_API 1.3). Use bounded slices for large native records; Runtime clients can spill oversized
 tool results into files outside an Agent's permitted read paths. A successful
 request alone does not mean the Agent observed the returned content.
