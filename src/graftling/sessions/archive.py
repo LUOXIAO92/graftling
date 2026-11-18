@@ -111,6 +111,37 @@ def _replace(path: Path, content: bytes) -> None:
             temporary.unlink(missing_ok=True)
 
 
+# How every first line this module writes begins (``_encode`` is compact, ``archiveVersion`` and ``header`` lead).
+_HEADER_PREFIX = b'{"archiveVersion":1,"header":'
+_HEADER_READ = 65536
+
+
+def _archived_header(path: Path) -> dict:
+    """Return one archive's header without decoding the rest of its first line.
+
+    That line also holds every resolved observation, often half the archive, and a
+    lookup over all archives needs only their headers (518). A line in any other
+    shape, or a header that does not decode from its prefix, is read whole as
+    before, with the same errors. Opening the archive itself still reads it all.
+    """
+    with path.open('rb') as stream:
+        data = stream.read(_HEADER_READ)
+        while data.startswith(_HEADER_PREFIX):
+            line, newline, _ = data.partition(b'\n')
+            try:
+                return json.JSONDecoder().raw_decode(line.decode('utf-8'), len(_HEADER_PREFIX))[0]
+            except ValueError:
+                more = b'' if newline else stream.read(_HEADER_READ)
+                if not more:
+                    break
+                data += more
+    with path.open(encoding='utf-8') as stream:
+        metadata = json.loads(next(stream))
+    if metadata.get('archiveVersion') != 1:
+        raise ValueError('Unsupported Session archive version.')
+    return metadata['header']
+
+
 class _Same:
     """A list's items, equal to another only if it holds the very same objects."""
 
@@ -762,11 +793,7 @@ class SessionArchive:
         if revision != self._native_revision:
             headers = {}
             for path in directory.glob('*/session.jsonl'):
-                with path.open(encoding='utf-8') as stream:
-                    metadata = json.loads(next(stream))
-                if metadata.get('archiveVersion') != 1:
-                    raise ValueError('Unsupported Session archive version.')
-                header = upgrade_header(metadata['header'])
+                header = upgrade_header(_archived_header(path))
                 native = header.get('native', {})
                 key = (native.get('runtime'), native.get('sessionId'), native.get('agentId'))
                 headers.setdefault(key, {})[header['id']] = header
