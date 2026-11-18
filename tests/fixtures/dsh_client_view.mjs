@@ -36,8 +36,11 @@ if (delayedNative) {
   registerNative();
   await new Promise(resolve => queueMicrotask(resolve));
 }
-const registered = slots.entriesOfSlot('tool.call.toolview')[0];
-assert.equal(registered.options.key, 'mcp__agents__agents');
+// graftling's own server, and the name Sessions recorded before 0.6.0.
+const toolViews = slots.entriesOfSlot('tool.call.toolview');
+assert.deepEqual(toolViews.map(entry => entry.options.key).sort(), ['mcp__agents__agents', 'mcp__graftling__agents']);
+assert.equal(toolViews[0].component, toolViews[1].component);
+const registered = toolViews.find(entry => entry.options.key === 'mcp__graftling__agents');
 const block = { kind: 'tool-result', call: { argsRaw: JSON.stringify({
   action: 'execute', feature: 'send', arguments: { agent: 'actual-child', message: 'outbound body' },
 }) }, content: [{ type: 'text', text: JSON.stringify({ agent: 'actual-child', result: {

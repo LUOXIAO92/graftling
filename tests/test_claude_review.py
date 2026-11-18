@@ -20,7 +20,7 @@ import graftling
 from graftling import AgentControl, Caller
 from graftling.approval import REVIEW_METHOD, approves, check_reply, review_failed
 from graftling.claude.driver import ClaudeDriver
-from graftling.claude.execution import AGENTS_TOOL, REVIEW_HOOK_MIN_SECONDS, ClaudeExecution
+from graftling.claude.execution import REVIEW_HOOK_MIN_SECONDS, ClaudeExecution
 from graftling import review as review_core
 
 # A reviewer process: it refuses Write and allows everything else, the connectivity check included.
@@ -190,8 +190,9 @@ def test_no_review_keeps_initialize_hooks_and_settings_unchanged(native: None, t
     assert json.loads((tmp_path / 'native-initialize.json').read_text()) == {
         'UserPromptSubmit': [{'matcher': None, 'hookCallbackIds': ['graftling_start']}],
         'SubagentStop': [{'matcher': None, 'hookCallbackIds': ['graftling_collect_child']}],
-        'PostToolUse': [{'matcher': 'mcp__agents__agents', 'hookCallbackIds': ['graftling_agents_display']}],
+        'PostToolUse': [{'matcher': 'mcp__graftling__agents', 'hookCallbackIds': ['graftling_agents_display']}],
     }
+    assert json.loads((tmp_path / 'native-sdk-servers.json').read_text()) == ['graftling']
     [request] = plain.pending(agent)
     assert request['method'] == 'claude/can_use_tool'
     plain.invoke('reply', agent=agent, request=request, response={'behavior': 'deny'})
@@ -488,11 +489,22 @@ def test_agents_tool_is_not_reviewed(harness: Harness, reviewer) -> None:
     """The child's channel to its parent works with the reviewer down."""
     answers, calls = reviewer
     answers.append(RuntimeError('reviewer down'))
-    tool = {'tool': AGENTS_TOOL, 'input': {'action': 'status'}}
+    tool = {'tool': 'mcp__graftling__agents', 'input': {'action': 'status'}}
     agent = harness.start(steps=[tool])
     assert harness.wait(agent)['state'] == 'standby'
     assert harness.answers('use-1') == [{}] and harness.ran() == ['use-1']
     assert calls == [] and not harness.request_notices()
+
+
+@pytest.mark.parametrize('server', ['other', 'agents'])
+def test_another_servers_agents_tool_is_reviewed(harness: Harness, reviewer, server: str) -> None:
+    """Only the registered server's agents tool skips review; a same-named tool elsewhere is refused here."""
+    answers, calls = reviewer
+    answers.append(DENIED)
+    agent = harness.start(steps=[{'tool': f'mcp__{server}__agents', 'input': {'action': 'status'}}])
+    assert harness.wait(agent)['pending_requests'] == 1
+    assert refused(harness.answers('use-1')[0])
+    assert [call['tool'] for call in calls] == [f'mcp__{server}__agents'] and harness.ran() == []
 
 
 def test_reviewers_key_is_not_passed_to_the_child(

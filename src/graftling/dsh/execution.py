@@ -35,6 +35,9 @@ _PERSONA_PLUGIN = '@deepseek-ai/dsh-persona'
 # The review row's mark on its asks (review.mjs): a displayReason key, which only
 # in-process code sets. Text a model writes reaches its values, never a key.
 REVIEW_MARKER = 'agents-review'
+# The MCP server name the plugin row registers agents under: the model sees
+# mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+MCP_SERVER = 'graftling'
 # How long a started service has to apply the review row.
 REVIEW_HOOK_SECONDS = 10
 
@@ -173,6 +176,8 @@ class DshExecution:
     service_type = DshService
     host_connection = None
     connection_env = 'GRAFTLING_CONNECTION'
+    # The MCP server name of the plugin row; review lets only its agents tool through.
+    mcp_server = MCP_SERVER
     parent_notice = None
     archive = None
     confirm_native = None
@@ -274,10 +279,14 @@ class DshExecution:
             mcp = self.request['mcp']
             patches.append({'insert': [{'id': 'agents-mcp', 'name': str(Path(__file__).with_name('plugin.mjs')),
                                         'config': {'mcpCommand': mcp['command'], 'mcpArgs': mcp.get('args', []),
-                                                   'mcpEnv': [self.connection_env]}}]})
+                                                   'mcpEnv': [self.connection_env],
+                                                   'mcpServer': self.mcp_server}}]})
         if self.request.get('review'):
+            # Review lets through only the agents tool of the server registered above.
             patches.append({'insert': [{'id': 'agents-review', 'name': str(Path(__file__).with_name('review.mjs')),
-                                        'config': {'readyFile': str(self.review_ready)}}]})
+                                        'config': {'readyFile': str(self.review_ready),
+                                                   **({'mcpServer': self.mcp_server}
+                                                      if self.request.get('mcp') else {})}}]})
         if self.request.get('connection'):
             # Native selectModel otherwise saves the selection to the shared
             # profile. This service must keep it scoped to its own Session.

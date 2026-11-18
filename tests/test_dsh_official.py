@@ -39,7 +39,7 @@ def test_installed_dsh_model_mcp_and_same_session(tmp_path: Path) -> None:
         trace = tmp_path / 'agents/native' / agent / 'trace.jsonl'
         rows = [json.loads(line) for line in trace.read_text().splitlines()]
         calls = [row['data'] for row in rows if row.get('type') == 'tool/call']
-        assert len([item for item in calls if item['name'] == 'mcp__agents__agents']) >= 3, calls
+        assert len([item for item in calls if item['name'] == 'mcp__graftling__agents']) >= 3, calls
         resumed = call({'action': 'resume', 'agent': agent, 'message': 'What marker did I ask you to remember? Reply only with it.'})
         assert not resumed.failed and resumed.document['session'] == session, resumed.document
         recalled = call({'action': 'wait', 'agent': agent, 'timeout_seconds': 90})
@@ -140,9 +140,9 @@ def test_actual_client_interrupt_and_memory(tmp_path: Path) -> None:
         (tmp_path / 'initial-tools.json').write_text(json.dumps(tools, indent=2))
         names = [item['name'] for item in tools]
         assert len(names) == len(set(names))
-        assert [name for name in names if name.startswith('mcp__')] == ['mcp__agents__agents']
+        assert [name for name in names if name.startswith('mcp__')] == ['mcp__graftling__agents']
         assert 'agents' not in names and 'graphtraj' not in names
-        entry = next(item for item in tools if item['name'] == 'mcp__agents__agents')
+        entry = next(item for item in tools if item['name'] == 'mcp__graftling__agents')
         assert set(entry['parameters']['properties']) <= {'action', 'query', 'feature', 'schema', 'arguments'}
         print(json.dumps({'agent': agent, 'session': session, 'dsh_executions': 2,
                           'pi_executions': 0, 'runtime_pids': pids, 'initial_tools': names,

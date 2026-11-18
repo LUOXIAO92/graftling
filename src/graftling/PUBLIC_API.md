@@ -559,21 +559,49 @@ names through these attributes, all since 0.5.0:
   of the owner entry, so the model sees `mcp__<mcp_server>__<tool>`.
 - `DshExecution.connection_env` (default `GRAFTLING_CONNECTION`) is also the one
   variable the DSH plugin row passes to its MCP server (the row setting `mcpEnv`).
-- `registerAgents(pi, {displayServers})` in `graftling/pi/extension.mjs` (default
-  `['agents']`): the MCP servers whose `agents` results the Pi display renders.
+- `registerAgents(pi, {server, displayServers})` in `graftling/pi/extension.mjs`: see
+  the server name below. `displayServers` (default `[]` since 0.6.0, `['agents']`
+  before) names further MCP servers whose `agents` results the Pi display renders.
+
+**The MCP server name (since 0.6.0).** Every Runtime names the tool the model sees
+`mcp__<server>__agents`. graftling registers its own server as `graftling` on
+Claude Code, Codex, Pi and DSH (before 0.6.0: `agents`, except Codex). A package that
+serves the agents tool under its own server name tells graftling that name in the
+same place it is registered, so that the review exemption, the display and the hook
+matchers follow it:
+
+- Python execution classes: the attribute `mcp_server` (default `graftling`) on
+  `ClaudeExecution`, `CodexManagedExecution` and `DshExecution`. `ClaudeExecution`
+  registers its in-process MCP server under it for an independent child, matches its
+  `PostToolUse` display hook to `mcp__<mcp_server>__agents` and exempts that tool from
+  review; a consumer that supplies its own MCP configuration sets it to the name that
+  configuration uses. `DshExecution` passes it to the plugin row (row setting
+  `mcpServer`, default `graftling`) and to the review row.
+- Pi: `registerAgents(pi, {server})` (default `MCP_SERVER`, `graftling`) registers the
+  server under `server`; the display renders it and `displayServers`.
+  `registerReview(pi, environment, server)` (default `graftling`) exempts only
+  `mcp__<server>__agents`. The extension's default export uses `graftling` for both.
+- Claude Code host: `claude_host_plugin(..., server='graftling')`, below.
+- The Claude display hook `graftling.claude.display.display_response(event, seen,
+  server='graftling')` draws only `mcp__<server>__agents` results.
+
+The review exemption covers only that one server's `agents` tool: a tool named
+`agents` on any other MCP server is reviewed like every other tool (section 6).
 
 **A tool beside `agents` in a Claude Code host (since 0.2.2).** A package whose
-own Claude Code host serves another tool on its MCP server named `agents` (so
-Claude Code calls it as `mcp__agents__<tool>`) declares that tool in two places.
+own Claude Code host serves another tool on the MCP server that serves `agents` (so
+Claude Code calls it as `mcp__<server>__<tool>`) declares that tool in two places.
 There are no other extension points; GraphTraj declares its `tasks` tool this
 way.
 
-- `claude_host_plugin(directory, name, description, tools=())` returns the host
-  plugin's files, keyed by absolute path, and writes nothing: `.claude-plugin/
-  plugin.json` and `hooks/hooks.json` as JSON values and `hooks/host_context.mjs`
-  as text. `directory` is the plugin's directory (`.claude/skills/<name>`), and
-  `tools` the added tool names. A name that is not letters, digits, `_` or `-`,
-  the name `agents`, or a repeated name raises `ValueError`.
+- `claude_host_plugin(directory, name, description, tools=(), server='graftling')`
+  returns the host plugin's files, keyed by absolute path, and writes nothing:
+  `.claude-plugin/plugin.json` and `hooks/hooks.json` as JSON values and
+  `hooks/host_context.mjs` as text. `directory` is the plugin's directory
+  (`.claude/skills/<name>`), `tools` the added tool names and `server` (since 0.6.0)
+  the project's `.mcp.json` key of the server; the module handles only
+  `mcp__<server>__<tool>` calls. A tool or server name that is not letters, digits,
+  `_` or `-`, the tool name `agents`, or a repeated name raises `ValueError`.
 - `write_adoption(material)` (since 0.2.5) writes such a mapping of absolute path
   to text or JSON value. Text replaces the file. A JSON value merges into an
   existing file recursively over objects: a list or scalar replaces the existing
@@ -762,7 +790,7 @@ as the extension's error and the Session has no `agents` tool.
 drivers in one `AgentControl` with `request_notices=True` and
 `hold_notices=True`; `create`'s `runtime` selects one, and
 `model`, `preset` and `reasoning_effort` are resolved per child (section 2).
-The model reaches the Pi Session through the MCP server `agents`.
+The model reaches the Pi Session through the MCP server `graftling` (`agents` before 0.6.0).
 
 **Notices and shutdown** are section 4.
 
@@ -821,7 +849,7 @@ native DSH subagent (header `origin: subagent` or `delegationDepth` above 0)
 gets no host and no `agents` tool. The host verifies that its parent process
 is the DSH Node process that loaded the plugin (kernel executable and entry
 file, inside the `@deepseek-ai/dsh` package) and binds the Session the plugin
-supplied as root caller. Only that Session's MCP server `agents` may call it:
+supplied as root caller. Only that Session's MCP server `graftling` (`agents` before 0.6.0) may call it:
 a client presenting another Session, source or cwd gets `authority-denied`.
 The host then calls
 `AgentControl.require_connections()` (section 2). A refused start prints one
@@ -1749,7 +1777,8 @@ request.
 
 **Claude review plugin (386).** A Claude child whose connection names a reviewer
 (section 3) has every tool call judged in a `PreToolUse` hook on its own control
-pipe, except the bound `mcp__agents__agents` tool: it is the child's channel to
+pipe, except the bound `mcp__<mcp_server>__agents` tool (`mcp__graftling__agents`
+unless a consumer sets `ClaudeExecution.mcp_server`, 1.4): it is the child's channel to
 its parent, limited by agents' authority checks, and must work when the reviewer
 is down. Read-only tools are reviewed too. The hook's timeout outlasts the
 reviewer (its timeout plus 60 seconds, at least 600), and the host always answers
@@ -1956,9 +1985,12 @@ no retry. The native side waits with no timeout of its own: Pi's dialog
   connection naming no key, with no `base_url`, is refused with `invalid-config` when Pi
   offers the model with the reviewer's variable and not without it. Any other answer, or a
   listing that fails, is no refusal, and a login in the connection's home counts as its own.
-- The bound agents tool, `mcp__agents__agents`, is not reviewed and is the only tool
-  that is not: it is the child's channel to its parent, limited by agents' authority
-  checks, and must work when the reviewer is down.
+- The bound agents tool, `mcp__<server>__agents` for the server the child actually
+  registered (`graftling`, or a consumer's `mcp_server` or `server`, 1.4), is not
+  reviewed and is the only tool that is not: it is the child's channel to its parent,
+  limited by agents' authority checks, and must work when the reviewer is down. A
+  tool named `agents` on any other MCP server is reviewed. On DSH a child without the
+  agents plugin row exempts nothing.
 - Before the first prompt the owner establishes that the hook is installed, else
   the execution ends `failed` with `RUNTIME_REQUEST_FAILED` and no model work. Every
   execution checks this, `resume` included. Without a reviewer the hooks, settings
@@ -1980,7 +2012,7 @@ Limits on Pi 1.4.0. Pi loads `--extension` paths before the connection home's
 extensions (`resource-loader.js`, `mergePaths`) and runs `tool_call` handlers in that
 order, in place on one `input` (`docs/extensions.md`), so an extension in the
 connection's home can change a call's input after it was reviewed; that home is the
-user's own trust decision. A `mcp.json` server named `agents` in that home overrides
+user's own trust decision. A `mcp.json` server named `graftling` in that home overrides
 the bound one (`docs/mcp.md`), and its `agents` tool would have the exempt name.
 
 *DSH.* The `agents-review` row (`dsh/review.mjs`) is a `tools/pre-execute` listener
@@ -2038,6 +2070,15 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 513 (0.6.0): graftling's own MCP server is registered as `graftling` on Claude Code,
+  Pi and DSH, so the model sees `mcp__graftling__agents` where it saw
+  `mcp__agents__agents`; the review exemption, display and hook matchers follow the
+  registered name. A native name the model and hooks see changes, so the change is
+  incompatible and raises the minor version. New: `ClaudeExecution.mcp_server`,
+  `DshExecution.mcp_server`, the DSH row setting `mcpServer`, the Pi `server`
+  options, `claude_host_plugin`'s `server` and `display_response`'s `server` (1.4).
+  `registerAgents`' `displayServers` now adds to the registered server; its default
+  is `[]`.
 - 477 (0.5.2): `status`, `wait` and `retire` always return the stored
   `last_message`, which was `null` once the body had been delivered; a parent's
   running `wait` takes its child's end instead of the push, and
@@ -2194,7 +2235,7 @@ were renamed, and the GraphTraj names that remain on purpose. Numbers refer to t
 
 | # | Surface | Where | Owner |
 | --- | --- | --- | --- |
-| 1 | Codex managed Session MCP server named `graphtraj`; legacy `graphtraj`/`graphtraj_*` tool names refused | Done in 394: the server is `graftling` (`CodexManagedExecution.mcp_server`, 1.4; GraphTraj's Runner members keep `graphtraj` through it); every dynamic tool call is refused, since none is registered; `pi/extension.mjs` displays the servers `registerAgents` names, `agents` by default (GraphTraj adds its own) | 394 (done) |
+| 1 | Codex managed Session MCP server named `graphtraj`; legacy `graphtraj`/`graphtraj_*` tool names refused | Done in 394: the server is `graftling` (`CodexManagedExecution.mcp_server`, 1.4; GraphTraj's Runner members keep `graphtraj` through it); every dynamic tool call is refused, since none is registered; `pi/extension.mjs` displays the server `registerAgents` registers, `graftling` since 513 (0.6.0), and the `displayServers` a consumer adds | 394 (done) |
 | 2 | Codex `clientInfo.name` and `toolOutput.name` `graphtraj`; logger `graphtraj.codex.local` | Done in 394: `graftling` and `graftling.codex.local` (`codex/app_server.py`) | 394 (done) |
 | 3 | Completion checker profile `graphtraj_checker` and its permission override | Done in 388: `CodexAppServer.fork_session` takes `network_profile` and `unix_socket` from the caller; agents keeps no profile name. GraphTraj owns `CHECKER_PERMISSION_PROFILE` (`graphtraj/runtimes/codex/app_server.py`) and passed it from `finalize.py` until 485; since 485 the checker fork selects Main's own profile with no override, because Codex 0.169.0 fails every model request of a fork given a custom permission profile through `config` ('failed to load workspace requirements'). The `fork_session` parameters remain | 388 (done); 485 |
 | 3 | Pi completion checker entry `graphtraj:completion-checker` | Done in 388: `pi/session.py` `session_source`/`verify_main` take caller-supplied `child_entry_types`; GraphTraj's `runtimes/pi/session_entry.py` passes its own entry type (name unchanged) | 388 (done), 394 (name) |
@@ -2208,7 +2249,7 @@ were renamed, and the GraphTraj names that remain on purpose. Numbers refer to t
 | 9 | Notice title `GraphTraj notice from …` and default sender `graphtraj` | Done in 394: `Graftling notice from …` and `graftling` (`claude/host_context.mjs`) | 394 (done) |
 | 10 | `send`'s `reports_only` and its "Task member" description | Done in 388: generic meaning in `tool.py` and 1.2; `AgentControl` rejects `true` with `not-implemented` (fix, see 7). GraphTraj's Task member handling is unchanged | 388 (done) |
 | 12 | Archiving refused without GraphTraj's collector | Done in 384: the refusal is removed; each Runtime execution builds its own collector from the bound archive (`claude/execution.py`, `claude/collection.py`, `codex/managed_session.py`, `pi/execution.py`, `dsh/driver.py`) | 384 |
-| — | Claude host plugin also handles GraphTraj's `tasks` tool (`mcp__agents__tasks`) | Done in 400: `claude_host_plugin` and `NativeCalls`' `tools` (1.4); GraphTraj declares `tasks` in `runtimes/claude/host.py` | 400 (done) |
+| — | Claude host plugin also handles GraphTraj's `tasks` tool (`mcp__agents__tasks`; since 0.6.0 the `server` GraphTraj passes) | Done in 400: `claude_host_plugin` and `NativeCalls`' `tools` (1.4); GraphTraj declares `tasks` in `runtimes/claude/host.py` | 400 (done) |
 | — | Claude control-protocol hook IDs `graphtraj_start`, `graphtraj_collect_child`, `graphtraj_agents_display`, and the event key `graphtraj_direction` | Done in 394: `graftling_start`, `graftling_collect_child`, `graftling_agents_display` and `graftling_direction` (`claude/execution.py`, `sessions/claude.py`) | 394 (done) |
 | — | GraphTraj imports internal modules and private names | Done in 400: GraphTraj imports only the names in 1.3, and `tests/test_graphtraj_public_agents_api.py` fails on anything else | 400 (done) |
 | 11 | Plugin points and documentation examples that mention GraphTraj | Docstrings and comments naming GraphTraj as an example consumer: `__init__.py`, `config.py`, `control.py`, `codex/trace.py`, `codex/host.py`, `dsh/__init__.py`, `dsh/binding.py`, `dsh/settings.py`, `pi/execution.py`, `pi/launch.py`, `tool.py`; and this document, the README and the changelog | kept by decision |

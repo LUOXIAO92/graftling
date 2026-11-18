@@ -10,6 +10,8 @@ from typing import Iterable
 TOOLS_LINE = 'const TOOLS = ["agents"];'
 # The one line naming the plugin whose MCP server serves them; the marketplace copy replaces it.
 PLUGIN_LINE = 'const PLUGIN = null;'
+# The one line naming the .mcp.json server that serves them; the written copy replaces it.
+SERVER_LINE = 'const SERVER = "graftling";'
 # The marketplace plugin's name, and its directory in a checkout: src/graftling/claude-plugin.
 MARKETPLACE_PLUGIN = 'graftling'
 MARKETPLACE_DIRECTORY = Path(__file__).resolve().parent.parent / 'claude-plugin'
@@ -18,7 +20,7 @@ MARKETPLACE_DIRECTORY = Path(__file__).resolve().parent.parent / 'claude-plugin'
 def _module() -> str:
     """Return host_context.mjs, refusing a copy whose replaced lines are not each there once."""
     module = Path(__file__).with_name('host_context.mjs').read_text(encoding='utf-8')
-    for line in (TOOLS_LINE, PLUGIN_LINE):
+    for line in (TOOLS_LINE, PLUGIN_LINE, SERVER_LINE):
         if module.count(line) != 1:
             raise RuntimeError(f'host_context.mjs must hold exactly one line {line!r}.')
     return module
@@ -41,13 +43,19 @@ def write_marketplace_module(directory: Path = MARKETPLACE_DIRECTORY) -> Path:
     return target
 
 
-def claude_host_plugin(directory: Path, name: str, description: str, tools: Iterable[str] = ()) -> dict[str, object]:
+def claude_host_plugin(
+    directory: Path,
+    name: str,
+    description: str,
+    tools: Iterable[str] = (),
+    server: str = 'graftling',
+) -> dict[str, object]:
     """Return a host plugin's files, keyed by absolute path; nothing is written.
 
     The plugin is the one module ``hooks/host_context.mjs``. It associates
     each native call of the ``agents`` tool with its Claude Session, and does
     the same for ``tools``, the names of tools a package serves beside
-    ``agents`` on the same MCP server named ``agents``.
+    ``agents`` on the same MCP server ``server``.
 
     Parameters
     ----------
@@ -59,6 +67,9 @@ def claude_host_plugin(directory: Path, name: str, description: str, tools: Iter
         A declared tool gets the association, notices and cleanup of
         ``agents`` but renders no agents exchange. The host's ``NativeCalls``
         must declare the same names.
+    server
+        The project's ``.mcp.json`` key of that server; Claude Code calls its
+        tools ``mcp__<server>__<tool>``, and the module handles only those.
 
     Returns
     -------
@@ -67,12 +78,14 @@ def claude_host_plugin(directory: Path, name: str, description: str, tools: Iter
     Raises
     ------
     ValueError
-        A tool name MCP cannot carry, ``agents`` itself, or a repeated name.
+        A tool or server name MCP cannot carry, ``agents`` itself, or a repeated name.
     """
     tools = list(tools)
     for tool in tools:
         if not isinstance(tool, str) or re.fullmatch(r'[A-Za-z0-9_-]+', tool) is None:
             raise ValueError(f'Not a tool name: {tool!r}.')
+    if not isinstance(server, str) or re.fullmatch(r'[A-Za-z0-9_-]+', server) is None:
+        raise ValueError(f'Not a server name: {server!r}.')
     if len({'agents', *tools}) != len(tools) + 1:
         raise ValueError('Declare each added tool once, and not agents itself.')
     module = _module()
@@ -81,7 +94,8 @@ def claude_host_plugin(directory: Path, name: str, description: str, tools: Iter
         str(directory / '.claude-plugin/plugin.json'): {'name': name, 'version': '1', 'description': description},
         str(directory / 'hooks/hooks.json'): {'modules': ['./host_context.mjs']},
         str(directory / 'hooks/host_context.mjs'): module.replace(
-            TOOLS_LINE, f"const TOOLS = {json.dumps(['agents', *tools])};"),
+            TOOLS_LINE, f"const TOOLS = {json.dumps(['agents', *tools])};").replace(
+            SERVER_LINE, f'const SERVER = {json.dumps(server)};'),
     }
 
 

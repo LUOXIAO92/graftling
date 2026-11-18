@@ -23,6 +23,7 @@ from graftling.notices import notice_id
 from graftling.shutdown import exit_if_owned_unconfirmed, stop_owned
 from .native_host import NativeCalls
 from .driver import ClaudeDriver
+from .execution import MCP_SERVER
 from .plugin import _existing_document, claude_host_plugin, kept_host_paths, write_adoption
 
 if os.name != 'nt':
@@ -388,7 +389,7 @@ def adoption_material(root: Path, claude: Path) -> dict[str, object]:
         str(config): {'root': kept['root'], 'cwd': str(root),
                       'claude': os.path.abspath(claude),
                       'channel_file': kept['channel_file'], 'settings': {}},
-        str(root / '.mcp.json'): {'mcpServers': {'agents': {
+        str(root / '.mcp.json'): {'mcpServers': {MCP_SERVER: {
             'command': sys.executable,
             'args': ['-m', 'graftling.claude.host', 'serve', '--config', str(config)],
         }}},
@@ -400,18 +401,47 @@ def adoption_material(root: Path, claude: Path) -> dict[str, object]:
     }
 
 
+# The server key configuration --write used before 0.6.0.
+OLD_SERVER = 'agents'
+
+
+def _host_entry(document: dict, server: str) -> bool:
+    """Return whether ``.mcp.json``'s ``server`` entry starts this host."""
+    try:
+        return 'graftling.claude.host' in document['mcpServers'][server]['args']
+    except (KeyError, TypeError):
+        return False
+
+
+def drop_old_entry(project: Path) -> None:
+    """Remove the ``agents`` entry an earlier configuration --write left in ``.mcp.json``.
+
+    Kept beside the ``graftling`` entry, it would start a second host and show
+    the model a second set of tools. Any other ``agents`` entry stays.
+    """
+    path = Path(project).resolve() / '.mcp.json'
+    document = _existing_document(path)
+    if document is None or not _host_entry(document, OLD_SERVER):
+        return
+    del document['mcpServers'][OLD_SERVER]
+    path.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
+
+
 # Where a project's host configuration lives, for configuration --write and the plugin alike.
 HOST_CONFIG = Path('.agents-control') / 'claude-host.json'
 
 
 def project_material(project: Path) -> Path | None:
-    """Return the project's ``.mcp.json`` when configuration --write material starts an agents host there."""
+    """Return the project's ``.mcp.json`` when configuration --write material starts an agents host there.
+
+    The entry is ``graftling``, or ``agents`` as written before 0.6.0.
+    """
     path = project / '.mcp.json'
     try:
-        server = json.loads(path.read_text(encoding='utf-8'))['mcpServers']['agents']
-        return path if 'graftling.claude.host' in server['args'] else None
-    except (OSError, ValueError, KeyError, TypeError):
+        document = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
         return None
+    return path if any(_host_entry(document, server) for server in (MCP_SERVER, OLD_SERVER)) else None
 
 
 def plugin_configuration(project: Path) -> Path:
@@ -431,7 +461,8 @@ def plugin_configuration(project: Path) -> Path:
         raise AgentsError('host-busy', f'{material} starts this project\'s agents host (configuration --write), '
                           'so the graftling plugin host stands aside. Keep one: disable the plugin for this '
                           'project (claude plugin disable graftling@graftling --scope local), or remove the '
-                          'agents server from .mcp.json, the GRAFTLING_CLAUDE_HOST_* entries from '
+                          'graftling server (agents before 0.6.0) from .mcp.json, the GRAFTLING_CLAUDE_HOST_* '
+                          'entries from '
                           '.claude/settings.local.json and .claude/skills/agents-claude-host.')
     config = project / HOST_CONFIG
     existing = _existing_document(config) or {}
@@ -473,6 +504,7 @@ def main() -> None:
         material = adoption_material(options.project, options.claude)
         if options.write:
             write_adoption(material)
+            drop_old_entry(options.project)
         print(json.dumps(sorted(material) if options.write else material, ensure_ascii=False, indent=2))
         return
     if options.operation == 'serve' and options.config is None and options.project is not None:

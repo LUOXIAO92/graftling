@@ -12,7 +12,10 @@ const TOOLS = ["agents"];
 // .mcp.json (configuration --write). The marketplace copy names its plugin,
 // whose tools Claude Code calls mcp__plugin_<plugin>_agents__<tool>.
 const PLUGIN = null;
-const PREFIX = PLUGIN ? `mcp__plugin_${PLUGIN}_agents__` : 'mcp__agents__';
+// Without a plugin, the .mcp.json server serving these tools: Claude Code calls
+// them mcp__<server>__<tool>. claude_host_plugin() replaces this line too.
+const SERVER = "graftling";
+const PREFIX = PLUGIN ? `mcp__plugin_${PLUGIN}_agents__` : `mcp__${SERVER}__`;
 const INSTALL = 'Install the graftling wheel into a Python 3.12+ environment '
   + '(python -m pip install graftling-<version>-py3-none-any.whl) and set GRAFTLING_PYTHON '
   + 'to that python, in your shell or under env in ~/.claude/settings.json; then restart Claude Code.';

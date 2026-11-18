@@ -51,9 +51,12 @@ window.__ModuleLoader__.load({
       communication,
       AgentsRow,
       apply(ctx) {
-        ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
-          name: 'tool.call.toolview', key: 'mcp__agents__agents',
-        }, AgentsRow));
+        // graftling's server, and agents as Sessions before 0.6.0 recorded it.
+        ctx.slots.inject('tool.call.toolview', () => {
+          const disposers = ['mcp__graftling__agents', 'mcp__agents__agents'].map(key =>
+            ctx.slots.register({ name: 'tool.call.toolview', key }, AgentsRow));
+          return () => disposers.forEach(dispose => dispose?.());
+        });
         ctx.slots.inject('conversation.chat.node', () => {
           // The installed Chat package owns the body, disclosure and timestamp.
           // Its public slot entry lets us add attribution without copying them.

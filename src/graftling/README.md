@@ -364,6 +364,22 @@ upgrading:
 - Codex now sees the tool as `mcp__graftling__agents`. Earlier Sessions show agents
   messages under the old names; Session archives written before stay readable.
 
+## Moving to 0.6.0
+
+The MCP server that serves the `agents` tool is now named `graftling` on Claude Code,
+Pi and DSH, as it already was on Codex, so the model sees `mcp__graftling__agents`
+instead of `mcp__agents__agents`. The tool keeps its name. After upgrading:
+
+- Claude Code host: run `configuration --write` again. It writes the `graftling` server
+  and removes the `agents` server it wrote before; restart Claude Code. The marketplace
+  plugin keeps its name (`mcp__plugin_graftling_agents__agents`).
+- Pi and DSH: reinstall the packages; nothing else changes.
+- Review exempts only the `agents` tool of the server the child registered; an `agents`
+  tool on any other MCP server is reviewed.
+- Sessions created before keep their earlier calls under `mcp__agents__agents`. Archives
+  and the DSH tool view still read that name. Resuming such a Session: see
+  [`CHANGELOG.md`](CHANGELOG.md) 0.6.0.
+
 ## Known limits
 
 - `workspace` on `create` narrows a child to a directory inside the caller's own. It

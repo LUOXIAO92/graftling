@@ -12,6 +12,47 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## 0.6.0 (incompatible)
+
+graftling's own MCP server is named `graftling` on every Runtime (513). Claude Code,
+Pi and DSH called it `agents`; Codex already used `graftling` (394). The model now sees
+the tool as `mcp__graftling__agents` instead of `mcp__agents__agents`. The tool name
+`agents` and the marketplace plugin's `mcp__plugin_graftling_agents__agents` stay.
+A name the model and hooks see changes, so the minor version rises. See the README's
+*Moving to 0.6.0*.
+
+- Everything that recognised the tool by the name `mcp__agents__agents` now uses the
+  server the Session actually registered: the review exemption on Claude, Pi and DSH,
+  the Claude `PostToolUse` display hook and init check, the Claude Code host plugin's
+  hooks and the Pi display. The review exempts only that one server's `agents` tool.
+  Before, the `agents` tool of any server named `agents` was exempt, whoever registered
+  it; now an `agents` tool of any other server is reviewed. A DSH child without the agents plugin row
+  exempts nothing.
+- A consumer that serves the tool under its own server name tells graftling where it
+  registers it: `ClaudeExecution.mcp_server` and `DshExecution.mcp_server` (default
+  `graftling`, like `CodexManagedExecution.mcp_server`), the DSH row setting `mcpServer`,
+  `registerAgents(pi, {server})` and `registerReview(pi, environment, server)`,
+  `claude_host_plugin(..., server=)` and `display_response(..., server=)` (PUBLIC_API.md
+  1.4). `registerAgents`' `displayServers` now names servers in addition to the one it
+  registers; its default is `[]` instead of `['agents']`.
+- The Claude Code host's `configuration --write` writes the `.mcp.json` server
+  `graftling` and removes the `agents` server it wrote before, when that entry starts
+  `graftling.claude.host`. The marketplace plugin still stands aside for either entry.
+- Old records: the DSH browser tool view renders both `mcp__graftling__agents` and
+  `mcp__agents__agents` rows, so Sessions recorded before still show their agents calls.
+  Archives never keyed on the name and read as before.
+- Resuming a Session created under the old name continues the same native Session, now
+  with the tool `mcp__graftling__agents`. Its earlier calls stay recorded as
+  `mcp__agents__agents`, and a call the model makes under that old name finds no tool.
+  Claude Code's MCP documentation says a resumed conversation needs the same server name
+  for its MCP tools; graftling serves only `graftling`, so a resumed Claude Session reaches
+  agents only through the new name. A Claude Code host project that still runs an `agents`
+  server (no `configuration --write` since upgrading) keeps that name until the command
+  runs again. The behaviour of a real resumed Session after the rename has not been
+  observed on any Runtime.
+- GraphTraj's range `graftling>=0.5.2,<0.6` excludes this version; GraphTraj adopts it in
+  its own change (514), declaring its server names through the points above.
+
 ## 0.5.2 (patch release by the user's decision of 2026-11-17)
 
 Everything below since 0.5.0 ships as 0.5.2. The change of 477 is incompatible by

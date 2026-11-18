@@ -39,9 +39,9 @@ from .diagnostics import (
 
 # Claude Code's limit for a UserPromptSubmit hook callback reply.
 PROMPT_HOOK_LIMIT_SECONDS = 30
-# The child's channel to its parent, limited by agents' own authority checks.
-# Reviewing it would block ask_parent and status when the reviewer is down.
-AGENTS_TOOL = 'mcp__agents__agents'
+# The MCP server name graftling registers its agents tool under: the model
+# sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+MCP_SERVER = 'graftling'
 # The host answers a PreToolUse hook before its timeout, so nothing depends on what
 # Claude does past it. See PUBLIC_API.md 4.1 for what is known.
 REVIEW_HOOK_MIN_SECONDS = 600
@@ -58,6 +58,8 @@ class ClaudeExecution:
     connection_env = CONNECTION_ENV
     # graftling's own markers that describe the parent's Session, never a child's.
     PARENT_MARKERS = ('GRAFTLING_NATIVE_', 'GRAFTLING_CLAUDE_HOST_', 'GRAFTLING_DSH_PACKAGE')
+    # The MCP server this Session registers its agents tool under.
+    mcp_server = MCP_SERVER
 
     def __init__(
         self,
@@ -179,6 +181,17 @@ class ClaudeExecution:
         collect_hook_event(self.archive, event, Path(self.request['worktree_path']),
                            extra_fields=self.extra_fields, native_id=self.native_id)
 
+    @property
+    def agents_tool(self) -> str:
+        """Return the agents tool's native name, ``mcp__<mcp_server>__agents``.
+
+        It is the child's channel to its parent, limited by agents' own
+        authority checks, so review lets it through: reviewing it would block
+        ask_parent and status when the reviewer is down. A tool named
+        ``agents`` on any other server is reviewed.
+        """
+        return f'mcp__{self.mcp_server}__agents'
+
     def _parent_notice(self, message: str, details: dict) -> dict:
         """Require the owning host to bind native permission delivery."""
         raise RuntimeAdapterError('RUNTIME_REQUEST_UNHANDLED', 'No parent notice receiver is bound.')
@@ -239,7 +252,7 @@ class ClaudeExecution:
     def _sdk_message(self, event: dict) -> None:
         """Serve the official SDK's in-process MCP transport on the owned pipe."""
         request = event['request']
-        if request.get('server_name') != 'agents' or self.agents_callback is None:
+        if request.get('server_name') != self.mcp_server or self.agents_callback is None:
             raise RuntimeAdapterError('RUNTIME_REQUEST_UNHANDLED', 'Unknown SDK MCP server.')
         message = request.get('message', {})
 
@@ -580,7 +593,8 @@ class ClaudeExecution:
                   and request.get('callback_id') == 'graftling_agents_display'):
                 from .display import display_response
 
-                self._reply(event['request_id'], display_response(request['input'], self.displayed))
+                self._reply(event['request_id'],
+                            display_response(request['input'], self.displayed, self.mcp_server))
             elif request.get('subtype') == 'hook_callback' and request.get('callback_id') == 'graftling_start':
                 began = time.monotonic()
                 received, received_at = self.prompt_received.pop(event['request_id'])
@@ -673,7 +687,7 @@ class ClaudeExecution:
         identity = event['request_id']
         native = event['request'].get('input')
         native = native if isinstance(native, dict) else {}
-        if native.get('tool_name') == AGENTS_TOOL:
+        if native.get('tool_name') == self.agents_tool:
             self._reply(identity, {})
             return
         with self.lock:
@@ -858,10 +872,11 @@ class ClaudeExecution:
                 stderr_reader.start()
                 reader = threading.Thread(target=self._read, daemon=True)
                 reader.start()
-                initialization = self._control('initialize', **({'sdkMcpServers': ['agents']} if self.independent else {}), hooks={
+                initialization = self._control('initialize', **({'sdkMcpServers': [self.mcp_server]}
+                                                                if self.independent else {}), hooks={
                     'UserPromptSubmit': [{'matcher': None, 'hookCallbackIds': ['graftling_start']}],
                     'SubagentStop': [{'matcher': None, 'hookCallbackIds': ['graftling_collect_child']}],
-                    **({'PostToolUse': [{'matcher': 'mcp__agents__agents',
+                    **({'PostToolUse': [{'matcher': self.agents_tool,
                                          'hookCallbackIds': ['graftling_agents_display']}]}
                        if self.independent else {}),
                     **({'PreToolUse': [{'matcher': None, 'hookCallbackIds': ['agents_review'],
@@ -961,7 +976,7 @@ class ClaudeExecution:
                                 'Claude selected a different Session or model', self.request['model'],
                                 event.get('model'), model_reason))
                         if self.independent and (not self.sdk_tools_listed
-                                or 'mcp__agents__agents' not in event.get('tools', [])):
+                                or self.agents_tool not in event.get('tools', [])):
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
                                                       'Claude did not register the bound agents SDK function.')
                         self.native_init = event

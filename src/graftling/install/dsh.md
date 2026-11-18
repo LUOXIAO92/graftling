@@ -97,7 +97,8 @@ handler fails with that text, and the Session has no `agents` tool.
 
 ## See that it worked
 
-- The model can call the `agents` tool, through the MCP server `agents`.
+- The model can call the `agents` tool, through the MCP server `graftling`: it sees
+  `mcp__graftling__agents`.
 - Ask it to use the `agents` tool, not DSH's own subagents, to create a Claude child that
   answers one word, and to `wait` for it before ending the task.
 - A notice appears in the Session as a relay message `[agents notice from <agent> ·

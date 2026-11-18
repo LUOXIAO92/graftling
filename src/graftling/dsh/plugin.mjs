@@ -14,10 +14,14 @@ const { TypertRemoteService, Remote } = await import(pathToFileURL(require.resol
 const { createUserMessage } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-llm')));
 export const name = 'agents';
 export const inject = ['tools', 'sessionQuery', 'agents'];
+// The MCP server name graftling registers its agents tool under: the model sees
+// mcp__<this>__agents.
+export const MCP_SERVER = 'graftling';
 // Without mcpCommand this is the host row: the installed bundle's own entry.
 // mcpEnv: the owner channel variable the MCP server inherits from this DSH.
+// mcpServer: the server name the row registers.
 export const Config = z.object({ mcpCommand: z.string(), mcpArgs: z.array(String).default([]),
-  mcpEnv: z.array(String).default(['GRAFTLING_CONNECTION']) });
+  mcpEnv: z.array(String).default(['GRAFTLING_CONNECTION']), mcpServer: z.string().default(MCP_SERVER) });
 // How long a Session that starts no turn by itself waits before taking held notices.
 const READY_MS = 2000;
 
@@ -124,10 +128,10 @@ function announceReady(agent, host, limit = READY_MS) {
   check();
 }
 
-/** Attach the MCP server ``agents`` to one native Agent. */
-function attachMcp(agent, command, args, env) {
+/** Attach the MCP server ``server`` to one native Agent. */
+function attachMcp(agent, server, command, args, env) {
   return agent.ctx.plugin(mcpClient, {
-    transport: 'stdio', serverName: 'agents', command, args,
+    transport: 'stdio', serverName: server, command, args,
     cwd: agent.session.header.cwd, env,
     toolCallTimeoutMs: 300000, failOnStartupError: true,
   }).await();
@@ -137,7 +141,7 @@ export function apply(ctx, config) {
   installCommunication(ctx, { TypertRemoteService, Remote, createUserMessage });
   if (config.mcpCommand === undefined) return applyHost(ctx);
   ctx.on('agent/created', async ({ agent }) => {
-    await attachMcp(agent, config.mcpCommand, config.mcpArgs, {
+    await attachMcp(agent, config.mcpServer ?? MCP_SERVER, config.mcpCommand, config.mcpArgs, {
       ...sessionEnvironment(agent),
       ...Object.fromEntries((config.mcpEnv ?? ['GRAFTLING_CONNECTION'])
         .filter(name => process.env[name]).map(name => [name, process.env[name]])),
@@ -171,7 +175,7 @@ function applyHost(ctx) {
     let host;
     try {
       host = await started;
-      await attachMcp(agent, environment.GRAFTLING_PYTHON, ['-I', '-m', 'graftling.mcp'],
+      await attachMcp(agent, MCP_SERVER, environment.GRAFTLING_PYTHON, ['-I', '-m', 'graftling.mcp'],
         { ...sessionEnvironment(agent), GRAFTLING_CONNECTION: host.connection });
       announceReady(agent, host);
     } catch (error) {

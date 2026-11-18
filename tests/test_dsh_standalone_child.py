@@ -322,7 +322,7 @@ def test_dsh_child_launch_needs_no_graphtraj_setting(tmp_path: Path, dsh: dict) 
     assert Path(plugin['name']) == ROOT / 'src/graftling/dsh/plugin.mjs'
     assert plugin['config'] == {'mcpCommand': str(Path(sys.executable).absolute()),
                                 'mcpArgs': ['-I', '-m', 'graftling.mcp'],
-                                'mcpEnv': ['GRAFTLING_CONNECTION']}
+                                'mcpEnv': ['GRAFTLING_CONNECTION'], 'mcpServer': 'graftling'}
 
 
 def refusal_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dsh: dict) -> list[tuple]:

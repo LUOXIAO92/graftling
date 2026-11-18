@@ -92,7 +92,7 @@ tool show it), and the plugin's module stays inactive. The module stands aside o
 (the Session's directory or one above it); a value inherited from another configured
 project, such as from a shell started in its Claude Code session, is ignored. Keep one: run
 `claude plugin disable graftling@graftling --scope local` in that project, or remove the
-`agents` server from `.mcp.json`, the two `GRAFTLING_CLAUDE_HOST_*` entries from
+`graftling` server (`agents` before 0.6.0) from `.mcp.json`, the two `GRAFTLING_CLAUDE_HOST_*` entries from
 `.claude/settings.local.json` and `.claude/skills/agents-claude-host/`.
 
 To upgrade, install the new wheel into the same environment, run
@@ -112,16 +112,18 @@ prints the list of paths and writes:
 
 | Path under the project | What it is |
 | --- | --- |
-| `.mcp.json` | The `agents` MCP server, started with this environment's Python |
+| `.mcp.json` | The `graftling` MCP server, started with this environment's Python |
 | `.agents-control/claude-host.json` | The host configuration |
 | `.claude/settings.local.json` | Two `env` entries that point the plugin at this Python and configuration |
 | `.claude/skills/agents-claude-host/` | The plugin: its manifest, hooks and `host_context.mjs` |
 
 Running it again on a configured project updates only what the command owns: `command`
-and `args` of the `agents` server, the two `env` entries, `cwd` and `claude` in the host
+and `args` of the `graftling` server, the two `env` entries, `cwd` and `claude` in the host
 configuration, and the plugin files. Everything else stays, including other keys of the
-`agents` server such as `env`, other servers and `root`, `channel_file`, `settings` and
-`runtimes` in the host configuration. Without `--write`, the printed host configuration
+`graftling` server such as `env`, other servers and `root`, `channel_file`, `settings` and
+`runtimes` in the host configuration. The one exception is the server `agents` that this
+command wrote before 0.6.0: when it starts `graftling.claude.host`, it is removed, so the
+model does not see two sets of tools. An `agents` server that starts anything else stays. Without `--write`, the printed host configuration
 shows the `root` and `channel_file` that would be kept.
 
 If you moved the project, a `root` or `channel_file` inside its old directory moves to
@@ -171,7 +173,8 @@ not load this project's `.mcp.json`.
 ## See that it worked
 
 - In the Session, `/agents-context` prints the current Session, `MCP agents
-  registered` and the state of notice push, without a model turn. `/mcp` lists `agents`.
+  registered` and the state of notice push, without a model turn. `/mcp` lists `graftling`,
+  and the model calls the tool `mcp__graftling__agents`.
 - Ask the model to use the `agents` tool, not Claude Code's own subagents, to create a Claude
   child that answers one word, then to `wait` for it.
   The result shows `state: standby` and `last_result.outcome: completed`.

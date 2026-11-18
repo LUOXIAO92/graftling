@@ -76,7 +76,8 @@ A refused start shows as the extension's error, with one `{"error": {"code",
 
 ## See that it worked
 
-- The model can call the `agents` tool, through the MCP server `agents`.
+- The model can call the `agents` tool, through the MCP server `graftling`: it sees
+  `mcp__graftling__agents`.
 - Ask it to use the `agents` tool to create a Claude child that answers one word. A message
   appears in the Pi Session titled `[agents notice from <agent> · completed · execution <execution>]`.
 - `status` then shows `last_result.notification: delivered`, with the child's answer
@@ -161,6 +162,6 @@ Set a model at `create` to choose another one for one child.
 - A connection without `base_url` support on Pi: declare the endpoint as a provider in
   Pi's own `models.json` in that connection's home.
 - An extension in a connection's home can change a call's input after review, and a
-  `mcp.json` server named `agents` there gets the name the review exempts. That home is
+  `mcp.json` server named `graftling` there gets the name the review exempts. That home is
   your own trust decision.
 </content>

@@ -9,9 +9,12 @@ const READY_MS = 2000;
 // How often, and how many times, to look for a notice's entry after its message_end.
 const ENTRY_POLL_MS = 20;
 const ENTRY_POLLS = 250;
+// The MCP server name graftling registers its agents tool under: the model sees
+// mcp__<this>__agents. A consumer registering under its own name passes `server`.
+export const MCP_SERVER = 'graftling';
 
 /** Render the same successful MCP communication facts without model injection. */
-export function registerAgentDisplay(pi, sdk, servers = ['agents']) {
+export function registerAgentDisplay(pi, sdk, servers = [MCP_SERVER]) {
   const customType = 'graftling:agent-communication';
   pi.registerEntryRenderer(customType, entry => {
     const { sender, recipient, body } = entry.data;
@@ -195,8 +198,10 @@ export function startAgentHost(ctx, config, onNotice = () => {}) {
 /**
  * Register the independent agents connection on this Pi extension API.
  * The returned handlers report whether they own the started Session.
+ * `server` is the MCP server name it registers; the display renders that
+ * server's agents results and those of `displayServers` besides.
  */
-export function registerAgents(pi, { displayServers = ['agents'] } = {}) {
+export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } = {}) {
   const independent = new WeakSet();
   let agentHost;
   let readyTimer;
@@ -235,7 +240,7 @@ export function registerAgents(pi, { displayServers = ['agents'] } = {}) {
       await closeHost();
       independent.delete(ctx.sessionManager);
       if (ctx.hasUI && !displayRegistered) {
-        registerAgentDisplay(pi, await loadHostSdk(), displayServers);
+        registerAgentDisplay(pi, await loadHostSdk(), [server, ...displayServers]);
         displayRegistered = true;
       }
       if (Object.hasOwn(process.env, 'GRAFTLING_CONNECTION')) {
@@ -243,7 +248,7 @@ export function registerAgents(pi, { displayServers = ['agents'] } = {}) {
         independent.add(ctx.sessionManager);
         // This is the official MCP client wiring, not a native model tool.
         // Identity is verified by the owning host's kernel-authenticated pipe.
-        pi.registerMcpServer('agents', {
+        pi.registerMcpServer(server, {
           command: process.env.GRAFTLING_PYTHON, args: ['-I', '-m', 'graftling.mcp'],
           cwd: ctx.cwd, env: {GRAFTLING_CONNECTION: process.env.GRAFTLING_CONNECTION}, exposure: 'direct',
         });
@@ -260,7 +265,7 @@ export function registerAgents(pi, { displayServers = ['agents'] } = {}) {
         sessionManager = ctx.sessionManager;
         agentHost = await startAgentHost(ctx, agentsConfig, notice => deliverNotice(pi, notice, session, sessionManager));
         try {
-          pi.registerMcpServer('agents', {
+          pi.registerMcpServer(server, {
             command: process.env.GRAFTLING_PYTHON,
             args: ['-I', '-m', 'graftling.mcp'], cwd: ctx.cwd,
             env: {GRAFTLING_CONNECTION: agentHost.connection}, exposure: 'direct',
@@ -275,9 +280,6 @@ export function registerAgents(pi, { displayServers = ['agents'] } = {}) {
   };
 }
 
-// The bound agents tool is the child's channel to its parent, limited by agents'
-// authority checks, and must work when the reviewer is down.
-const AGENTS_TOOL = 'mcp__agents__agents';
 const REVIEW_TITLE = Symbol.for('agents.pi.review-title');
 
 /**
@@ -287,15 +289,21 @@ const REVIEW_TITLE = Symbol.for('agents.pi.review-title');
  * environment at once, so no tool's process can learn the title. Pi may load this
  * file more than once in a process, with no module cache, so the title stays on
  * the process itself.
+ *
+ * The one call let through is the agents tool of `server`, the name
+ * registerAgents registers: it is the child's channel to its parent, limited
+ * by agents' authority checks, and must work when the reviewer is down. A tool
+ * named agents on any other MCP server is reviewed.
  */
-export function registerReview(pi, environment = process.env) {
+export function registerReview(pi, environment = process.env, server = MCP_SERVER) {
+  const agentsTool = `mcp__${server}__agents`;
   const title = environment.GRAFTLING_PI_REVIEW || globalThis[REVIEW_TITLE];
   delete environment.GRAFTLING_PI_REVIEW;
   if (!title) return false;
   globalThis[REVIEW_TITLE] = title;
   pi.registerCommand('agents-review-hook', { description: 'The agents review plugin is active.', handler: async () => {} });
   pi.on('tool_call', async (event, ctx) => {
-    if (event.toolName === AGENTS_TOOL) return undefined;
+    if (event.toolName === agentsTool) return undefined;
     const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input });
     const confirmed = await ctx.ui.confirm(title, call, { signal: ctx.signal });
     if (confirmed === true) return undefined;

@@ -16,12 +16,12 @@ ctx.provide('tools', { register(definition) {
 } });
 try {
   await ctx.plugin(client, {
-    transport: 'stdio', serverName: 'agents', command: python, args: [server],
+    transport: 'stdio', serverName: 'graftling', command: python, args: [server],
     cwd: process.cwd(), env: { PYTHONPATH: pythonPath },
     failOnStartupError: true, toolCallTimeoutMs: 10000,
   }).await();
-  assert.deepEqual([...definitions.keys()], ['mcp__agents__agents']);
-  const tool = definitions.get('mcp__agents__agents');
+  assert.deepEqual([...definitions.keys()], ['mcp__graftling__agents']);
+  const tool = definitions.get('mcp__graftling__agents');
   assert.deepEqual(Object.keys(tool.parameters.properties), ['action', 'query', 'feature', 'arguments']);
   const invoke = args => tool.execute(args, { signal: new AbortController().signal });
   const discovered = (await invoke({ action: 'discover', query: 'status' })).structuredContent;

@@ -9,12 +9,12 @@ import sys
 from graftling.claude.display import display_response
 
 
-def event(action: str, text: str, execution: str = 'execution') -> dict:
+def event(action: str, text: str, execution: str = 'execution', server: str = 'graftling') -> dict:
     """Supply the native PostToolUse shape for a successful agents exchange."""
     request = {'action': action, 'agent': 'agent-child'}
     if action == 'send':
         request['message'] = text
-    return {'hook_event_name': 'PostToolUse', 'tool_name': 'mcp__agents__agents',
+    return {'hook_event_name': 'PostToolUse', 'tool_name': f'mcp__{server}__agents',
             'session_id': 'native-parent', 'tool_use_id': 'tool-' + action,
             'tool_input': request, 'tool_response': {'structuredContent': {
                 'action': action, 'agent': 'agent-child', 'result': {
@@ -35,6 +35,14 @@ def test_bidirectional_readable_content_is_only_native_display_output() -> None:
     assert [sent, received] == originals
     assert display_response(sent, seen) == display_response(received, seen) == {}
     assert display_response(event('wait', 'The file is valid.', 'another-execution'), seen)
+
+
+def test_only_the_registered_servers_agents_tool_is_drawn() -> None:
+    """Another server's tool named agents draws nothing; a consumer's own server name does."""
+    assert display_response(event('wait', 'from elsewhere', server='other')) == {}
+    assert display_response(event('wait', 'from graphtraj', server='graphtraj')) == {}
+    assert 'from graphtraj' in display_response(event('wait', 'from graphtraj', server='graphtraj'),
+                                                server='graphtraj')['systemMessage']
 
 
 def test_noop_resume_does_not_claim_to_have_sent_text() -> None:

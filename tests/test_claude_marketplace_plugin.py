@@ -15,7 +15,7 @@ import pytest
 
 import graftling
 from graftling.claude import host
-from graftling.claude.plugin import MARKETPLACE_DIRECTORY, marketplace_module
+from graftling.claude.plugin import MARKETPLACE_DIRECTORY, claude_host_plugin, marketplace_module
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -77,11 +77,13 @@ def test_plugin_configuration_is_created_then_keeps_user_keys(tmp_path: Path, cl
     assert json.loads(config.read_text()) == chosen
 
 
-def test_plugin_host_stands_aside_for_configuration_write_material(tmp_path: Path, claude_on_path: Path) -> None:
-    """A project whose .mcp.json starts the host keeps that host; the plugin refuses, naming the fix."""
+@pytest.mark.parametrize('server', ['graftling', 'agents'])
+def test_plugin_host_stands_aside_for_configuration_write_material(
+        tmp_path: Path, claude_on_path: Path, server: str) -> None:
+    """A project whose .mcp.json starts the host, under its name before 0.6.0 too, keeps that host."""
     project = tmp_path / 'project'
     project.mkdir()
-    (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'agents': {
+    (project / '.mcp.json').write_text(json.dumps({'mcpServers': {server: {
         'command': sys.executable, 'args': ['-m', 'graftling.claude.host', 'serve', '--config', 'x']}}}))
     with pytest.raises(graftling.AgentsError) as refused:
         host.plugin_configuration(project)
@@ -95,6 +97,58 @@ def run_host(*arguments: str, cwd: Path, **kwargs) -> subprocess.CompletedProces
     environment = {**os.environ, 'PYTHONPATH': str(SOURCE)}
     return subprocess.run([sys.executable, '-m', 'graftling.claude.host', *arguments], cwd=cwd,
                           env=environment, capture_output=True, text=True, timeout=30, **kwargs)
+
+
+# The tool names a written host_context.mjs associates with a native Session.
+HANDLED = r'''
+const {register} = await import(process.argv[1]);
+const tools = new Set();
+register((name, matcher, fn) => { if (fn && matcher.tool) tools.add(matcher.tool); return {catch() {}}; });
+console.log(JSON.stringify([...tools].sort()));
+'''
+
+
+def handled_tools(module: Path) -> list[str]:
+    """Return the tools the host module at ``module`` handles, as Node loads it."""
+    result = subprocess.run(['node', '--input-type=module', '-e', HANDLED, module.as_uri()],
+                            capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+@pytest.mark.parametrize('server', [None, 'graphtraj'])
+def test_host_plugin_handles_only_its_servers_tools(tmp_path: Path, server: str | None) -> None:
+    """A written host module associates mcp__<server>__<tool>, graftling unless a consumer names its own."""
+    files = claude_host_plugin(tmp_path, 'host', 'Host.', ['tasks'], **({'server': server} if server else {}))
+    module = tmp_path / 'hooks/host_context.mjs'
+    module.parent.mkdir()
+    module.write_text(files[str(module)])
+    name = server or 'graftling'
+    assert handled_tools(module) == [f'mcp__{name}__agents', f'mcp__{name}__tasks']
+
+
+def test_configuration_write_registers_graftling_and_drops_its_old_agents_entry(
+        tmp_path: Path, claude_on_path: Path) -> None:
+    """The host's server is graftling; the agents entry an earlier write left goes, other servers stay."""
+    project = tmp_path / 'project'
+    project.mkdir()
+    old = {'command': sys.executable, 'args': ['-m', 'graftling.claude.host', 'serve', '--config', 'x']}
+    other = {'command': 'other-server'}
+    (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'agents': old, 'other': other}}))
+    written = run_host('configuration', '--project', str(project), '--claude', str(claude_on_path), '--write',
+                       cwd=project)
+    assert written.returncode == 0, written.stderr
+    servers = json.loads((project / '.mcp.json').read_text())['mcpServers']
+    assert set(servers) == {'graftling', 'other'} and servers['other'] == other
+    assert 'graftling.claude.host' in servers['graftling']['args']
+    assert handled_tools(project / '.claude/skills/agents-claude-host/hooks/host_context.mjs') == [
+        'mcp__graftling__agents']
+
+    # An agents entry that does not start this host is someone else's and stays.
+    (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'agents': other}}))
+    assert run_host('configuration', '--project', str(project), '--claude', str(claude_on_path), '--write',
+                    cwd=project).returncode == 0
+    assert set(json.loads((project / '.mcp.json').read_text())['mcpServers']) == {'agents', 'graftling'}
 
 
 def test_plugin_serve_without_prior_configuration_writes_it_and_logs_its_refusal(

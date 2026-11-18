@@ -16,14 +16,20 @@ def _frame(sender: str, recipient: str, body: str) -> str:
     return f'┌ agents · {sender} → {recipient}\n' + '\n'.join('│ ' + line for line in body.splitlines()) + '\n└'
 
 
-def display_response(event: dict, seen: set[tuple[str, str]] | None = None) -> dict:
+def display_response(
+    event: dict,
+    seen: set[tuple[str, str]] | None = None,
+    server: str = 'graftling',
+) -> dict:
     """Render the successful native exchange, retaining original tool contents.
 
     ``seen`` belongs to the owning execution, so repeated native hook callbacks
     and repeated observations of its same child result do not draw twice. A
     command-hook caller relies on Claude's native per-tool hook invocation.
+    ``server`` is the MCP server the Session registered agents under; only
+    its ``mcp__<server>__agents`` calls are drawn.
     """
-    if event.get('hook_event_name') != 'PostToolUse' or event.get('tool_name') != 'mcp__agents__agents':
+    if event.get('hook_event_name') != 'PostToolUse' or event.get('tool_name') != f'mcp__{server}__agents':
         return {}
     request = event.get('tool_input')
     response = event.get('tool_response')

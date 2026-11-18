@@ -496,7 +496,7 @@ def test_plugin_host_row_relays_each_notice_to_its_main_session(tmp_path: Path) 
     shown, log = run_plugin(tmp_path, GRAFTLING_DSH_CONFIG='/abs/dsh-host.json')
     assert [item['id'] for item in shown['attached']] == ['dsh-main']
     options = shown['attached'][0]['options']
-    assert options['serverName'] == 'agents' and options['args'] == ['-I', '-m', 'graftling.mcp']
+    assert options['serverName'] == 'graftling' and options['args'] == ['-I', '-m', 'graftling.mcp']
     assert options['env'] == {'DSH_SESSION_ID': 'dsh-main', 'DSH_AGENT_SOURCE': 'main',
                               'GRAFTLING_CONNECTION': '/fake/address'}
     assert [item['id'] for item in shown['received'][:3]] == [
