@@ -12,8 +12,17 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.6.2 (compatible)
 
+- graftling keeps its runtime directories out of the caller's git work tree (526). When
+  a data root sits inside a git repository, DSH's per-turn changes card (which snapshots
+  the work tree with `git add --all`) listed the rewritten session archive as a file
+  edit. graftling now writes a `.gitignore` holding `*` into the graftling-named
+  subdirectories it writes (`sessions/`, `control/`, `live/`, `native/`) when they exist:
+  never at the caller's root, never over an existing file, and a failed write is
+  ignored. Archive content and format, public names and results are unchanged, so the
+  change is compatible (section 7 of the public interface). GraphTraj's range
+  `graftling>=0.6.0,<0.7` includes it.
 - DSH's browser shows agents calls in its own native Tool card (527). The `graftling-dsh`
   client module no longer registers a `tool.call.toolview` view for
   `mcp__graftling__agents` or the older `mcp__agents__agents`, so both now show as the
