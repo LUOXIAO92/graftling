@@ -1,4 +1,4 @@
-/** Pure browser-view projection: no host/model calls and no UI acceptance claim. */
+/** Pure browser-module projection: no host/model calls and no UI acceptance claim. */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
@@ -36,26 +36,10 @@ if (delayedNative) {
   registerNative();
   await new Promise(resolve => queueMicrotask(resolve));
 }
-// graftling's own server, and the name Sessions recorded before 0.6.0.
-const toolViews = slots.entriesOfSlot('tool.call.toolview');
-assert.deepEqual(toolViews.map(entry => entry.options.key).sort(), ['mcp__agents__agents', 'mcp__graftling__agents']);
-assert.equal(toolViews[0].component, toolViews[1].component);
-const registered = toolViews.find(entry => entry.options.key === 'mcp__graftling__agents');
-const block = { kind: 'tool-result', call: { argsRaw: JSON.stringify({
-  action: 'execute', feature: 'send', arguments: { agent: 'actual-child', message: 'outbound body' },
-}) }, content: [{ type: 'text', text: JSON.stringify({ agent: 'actual-child', result: {
-  state: 'standby', last_result: { last_message: 'relay owns this incoming body' },
-} }) }] };
-const before = JSON.stringify(block);
-const first = registered.component({ block, sessionId: 'actual-parent-session', phase: 'result' });
-const replay = registered.component({ block, sessionId: 'actual-parent-session', phase: 'result' });
-assert.equal(JSON.stringify(first), JSON.stringify(replay));
-assert.equal(JSON.stringify(block), before);
-const rendered = JSON.stringify(first);
-assert.match(rendered, /actual-parent-session → actual-child/);
-assert.match(rendered, /outbound body/);
-assert.doesNotMatch(rendered, /relay owns this incoming body/);
-console.log('Pure native Tool view: outbound source/body; incoming relay not duplicated');
+// agents calls, under graftling's server or the name Sessions recorded before 0.6.0,
+// keep DSH's native Tool card: graftling adds no tool view of its own (527).
+assert.deepEqual(slots.entriesOfSlot('tool.call.toolview'), []);
+console.log('Native Tool card: no tool.call.toolview entry for agents calls');
 
 // Real native slot selection keeps the original renderer under our attribution.
 const incoming = slots.entriesOfSlot('conversation.chat.node')

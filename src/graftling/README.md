@@ -377,7 +377,8 @@ instead of `mcp__agents__agents`. The tool keeps its name. After upgrading:
 - Review exempts only the `agents` tool of the server the child registered; an `agents`
   tool on any other MCP server is reviewed.
 - Sessions created before keep their earlier calls under `mcp__agents__agents`. Archives
-  and the DSH tool view still read that name. Resuming such a Session: see
+  still read that name, and DSH's browser shows those calls in its native Tool card like
+  any other. Resuming such a Session: see
   [`CHANGELOG.md`](CHANGELOG.md) 0.6.0.
 
 ## Known limits

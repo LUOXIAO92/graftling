@@ -46,8 +46,8 @@ def test_delivered_plugin_native_scopes(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("registration_order", ["ready", "delayed"])
-def test_browser_tool_view_preserves_model_content(registration_order: str) -> None:
-    """Project outgoing text without replaying calls or duplicating inbound relay."""
+def test_browser_module_keeps_native_tool_card(registration_order: str) -> None:
+    """agents calls keep DSH's native Tool card; incoming messages gain true attribution."""
     node, dsh = shutil.which('node'), shutil.which('dsh')
     if node is None or dsh is None:
         pytest.skip('Installed DSH slots and Node are required for the browser projection fixture.')

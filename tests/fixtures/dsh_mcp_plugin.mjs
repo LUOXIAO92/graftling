@@ -44,7 +44,11 @@ try {
   assert.ok(entry);
   const bundle = await ctx.clientModules.fetchBundle(new Request(new URL(entry.url, 'http://fixture/')));
   assert.equal(bundle.status, 200);
-  assert.match(await bundle.text(), /tool.call.toolview/);
+  // The delivered bundle adds incoming-message attribution and leaves agents calls to
+  // DSH's native Tool card (527).
+  const text = await bundle.text();
+  assert.match(text, /conversation\.chat\.node/);
+  assert.doesNotMatch(text, /tool\.call\.toolview/);
   async function create(id, meta, parent) {
     const session = ctx.sessions.create(id, { meta: { cwd: process.cwd(), ...meta } });
     const agent = { id, session };

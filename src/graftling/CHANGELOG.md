@@ -12,6 +12,18 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+- DSH's browser shows agents calls in its own native Tool card (527). The `graftling-dsh`
+  client module no longer registers a `tool.call.toolview` view for
+  `mcp__graftling__agents` or the older `mcp__agents__agents`, so both now show as the
+  collapsible card DSH uses for every other tool (title, then the call's input and
+  output when expanded), as `mcp__graphtraj__agents` already did; the one-line
+  `agents · … · …` row and its *Details* button are gone. The module keeps the sender and
+  recipient it adds to incoming agent messages, and no longer asks DSH to load
+  `@deepseek-ai/dsh-client-ui-tool` first, which only that view used. The browser view is
+  not part of the public interface; nothing a model, host or archive sees changes.
+
 ## 0.6.1 (compatible)
 
 - A native Session lookup reads only archive headers (518). `SessionArchive.native_header`,
