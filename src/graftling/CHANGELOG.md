@@ -12,6 +12,21 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## 0.6.1 (compatible)
+
+- A native Session lookup reads only archive headers (518). `SessionArchive.native_header`,
+  which `find_session` uses for every `session_read` by native ID and Claude collection
+  uses when a Session starts, decoded the whole first line of every archive under the
+  root to take its header. That line also holds the archive's resolved observations, so
+  each lookup decoded them all: in one store of 1490 archives (13 GB, 5.09 GB of it on
+  first lines) a lookup took 30.7 s CPU, now 0.17 s. The header is now decoded from the
+  line's compact prefix (`{"archiveVersion":1,"header":...}`); any other shape, or a
+  header that does not decode there, is read whole as before, with the same errors.
+  Opening an archive still reads and validates all of it. No public name, argument,
+  result, error or archive format changes; the results are the same, only faster, so
+  the change is compatible (section 7 of the public interface). GraphTraj's range
+  `graftling>=0.6.0,<0.7` includes it.
+
 ## 0.6.0 (incompatible)
 
 graftling's own MCP server is named `graftling` on every Runtime (513). Claude Code,
