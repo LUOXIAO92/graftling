@@ -67,7 +67,7 @@ from typing import Any, Callable, Iterator, Mapping, Protocol
 from graftling.approval import DECISION_METHOD, check_reply
 from graftling.calls import pause
 from graftling.config import CONFIG_FILE, read_config, read_connections
-from graftling.locks import exclusive
+from graftling.locks import exclusive, ignore_in_git
 from graftling.notices import needs_parent, notice_id
 from graftling.review import check_reviewer
 from graftling.tool import AgentsError, AgentsResult, Binding, Caller, Outcome, SessionArchive, bind, unavailable
@@ -1788,6 +1788,10 @@ class AgentControl:
             raise AgentsError("not-found", f"No Agent {agent!r} exists.")
         return self.root / "control" / "agents" / f"{agent}.json"
 
+    def _ignore_in_git(self) -> None:
+        """Keep the runtime directories this control writes out of git (526)."""
+        ignore_in_git(*(self.root / name for name in ("control", "live", "native")))
+
     def import_agent(self, record: Mapping[str, Any]) -> dict:
         """Import one stopped, host-verified identity without launching a Runtime.
 
@@ -1814,6 +1818,7 @@ class AgentControl:
                 return self._document(previous)
             path = self._path(agent)
             path.parent.mkdir(parents=True, exist_ok=True)
+            self._ignore_in_git()
             descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix='.import-')
             with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
                 json.dump(dict(record), stream, ensure_ascii=False, indent=2, sort_keys=True)
@@ -1895,6 +1900,7 @@ class AgentControl:
                     text = json.dumps(record, indent=2, sort_keys=True)
                     if text != before:
                         path.parent.mkdir(parents=True, exist_ok=True)
+                        self._ignore_in_git()
                         descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".record-")
                         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                             stream.write(text)
@@ -2107,6 +2113,7 @@ class AgentControl:
         """Describe one execution of ``record`` for its driver."""
         directory = self.root / "native" / record["agent"]
         directory.mkdir(parents=True, exist_ok=True)
+        self._ignore_in_git()
         agent, execution = record['agent'], current['id']
 
         def call(request: dict) -> AgentsResult:

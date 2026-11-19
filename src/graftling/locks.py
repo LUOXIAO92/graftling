@@ -41,3 +41,22 @@ def exclusive(path: Path) -> Iterator[None]:
             else:
                 stream.seek(0)
                 msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def ignore_in_git(*directories: Path) -> None:
+    """Keep each existing graftling-named runtime directory out of git (526).
+
+    A data root may sit inside a user's git work tree, where a tool listing
+    changed files (DSH's per-turn changes card) would show graftling's own
+    archives and records as edits. A ``.gitignore`` holding ``*`` inside the
+    directory ignores it and itself. Only these subdirectories are touched,
+    never the caller's root; an existing ``.gitignore`` is kept, and a failed
+    write is ignored so the record itself is never affected.
+    """
+    for directory in directories:
+        try:
+            if directory.is_dir():
+                with (directory / ".gitignore").open("x", encoding="utf-8") as stream:
+                    stream.write("*\n")
+        except OSError:
+            pass

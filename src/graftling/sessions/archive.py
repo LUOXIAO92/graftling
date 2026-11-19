@@ -21,6 +21,7 @@ import threading
 from typing import Callable, Iterator
 
 from graftling.config import read_config
+from graftling.locks import ignore_in_git
 
 from .protocol import (
     LEGACY_FORMAT_VERSION, SURFACE_TYPES, snapshot_event, upgrade_event, upgrade_header,
@@ -286,6 +287,8 @@ class JsonlSessionStore:
         header = _redacted(header)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.parent.parent.name == 'sessions':  # the archive_path layout
+            ignore_in_git(path.parent.parent)
         with path.with_suffix('.lock').open('a+b') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if not path.exists():
