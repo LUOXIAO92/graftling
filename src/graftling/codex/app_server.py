@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Sequence
+from xml.sax.saxutils import escape as xml_escape
 
 from .context import CodexAdapterError, reject_legacy_sandbox_config
 from .trace import CodexNativeTrace
@@ -583,7 +584,8 @@ class CodexAppServer:
             self._active.pop(session.thread_id, None)
         return execution
 
-    async def send_host_event(self, thread_id: str, event: dict[str, str], text: str | None = None) -> dict:
+    async def send_host_event(self, thread_id: str, event: dict[str, str], text: str | None = None, *,
+                              delegation_from: str | None = None) -> dict:
         """Start or steer an already-loaded host thread with genuine tool output.
 
         The host enforces direct-input and provider checks. No settings, native
@@ -591,13 +593,21 @@ class CodexAppServer:
         The reply acknowledges submission, not the parent's processing.
         ``text``, when given, is the tool output the host shows and its model
         reads (for example ``notice_text(event)``); otherwise the event's JSON.
+        ``delegation_from`` sends that output as Codex's own delegation output
+        (``send_message_to_thread`` in namespace ``codex_app``, wrapped in
+        ``<codex_delegation>``), which the Codex TUI draws as "Sent by Codex from
+        task <delegation_from>" over the Markdown (535; 542 F2).
         """
+        output = json.dumps(event, ensure_ascii=False) if text is None else text
+        tool = {'name': 'graftling', 'output': output}
+        if delegation_from is not None:
+            tool = {'name': 'send_message_to_thread', 'namespace': 'codex_app', 'output': (
+                f'<codex_delegation>\n  <source_thread_id>{xml_escape(delegation_from)}</source_thread_id>\n'
+                f'  <input>{xml_escape(output)}</input>\n</codex_delegation>')}
         # Once written, the host may apply it: await its reply while this
         # connection lives, so a late reply never causes a resubmission.
         result = await self._call('turn/start', {
-            'threadId': _native_id(thread_id), 'input': [],
-            'toolOutput': {'name': 'graftling',
-                           'output': json.dumps(event, ensure_ascii=False) if text is None else text},
+            'threadId': _native_id(thread_id), 'input': [], 'toolOutput': tool,
         }, wait_for_session=True)
         try:
             _native_turn(result.get('turn'))

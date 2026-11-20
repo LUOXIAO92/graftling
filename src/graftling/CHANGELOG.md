@@ -40,6 +40,11 @@ The numbers in parentheses are the project's Task numbers.
   tool output the Codex host shows and its model reads; without it the output stays the
   event's JSON, so graftling's own Codex host is unchanged. GraphTraj's interactive Codex Main
   passes `notice_text(event)` (535). Compatible under section 7: a new optional parameter.
+- `send_host_event(..., *, delegation_from=None)`: when given, the output goes as Codex's own
+  delegation output (`send_message_to_thread`, namespace `codex_app`, `<codex_delegation>` with
+  `& < >` escaped), which the Codex TUI draws as "Sent by Codex from task <delegation_from>"
+  over the rendered Markdown (535, found by 542, probed on Codex 0.171.0). Compatible: a new
+  keyword-only parameter; without it nothing changes.
 
 ## 0.6.2 (compatible)
 
