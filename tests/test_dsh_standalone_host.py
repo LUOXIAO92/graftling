@@ -234,7 +234,9 @@ def test_notice_receiver_outcomes() -> None:
     sender, pipe = notices()
     assert sender.receive(notice()) is True
     assert pipe.lines == [{'notice': {'id': 'exec-1:completed', 'agent': 'agent-1', 'session': 'child',
-                                      'event': 'completed', 'message': 'answer', 'execution': 'exec-1'}}]
+                                      'event': 'completed', 'message': 'answer', 'execution': 'exec-1',
+                                      'text': '[Graftling notice from agent-1 · completed · execution exec-1]'
+                                              '\n\nanswer'}}]
     assert sender.receive(notice(parent='agent-0')) is False
     assert sender.receive(notice(creator={'session': 'another-main'})) is False
     assert len(pipe.lines) == 1
@@ -449,7 +451,10 @@ import json, os, sys
 launch = json.loads(sys.stdin.readline())
 def notice(identity, event, message):
     print(json.dumps({'notice': {'id': identity, 'agent': 'agent-1', 'session': 'child-session',
-                                 'event': event, 'message': message, 'execution': identity.split(':')[0]}}), flush=True)
+                                 'event': event, 'message': message, 'execution': identity.split(':')[0],
+                                 # 538: the real host also sends notice_text; the plugin relays it as the body
+                                 **({'text': '[Graftling notice from agent-1 · completed · execution exec-1]\\n\\nthe answer'}
+                                    if event == 'completed' else {})}}), flush=True)
 print(json.dumps({'connection': '/fake/address'}), flush=True)
 acknowledgements = []
 for identity, event, message in (('exec-1:completed', 'completed', 'the answer'),
@@ -504,7 +509,9 @@ def test_plugin_host_row_relays_each_notice_to_its_main_session(tmp_path: Path) 
     first = shown['received'][0]
     assert (first['sessionId'], first['recipient'], first['sender'], first['senderSessionId']) == (
         'dsh-main', 'dsh-main', 'agent-1', 'child-session')
-    assert first['body'] == '[agents notice from agent-1 · completed · execution exec-1]\nthe answer'
+    assert first['body'] == '[Graftling notice from agent-1 · completed · execution exec-1]\n\nthe answer'
+    # A host that sends no text keeps the older title (538 fallback).
+    assert shown['received'][1]['body'] == '[agents notice from agent-1 · failed · execution exec-2]\nprovider refused'
     assert log['acknowledgements'] == [{'ack': 'exec-1:completed', 'shown': True},
                                        {'ack': 'exec-2:failed', 'shown': False},
                                        {'ack': 'exec-3:request:t', 'shown': True}]

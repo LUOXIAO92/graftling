@@ -101,8 +101,9 @@ handler fails with that text, and the Session has no `agents` tool.
   `mcp__graftling__agents`.
 - Ask it to use the `agents` tool, not DSH's own subagents, to create a Claude child that
   answers one word, and to `wait` for it before ending the task.
-- A notice appears in the Session as a relay message `[agents notice from <agent> ·
-  completed · execution <execution>]` followed by the answer.
+- A notice appears in the Session as `<agent> · completed` over the answer as Markdown; DSH's
+  native card under it holds the model's text `[Graftling notice from <agent> · completed ·
+  execution <execution>]`, the answer and a `Facts:` line.
 - `status` shows `last_result.notification: delivered` and `state: standby`.
 
 ## Children on other Runtimes
