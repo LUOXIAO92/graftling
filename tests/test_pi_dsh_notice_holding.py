@@ -778,7 +778,7 @@ const sent = [], handlers = {};
 const entries = JSON.parse(process.env.TEST_ENTRIES);
 const pi = {
   registerFlag() {}, getFlag: name => name === 'agents-config' ? process.env.TEST_CONFIG : undefined,
-  on: (event, handler) => { handlers[event] = handler; }, registerMcpServer() {}, registerEntryRenderer() {},
+  on: (event, handler) => { handlers[event] = handler; }, registerMcpServer() {}, registerEntryRenderer() {}, registerMessageRenderer() {},
   sendMessage: (message, options) => { sent.push({message, options}); },
 };
 process.argv[1] = process.env.TEST_ENTRY;

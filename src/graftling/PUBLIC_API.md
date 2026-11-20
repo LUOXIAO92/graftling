@@ -519,7 +519,7 @@ every other `.mjs` file, is internal.
 
 | File | Exports |
 | --- | --- |
-| `graftling/pi/extension.mjs` | `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `sessionEnvironment`, `startAgentHost` |
+| `graftling/pi/extension.mjs` | `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `registerNoticeDisplay` (536), `sessionEnvironment`, `startAgentHost` |
 | `graftling/dsh/plugin.mjs` | `sessionEnvironment` |
 
 ### 1.4 Host plugins: the `graftling.hosts` entry point

@@ -13,9 +13,24 @@ const ENTRY_POLLS = 250;
 // mcp__<this>__agents. A consumer registering under its own name passes `server`.
 export const MCP_SERVER = 'graftling';
 
+/**
+ * Draw a notice custom message of `customType` as `agents · <sender> · <event>`
+ * over its Markdown `details.body`; the model still reads its whole content.
+ * A message without a sender and body keeps Pi's default drawing.
+ */
+export function registerNoticeDisplay(pi, sdk, customType = 'graftling:agent-communication') {
+  pi.registerMessageRenderer(customType, message => {
+    const { sender, event, body } = message.details ?? {};
+    if (typeof sender !== 'string' || typeof body !== 'string') return undefined;
+    return new sdk.CustomMessageComponent({ ...message,
+      customType: `agents · ${sender}${event ? ` · ${event}` : ''}`, content: body });
+  });
+}
+
 /** Render the same successful MCP communication facts without model injection. */
 export function registerAgentDisplay(pi, sdk, servers = [MCP_SERVER]) {
   const customType = 'graftling:agent-communication';
+  registerNoticeDisplay(pi, sdk, customType);
   pi.registerEntryRenderer(customType, entry => {
     const { sender, recipient, body } = entry.data;
     return new sdk.CustomMessageComponent({

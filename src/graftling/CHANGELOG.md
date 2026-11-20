@@ -30,6 +30,12 @@ The numbers in parentheses are the project's Task numbers.
   new public name, a new field, the title unchanged; the pushed body is model input that
   section 7 does not fix, and its facts keep what a Main needs to act. Codex and Pi still
   show their own text (Tasks 535, 536 can call `notice_text`).
+- The Pi Main draws an agents notice as `[agents · <sender> · <event>]` over its Markdown
+  body (536) instead of the `[graftling:agent-communication]` label over the notice title
+  and body; the model input is unchanged. New public export `registerNoticeDisplay(pi, sdk,
+  customType)` of `graftling/pi/extension.mjs` draws any custom message type whose
+  `details` carry `sender`, `event` and `body` that way; `registerAgentDisplay` uses it.
+  Compatible: a new export; a message without those details keeps Pi's default drawing.
 
 ## 0.6.2 (compatible)
 
