@@ -12,6 +12,25 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased (compatible; the next version is 0.6.3)
+
+- The Claude Code Main shows agents traffic as who and what (533). A pushed notice's text
+  is the new public `notice_text(event)`, the same for every Runtime: the unchanged title
+  `[Graftling notice from <alias> · <event>[ · execution <id>]]`, then the content as
+  Markdown (an end's `last_agent_message` and `error` verbatim instead of the whole end
+  record as escaped JSON), then one `Facts: …` line with execution, outcome, request ID
+  and token, method, report, budget key and error code. `permissions`, the repeated
+  session and `terminal_confirmed` are no longer in the text; they stay in the record and
+  `status`. Each queued Claude notice gains the field `text`, which the plugin submits.
+  On Claude Code 2.1.314 or later the plugin draws that notice (bold sender and event,
+  Markdown, dim facts) and each `create`/`send`/`resume` exchange as one transcript row
+  (`agents → <child>`, `<child> · replied`) with the content as Markdown, instead of one
+  `ui.log` line per text line; it falls back to those lines where no row is drawn. A row
+  names the child by its `name` where the result has one. Compatible under section 7: a
+  new public name, a new field, the title unchanged; the pushed body is model input that
+  section 7 does not fix, and its facts keep what a Main needs to act. Codex and Pi still
+  show their own text (Tasks 535, 536 can call `notice_text`).
+
 ## 0.6.2 (compatible)
 
 - graftling keeps its runtime directories out of the caller's git work tree (526). When

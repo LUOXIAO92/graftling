@@ -22,7 +22,7 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from graftling import AgentsError, Caller, bind
+from graftling import AgentsError, Caller, bind, notice_text
 from graftling.claude.host import IndependentCalls
 from graftling.codex.host import CodexHost
 from graftling.dsh import execution
@@ -234,6 +234,9 @@ def test_a_dsh_childs_end_reaches_the_claude_main_once(tmp_path: Path, dsh: dict
     notices = until(lambda: invoke.shown or host.context({'operation': 'notices', 'session': session})['notices'])
     assert [(n['event']['alias'], n['event']['event'], n['event']['message']) for n in notices] == [
         (agent, 'completed', 'dsh answer: report back')]
+    # 533: the mod submits and draws the shared notice text, built from the same event.
+    assert notices[0]['text'] == notice_text({**notices[0]['event'], 'request': None})
+    assert notices[0]['text'].startswith(f'[Graftling notice from {agent} · completed · execution ')
     assert host.context({'operation': 'notices', 'session': session})['notices'] == []
     # Without a choice the host's own DSH settings apply.
     [service] = FakeDshService.instances

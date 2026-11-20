@@ -178,6 +178,11 @@ not load this project's `.mcp.json`.
 - Ask the model to use the `agents` tool, not Claude Code's own subagents, to create a Claude
   child that answers one word, then to `wait` for it.
   The result shows `state: standby` and `last_result.outcome: completed`.
+- On Claude Code 2.1.314 or later, the transcript shows each message the model sends as a
+  row `agents → <child>` with the message drawn as Markdown, and the child's reply as
+  `<child> · replied`. A pushed notice shows its sender and event in bold, the content as
+  Markdown and a dim facts line (execution, outcome, request ID and token). Earlier
+  versions show the same exchange as `graftling:` log lines.
 - After you quit, `.agents-control/host.log` ends with `agents host recorded its
   children stopped.` If that line is missing, the host could not confirm a stop or
   was killed before it finished, or an Agent started by an earlier host still has a

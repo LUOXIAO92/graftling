@@ -20,27 +20,58 @@ const INSTALL = 'Install the graftling wheel into a Python 3.12+ environment '
   + '(python -m pip install graftling-<version>-py3-none-any.whl) and set GRAFTLING_PYTHON '
   + 'to that python, in your shell or under env in ~/.claude/settings.json; then restart Claude Code.';
 
-function noticeFrames(session, document, frame) {
+// The notice text graftling.notice_text() writes: a title line, Markdown
+// content, and a last 'Facts: …' line. One prompt can hold several notices.
+const NOTICE_TITLE = /^\[Graftling notice from (.+?) · ([^\]]+?)(?: · execution ([^\]\s]+))?\]$/;
+const NOTICE_LABELS = {'runtime-error': 'runtime error', 'report-submitted': 'report submitted',
+  'execution-budget-exceeded': 'execution budget exceeded'};
+
+function noticeLabel(event) {
+  if (NOTICE_LABELS[event]) return NOTICE_LABELS[event];
+  return /can_use_tool|approval|permission|request/.test(event) ? 'needs a permission reply' : event;
+}
+
+function parseNotices(text) {
+  const notices = [];
+  for (const line of String(text ?? '').split('\n')) {
+    const title = NOTICE_TITLE.exec(line);
+    if (title) notices.push({from: title[1], event: title[2], execution: title[3], lines: []});
+    else if (notices.length) notices.at(-1).lines.push(line);
+  }
+  return notices.map(({from, event, execution, lines}) => {
+    while (lines.length && !lines.at(-1).trim()) lines.pop();
+    const facts = lines.length && lines.at(-1).startsWith('Facts: ') ? lines.pop().slice(7) : '';
+    const shown = execution && !facts.includes(execution) ? [`execution \`${execution}\``, facts] : [facts];
+    return {from, label: noticeLabel(event), body: lines.join('\n').trim(), facts: shown.filter(Boolean).join(' · ')};
+  });
+}
+
+function noticeFrames(session, document) {
   // Member events queued for this Main arrive with its next tool result.
   const frames = [];
   for (const notice of Array.isArray(document.main_notices) ? document.main_notices : []) {
+    const [parsed] = typeof notice.text === 'string' ? parseNotices(notice.text) : [];
+    if (parsed) { frames.push({...parsed, to: session}); continue; }
     const body = notice.event;
     const sender = typeof body?.alias === 'string' ? body.alias : 'graftling';
     const text = typeof body?.message === 'string' ? body.message : JSON.stringify(notice.event);
-    frames.push(frame(sender, session, text));
+    frames.push({from: sender, to: session, label: noticeLabel(body?.event ?? 'event'), body: text});
   }
   return frames;
 }
 
 function noticePrompt(notices) {
-  // One plain-text Main input; the full structured notices stay in the queue history.
+  // One Main input; the full structured notices stay in the queue history.
+  // ``text`` is the shared notice Markdown the host wrote (533).
   return notices.map((notice) => {
+    if (typeof notice.text === 'string') return notice.text;
     const body = notice.event ?? {};
     const execution = body.execution ? ` · execution ${body.execution}` : '';
     return `[Graftling notice from ${body.alias ?? 'graftling'} · ${body.event ?? 'event'}${execution}]\n${body.message ?? JSON.stringify(body)}`;
   }).join('\n\n');
 }
 
+// One frame: {from, to, body} and, for a notice, label and facts.
 function exchangeFrames(session, event, result, seen) {
   if (result.deny || result.isError) return [];
   const content = result.result ?? result.text;
@@ -50,24 +81,65 @@ function exchangeFrames(session, event, result, seen) {
   try { document = JSON.parse(text); } catch { return []; }
   if (!document) return [];
   const frames = [];
-  const frame = (from, to, body) => `┌ agents · ${from} → ${to}\n${body.split('\n').map((line) => '│ ' + line).join('\n')}\n└`;
-  if (document.error || typeof document.agent !== 'string') return noticeFrames(session, document, frame);
+  if (document.error || typeof document.agent !== 'string') return cut(noticeFrames(session, document));
+  // The name the Main gave the child says who it is; its id is the fallback.
+  const who = typeof document.result?.name === 'string' && document.result.name ? document.result.name : document.agent;
   const outgoing = event.action === 'create' ? event.instruction : event.message;
   if (['create', 'send', 'resume'].includes(event.action) && typeof outgoing === 'string'
       && document.result?.resumed !== false) {
-    frames.push(frame(session, document.agent, outgoing));
+    frames.push({from: session, to: who, body: outgoing, outgoing: true});
   }
   const last = document.result?.last_result;
   const incoming = last?.last_message || last?.error?.message;
   const key = JSON.stringify([session, document.agent, last?.id]);
   if (last?.id && document.execution === last.id
       && typeof incoming === 'string' && incoming && !seen.has(key)) {
-    frames.push(frame(document.agent, session, incoming));
+    frames.push({from: who, to: session, body: incoming, label: last?.last_message ? 'replied' : 'failed'});
     seen.add(key);
   }
-  frames.push(...noticeFrames(session, document, frame));
-  return frames.map((value) => value.length <= 10000 ? value
-    : value.slice(0, 9800) + '\n… Display truncated; full text remains in the tool input/result.');
+  frames.push(...noticeFrames(session, document));
+  return cut(frames);
+}
+
+function cut(frames) {
+  return frames.map((frame) => frame.body.length <= 10000 ? frame
+    : {...frame, body: frame.body.slice(0, 9800) + '\n\n… Display truncated; full text remains in the tool input/result.'});
+}
+
+// The ui.log fallback where no placed row is drawn: one native row per line.
+function frameLines(frame) {
+  return [`┌ agents · ${frame.from} → ${frame.to}`, ...frame.body.split(/\r?\n/).map((line) => '│ ' + line),
+    ...(frame.facts ? ['│ ' + frame.facts] : []), '└'];
+}
+
+// A placed row: who, then the content drawn as Markdown, like Claude's replies.
+function drawFrames($, e, frames) {
+  const {Box, Text, Markdown} = $.ui.resolve(e);
+  const body = (text) => Markdown ? Markdown({text}) : Text({children: [text]});
+  return Box({flexDirection: 'column', children: frames.map((frame, index) => Box({
+    key: String(index), flexDirection: 'column', marginBottom: index < frames.length - 1 ? 1 : 0, children: [
+      frame.outgoing
+        ? Text({children: [Text({dimColor: true, children: ['agents → ']}), Text({bold: true, children: [frame.to]})]})
+        : Text({children: [Text({bold: true, children: [frame.from]}),
+          Text({dimColor: true, children: [frame.label ? ` · ${frame.label}` : '']})]}),
+      body(frame.body || '(no text)'),
+      ...(frame.facts ? [Text({dimColor: true, children: [frame.facts]})] : []),
+    ]}))});
+}
+
+// Show frames as transcript rows Claude does not read; ui.log where none is drawn.
+async function showFrames($, state, frames) {
+  for (const frame of frames) {
+    let placed = null;
+    const id = `agents-${state.run}-${state.rowCount += 1}`;
+    state.rows.set(id, frame);
+    try { placed = await $.ui.place({id}); } catch { placed = null; }
+    if (placed?.isPlaced) continue;
+    state.rows.delete(id);
+    // Native ui.log is a single-line surface: embedded newlines become
+    // replacement glyphs. Keep the same readable body, one native row each.
+    for (const line of frameLines(frame)) await $.ui.log(line);
+  }
 }
 
 // The Python this copy runs. The plugin copy takes GRAFTLING_PYTHON, else
@@ -216,7 +288,9 @@ function callRequest(event) {
 
 export function register(on) {
   const displayed = new Set();
-  const state = {inert: false, foreignConfig: false, active: 0, pushing: false, inflight: false, stopped: false, pushed: false, pushError: null, ends: []};
+  const state = {inert: false, foreignConfig: false, active: 0, pushing: false, inflight: false, stopped: false, pushed: false, pushError: null, ends: [],
+    // Placed rows this process drew; ``run`` keeps a restarted process's ids new.
+    rows: new Map(), rowCount: 0, run: Date.now().toString(36)};
 
   on('session.start', async ($, event, next) => {
     // One host per project: configuration --write material wins over the plugin.
@@ -266,11 +340,7 @@ export function register(on) {
         const result = await next(event);
         const request = name === 'agents' && event.action === 'execute'
           ? {action: event.feature, ...event.arguments} : {};
-        // Native ui.log is a single-line surface: embedded newlines become
-        // replacement glyphs. Keep the same readable body, one native row each.
-        for (const frame of exchangeFrames(ending.session, request, result, displayed)) {
-          for (const line of frame.split(/\r?\n/)) await $.ui.log(line);
-        }
+        await showFrames($, state, exchangeFrames(ending.session, request, result, displayed));
         return result;
       } catch (error) {
         return {deny: String(error)};
@@ -301,6 +371,22 @@ export function register(on) {
       }
     }).catch(async () => ({decision: 'deny', reason: 'Current native agents association is unavailable.'}));
   }
+
+  // Rows this mod placed: who, and the content as Markdown.
+  on('ui.render', {component: 'Placed'}, async ($, e, next) => {
+    const frame = e.props?.plugin === $.plugin.name ? state.rows.get(e.props?.id) : undefined;
+    return frame ? drawFrames($, e, [frame]) : next(e);
+  });
+
+  // A notice prompt this mod submitted: Claude reads the full text; the user
+  // sees who sent it, the content as Markdown and the facts dim (533).
+  on('ui.render', {component: 'UserMessage'}, async ($, e, next) => {
+    const origin = e.props?.origin;
+    const named = origin && typeof origin === 'object' ? origin.plugin ?? origin.name : undefined;
+    if (state.inert || (typeof named === 'string' && named !== $.plugin.name)) return next(e);
+    const notices = parseNotices(e.props?.text);
+    return notices.length ? drawFrames($, e, notices) : next(e);
+  });
 
   on('session.end', async ($, event, next) => {
     if (state.inert) return next(event);

@@ -401,7 +401,9 @@ Parts for building a host or a consumer on agents (since 0.2.2), also in
 - MCP server parts, the framing of `agents-mcp`: `ConcurrentServer`,
   `ClientGone`, `mcp_serve`, `mcp_respond`, `mcp_result_response`,
   `mcp_error_response`, `mcp_tool_documents`;
-- notices (section 4): `END_EVENTS`, `needs_parent`, `notice_id`;
+- notices (section 4): `END_EVENTS`, `needs_parent`, `notice_id`, and
+  `notice_text(event)`, the Runtime-independent Markdown a Main reads for one
+  notice (section 4, "Notice text");
 - processes and locks: `process_ancestors`, `process_executable`,
   `process_arguments`, and `exclusive_lock(path)`, the lock agents takes on its
   own record files; for an owner that recorded its Runtime's tool descendants
@@ -1432,15 +1434,38 @@ The answer is information for the child. agents itself grants no time or
 scope; the parent does that with its own means (for example `send`, or a new
 `create` with a narrower `workspace` inside its own).
 
+**Notice text.** `notice_text(event)` returns the Markdown a Main reads for one
+notice, the same for every Runtime: `event` holds `alias`, `event`, `message`
+and optionally `execution` and `request`. The first line is the title
+`[Graftling notice from <alias> · <event>[ · execution <execution>]]`. The
+content follows: a plain `message` verbatim (it is Markdown); a `message` that is
+one label line ending in `:` and a JSON object, as an end or a native request
+is, gives its `last_agent_message` and `error` (as `**Error:** …`) verbatim, or,
+without them, the label and its `params` as a JSON block. The last line,
+`Facts: …`, names only what the Main needs to act, each as `<field> \`<value>\``,
+in this order: `execution_id`, `outcome`, `request_id`, `request_token`,
+`method`, `report`, `key`, then `error code`; a plain message with a `request`
+gets `Facts: request \`<request>\``. Every other field (`permissions`, a
+repeated `session`, `terminal_confirmed`, …) is left out of the text and stays
+in the notice record and the child's `status`.
+
 What the parent sees today:
 
 - **Claude Code host:** each notice is `{"id": "<execution>:<event>",
-  "event": {"alias", "event", "message", "execution"}}`; a `request` notice's
+  "event": {"alias", "event", "message", "execution"}, "text"}`; a `request` notice's
   id is `<execution>:request:<request>`. It enables `request_notices`, for
-  children of every Runtime it runs. The host plugin
-  pushes it into the Main Session as `[Graftling notice from <alias> ·
-  <event> · execution <execution>]` followed by the message; otherwise it is attached as
-  `main_notices` to the next `agents` result. An end already shown by `wait`
+  children of every Runtime it runs. `text` is `notice_text()` of the event
+  (below). The host plugin pushes `text` into the Main Session; otherwise the
+  notice is attached as `main_notices` to the next `agents` result.
+  On Claude Code 2.1.314 or later the plugin draws a pushed notice as who sent
+  it and what happened (bold sender, the event in words, such as `needs a
+  permission reply`), the content as Markdown and the facts line dim; Claude
+  still reads the whole `text`. It draws each `agents` exchange the Main makes
+  (`create`, `send`, `resume`, the child's reply and notices on a result) as one
+  transcript row Claude does not read: `agents → <child name>` or `<child
+  name> · <event>`, then the content as Markdown. Where Claude Code draws no
+  such row, each line goes to `$.ui.log` as `┌ agents · <from> → <to>`,
+  `│ <line>`, `└`. Bodies over 10,000 characters are cut for display only. An end already shown by `wait`
   or `status` is not pushed again. It enables `hold_notices`: a notice stays
   held until the plugin acknowledges its submission (`{"operation":
   "acknowledge", "session", "position": 0, "ids"}`) or a result carries it. A

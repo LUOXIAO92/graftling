@@ -19,7 +19,7 @@ from graftling.discovery import handle_request
 from graftling.process import process_ancestors, process_executable
 from graftling.calls import on_discard, stop_requested
 from graftling.mcp import serve, serve_concurrent, respond, tool_documents, result_response, error_response
-from graftling.notices import notice_id
+from graftling.notices import notice_id, notice_text
 from graftling.shutdown import exit_if_owned_unconfirmed, stop_owned
 from .native_host import NativeCalls
 from .driver import ClaudeDriver
@@ -283,8 +283,11 @@ class IndependentCalls(NativeCalls):
         queue = self.queue.setdefault(session, [])
         if all(notice['id'] != identity for notice in queue):
             message = event['body'] or (event.get('error') or {}).get('message') or event['outcome']
-            queue.append({'id': identity, 'event': {'alias': event['agent'], 'event': event['outcome'],
-                                                    'message': message, 'execution': event['execution']}})
+            body = {'alias': event['agent'], 'event': event['outcome'],
+                    'message': message, 'execution': event['execution']}
+            # ``text`` is what the mod submits and draws: the shared notice Markdown (533).
+            queue.append({'id': identity, 'event': body,
+                          'text': notice_text({**body, 'request': event.get('request')})})
 
     def make_call(self, session: str, cwd: Path):
         """Bind only a Session already verified by NativeCalls.context."""

@@ -107,6 +107,7 @@ __getattr__ = _lazy_names({
     "END_EVENTS": ("graftling.notices", "END_EVENTS"),
     "needs_parent": ("graftling.notices", "needs_parent"),
     "notice_id": ("graftling.notices", "notice_id"),
+    "notice_text": ("graftling.notices", "notice_text"),
     # Processes and locks.
     "exclusive_lock": ("graftling.locks", "exclusive"),
     "stop_owned": ("graftling.shutdown", "stop_owned"),
@@ -143,7 +144,7 @@ __all__ = [
     "ENVELOPE_SCHEMA", "handle_request", "validate_envelope", "validate_schema",
     "ClientGone", "ConcurrentServer", "mcp_error_response", "mcp_respond",
     "mcp_result_response", "mcp_serve", "mcp_tool_documents",
-    "END_EVENTS", "needs_parent", "notice_id",
+    "END_EVENTS", "needs_parent", "notice_id", "notice_text",
     "exclusive_lock", "stop_owned", "exit_if_owned_unconfirmed", "process_ancestors", "process_arguments", "process_executable",
     "read_tool_descendants", "stop_tool_processes",
     "RuntimeAdapterError", "RuntimeContext", "RuntimeExecutionResult", "RuntimeTurn",
