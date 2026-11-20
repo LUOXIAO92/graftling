@@ -4,6 +4,7 @@ Node runs the host mod against a stub ``$``; the real screen is checked by hand.
 """
 import json
 from pathlib import Path
+import re
 import subprocess
 
 import graftling
@@ -67,9 +68,8 @@ const sent = flat(await render(host, {component: 'Placed', props: {plugin: 'graf
 assert.equal(sent, `agents → n533<md>${message}</md>`);
 const reply = flat(await render(host, {component: 'Placed', props: {plugin: 'graftling-host', id: placed[1]}}, async () => 'theirs'));
 assert.equal(reply, 'n533 · replied<md>**done**</md>');
-// Another mod's row, or a row of ours this process never placed, is left alone.
-assert.equal(await render(host, {component: 'Placed', props: {plugin: 'other', id: placed[0]}}, async () => 'theirs'), 'theirs');
-assert.equal(await render(host, {component: 'Placed', props: {plugin: 'graftling-host', id: 'x'}}, async () => 'theirs'), 'theirs');
+// A row this process never placed (another mod's) is left alone.
+assert.equal(await render(host, {component: 'Placed', props: {plugin: 'other', id: 'build-status'}}, async () => 'theirs'), 'theirs');
 // The pushed notice: Claude gets the shared text; the user sees who, Markdown, facts.
 const timers = [];
 host.clock.setTimeout = (fn) => timers.push(fn);
@@ -84,9 +84,8 @@ assert.ok(text.startsWith('n533 · completed<md>## Result\n\n- item `x`\n\n> a "
 assert.ok(text.includes('w@e · needs a permission reply<md>Claude requires a native permission reply'), text);
 assert.ok(text.endsWith('execution_id `exec-2` · request_id `req-9` · request_token `tok-7`'), text);
 assert.ok(!text.includes('permissions') && !text.includes('\\n'));
-// The user's own prompt, and another plugin's, are Claude Code's drawing.
+// A prompt without a notice title is Claude Code's drawing.
 assert.equal(await user(host, {component: 'UserMessage', props: {text: 'hello', origin: {kind: 'user'}}}, async () => 'theirs'), 'theirs');
-assert.equal(await user(host, {component: 'UserMessage', props: {text: notice, origin: {plugin: 'other'}}}, async () => 'theirs'), 'theirs');
 console.log('ok');
 '''
 
@@ -99,6 +98,11 @@ def run(scenario: str) -> subprocess.CompletedProcess:
 def test_sent_and_received_messages_are_placed_rows_with_markdown() -> None:
     result = run('placed')
     assert result.returncode == 0, result.stderr
+
+
+def test_mod_reads_no_host_noun_as_a_value() -> None:
+    """Claude Code's validator refuses ``$.noun`` read as a value (``$.plugin.name``); only calls pass."""
+    assert re.findall(r'\$\.[A-Za-z_]+\b(?!\.[A-Za-z_]+\()', MODULE.read_text()) == []
 
 
 def test_without_placed_rows_the_log_fallback_remains() -> None:

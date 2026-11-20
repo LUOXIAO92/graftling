@@ -372,18 +372,19 @@ export function register(on) {
     }).catch(async () => ({decision: 'deny', reason: 'Current native agents association is unavailable.'}));
   }
 
-  // Rows this mod placed: who, and the content as Markdown.
+  // Rows this mod placed: who, and the content as Markdown. The validator
+  // refuses reading the plugin's name as a value, so a row is ours by its id,
+  // which holds this process's start time.
   on('ui.render', {component: 'Placed'}, async ($, e, next) => {
-    const frame = e.props?.plugin === $.plugin.name ? state.rows.get(e.props?.id) : undefined;
+    const frame = state.rows.get(e.props?.id);
     return frame ? drawFrames($, e, [frame]) : next(e);
   });
 
-  // A notice prompt this mod submitted: Claude reads the full text; the user
-  // sees who sent it, the content as Markdown and the facts dim (533).
+  // A notice prompt: Claude reads the full text; the user sees who sent it,
+  // the content as Markdown and the facts dim (533). Any prompt that holds a
+  // notice title is drawn this way; others are Claude Code's drawing.
   on('ui.render', {component: 'UserMessage'}, async ($, e, next) => {
-    const origin = e.props?.origin;
-    const named = origin && typeof origin === 'object' ? origin.plugin ?? origin.name : undefined;
-    if (state.inert || (typeof named === 'string' && named !== $.plugin.name)) return next(e);
+    if (state.inert) return next(e);
     const notices = parseNotices(e.props?.text);
     return notices.length ? drawFrames($, e, notices) : next(e);
   });
