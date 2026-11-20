@@ -36,6 +36,10 @@ The numbers in parentheses are the project's Task numbers.
   customType)` of `graftling/pi/extension.mjs` draws any custom message type whose
   `details` carry `sender`, `event` and `body` that way; `registerAgentDisplay` uses it.
   Compatible: a new export; a message without those details keeps Pi's default drawing.
+- `CodexAppServer.send_host_event(thread_id, event, text=None)` takes an optional `text`, the
+  tool output the Codex host shows and its model reads; without it the output stays the
+  event's JSON, so graftling's own Codex host is unchanged. GraphTraj's interactive Codex Main
+  passes `notice_text(event)` (535). Compatible under section 7: a new optional parameter.
 
 ## 0.6.2 (compatible)
 

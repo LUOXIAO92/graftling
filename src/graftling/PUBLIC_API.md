@@ -475,6 +475,7 @@ underscore methods and attributes stay internal.
 | `CodexManagedExecution` | `session_archive(session)` | the collector for a started Session, or `None` |
 | `CodexManagedExecution` | `uses_review()`, `review_approval(request)` | whether the host judges approvals, and the native response for one |
 | `CodexAppServer` | `call(method, params, *, wait_for_session=False)` | sends one native JSON-RPC request (call it, not replace it) |
+| `CodexAppServer` | `send_host_event(thread_id, event, text=None)` | starts or steers a loaded host thread with tool output `graftling`: `text` when given (GraphTraj passes `notice_text(event)`, 535), else the event's JSON |
 | `PiExecution` | `prepare_launch(address)` | `(argv, environment)` of the launch |
 | `PiExecution` | `provider_domain(source, provider)` | the model's network destination from the catalog in `source` |
 | `PiExecution` | `bind_connection()`, `connection_environment(address)` | a context manager giving the address, and the variables that name it |

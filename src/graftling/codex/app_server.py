@@ -583,18 +583,21 @@ class CodexAppServer:
             self._active.pop(session.thread_id, None)
         return execution
 
-    async def send_host_event(self, thread_id: str, event: dict[str, str]) -> dict:
+    async def send_host_event(self, thread_id: str, event: dict[str, str], text: str | None = None) -> dict:
         """Start or steer an already-loaded host thread with genuine tool output.
 
         The host enforces direct-input and provider checks. No settings, native
         user input, Session creation or resume request accompanies this event.
         The reply acknowledges submission, not the parent's processing.
+        ``text``, when given, is the tool output the host shows and its model
+        reads (for example ``notice_text(event)``); otherwise the event's JSON.
         """
         # Once written, the host may apply it: await its reply while this
         # connection lives, so a late reply never causes a resubmission.
         result = await self._call('turn/start', {
             'threadId': _native_id(thread_id), 'input': [],
-            'toolOutput': {'name': 'graftling', 'output': json.dumps(event, ensure_ascii=False)},
+            'toolOutput': {'name': 'graftling',
+                           'output': json.dumps(event, ensure_ascii=False) if text is None else text},
         }, wait_for_session=True)
         try:
             _native_turn(result.get('turn'))
