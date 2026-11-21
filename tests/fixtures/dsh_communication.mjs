@@ -26,9 +26,9 @@ const session = ctx.sessions.create('receiver', { meta: { cwd: process.cwd() } }
 const inbox = { nextTurn: [], nextStep: [] };
 let deliveries = 0;
 const agent = { inbox, send(message, target, wakeup) {
-  assert.equal(target, 'next-step');
+  assert.equal(target, 'next-turn');   // 545: its own turn, not a later step of a running one
   assert.equal(wakeup, true);
-  inbox.nextStep.push(message);
+  inbox.nextTurn.push(message);
   deliveries += 1;
 } };
 ctx.provide('agents', { get: id => id === session.id ? agent : undefined });
@@ -40,7 +40,7 @@ const peer = { signal: new AbortController().signal, principal: { kind: 'owner' 
 const receive = request => ctx.typertGateway.invoke({ namespace: 'agentMessages', method: 'receive', args: { request }, peer });
 await Promise.all([receive(fact), receive(fact)]);
 assert.equal(deliveries, 1);
-const message = inbox.nextStep.shift();
+const message = inbox.nextTurn.shift();
 session.append('user/message', message, { surfaceOp: 'append' });
 await receive(fact);
 assert.equal(deliveries, 1);

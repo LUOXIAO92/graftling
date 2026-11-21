@@ -135,7 +135,7 @@ class Notices:
 
     Each notice is one stdout line; the plugin hands it to the existing
     ``agentMessages.receive`` relay (an ``agent-message`` in the Session's
-    next-step inbox) and acknowledges it on stdin. Acknowledged as shown is
+    next-turn inbox, so it opens a turn of its own) and acknowledges it on stdin. Acknowledged as shown is
     ``delivered``; written but not acknowledged in time is ``unconfirmed``
     (it may have been admitted, so it is never repeated); unwritable, refused,
     or still waiting at shutdown is ``held``: it stays readable through

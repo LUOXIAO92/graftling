@@ -41,7 +41,9 @@ export function installCommunication(ctx, { TypertRemoteService, Remote, createU
         source: { kind: 'agent-message', form: 'relay', senderSessionId: request.senderSessionId,
           senderAgentId: request.sender, recipientAgentId: request.recipient, communicationId: request.id },
       });
-      agent.send(message, 'next-step', true);
+      // next-turn (545): a running turn's later steps claim only next-step input, so a
+      // reply that arrives mid-turn opens its own turn afterwards and shows as its block.
+      agent.send(message, 'next-turn', true);
       return { accepted: true, duplicate: false };
     }
   }
