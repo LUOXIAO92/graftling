@@ -134,6 +134,8 @@ class ClaudeDriver:
 
         bind_run(turn, run)
         turn.parent_notice = lambda message, details: (run.events.request(details), {'delivery': 'retained'})[1]
+        # Tool entries the child's Claude did not apply reach the parent's status (551).
+        turn.tool_report = lambda check: run.events.process(tool_check=check)
         if self.configure is not None:
             self.configure(turn, run)
         with self.lock:

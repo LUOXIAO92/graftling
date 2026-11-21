@@ -47,6 +47,14 @@ MCP_SERVER = 'graftling'
 # The host answers a PreToolUse hook before its timeout, so nothing depends on what
 # Claude does past it. See PUBLIC_API.md 4.1 for what is known.
 REVIEW_HOOK_MIN_SECONDS = 600
+# Claude Code built-in tool names known to graftling. Advisory only: a deny
+# entry outside it that the child lacks is reported as unconfirmed, never refused,
+# since a newer Claude Code may add tools (551).
+KNOWN_BUILTIN_TOOLS = frozenset({
+    'Agent', 'Task', 'Bash', 'BashOutput', 'KillShell', 'Edit', 'MultiEdit', 'Write', 'Read', 'Glob', 'Grep',
+    'LS', 'NotebookEdit', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite', 'ExitPlanMode', 'SlashCommand',
+    'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool',
+})
 REVIEW_HOOK_MARGIN_SECONDS = 60
 
 
@@ -55,6 +63,8 @@ class ClaudeExecution:
 
     # Optional (message, details) -> receipt replacing the Runner parent notice.
     parent_notice = None
+    # Optional receiver of a non-empty tool_check (551), e.g. the Agent record.
+    tool_report = None
     host_connection = None
     # The variable naming the owner channel when a consumer, not ``bind``, owns it.
     connection_env = CONNECTION_ENV
@@ -499,6 +509,41 @@ class ClaudeExecution:
         if request.get('disallowed_tools'):
             argv += ['--disallowedTools', ','.join(request['disallowed_tools'])]
         return argv
+
+    def tool_check(self, offered: object) -> dict:
+        """Compare the create's tool entries with the child's system-init tools (551).
+
+        Claude Code's built-in set depends on its version, so names cannot be
+        checked before start, and it ignores an unknown ``--tools`` or
+        ``--disallowedTools`` name. Returned, and reported to the parent:
+        ``tools_not_offered`` (an available-set entry the child does not have:
+        unknown, or denied by its settings), ``disallowed_still_offered`` (a
+        deny that did not remove the tool) and ``disallowed_unconfirmed`` (an
+        absent deny entry that is neither a known built-in nor an MCP tool of a
+        server the child has, so it may be a name Claude does not know).
+        Empty when nothing is to report or nothing was chosen.
+        """
+        request = self.request
+        chosen, denied = request.get('tools'), request.get('disallowed_tools') or []
+        if chosen is None and not denied:
+            return {}
+        present = set(offered) if isinstance(offered, list) else set()
+        servers = {name.split('__')[1] for name in present if name.startswith('mcp__') and name.count('__') >= 2}
+        servers.add(self.mcp_server)
+        base = lambda name: name.split('(', 1)[0]
+
+        def known(name: str) -> bool:
+            if name.startswith('mcp__') and name.count('__') >= 2:
+                return name.split('__')[1] in servers
+            return name in KNOWN_BUILTIN_TOOLS
+
+        check = {
+            'tools_not_offered': [name for name in chosen or () if base(name) not in present],
+            'disallowed_still_offered': [name for name in denied if base(name) in present],
+            'disallowed_unconfirmed': [name for name in denied
+                                       if base(name) not in present and not known(base(name))],
+        }
+        return {key: value for key, value in check.items() if value}
 
     def _prepare(self, address: str | None) -> tuple[list[str], dict]:
         """Use native restricted mode and mandatory sandboxing without bypass flags."""
@@ -1029,10 +1074,15 @@ class ClaudeExecution:
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
                                                       'Claude did not register the bound agents SDK function.')
                         self.native_init = event
+                        check = self.tool_check(event.get('tools'))
                         with self.lock:
                             self.diagnostics['system_init'] = native_projection(event)
                             self.diagnostics['system_init']['model'] = model_projection(event.get('model'))
+                            if check:
+                                self.diagnostics['tool_check'] = check
                             self._save_diagnostics()
+                        if check and self.tool_report is not None:
+                            self.tool_report(check)
                         if self.session is not None:
                             observed = yaml_document(self.directory / 'session.yml')
                             observed['native_init'] = event

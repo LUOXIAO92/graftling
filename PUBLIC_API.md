@@ -990,6 +990,18 @@ than run the child with other tools. The choice is recorded as
 beyond the host's settings: what exceeds them goes through the Runtime's own
 approval to the direct parent, and is not granted without it.
 
+"Host settings" means the child's own Runtime configuration on this machine
+(that Runtime's local settings), not the parent's. Tool names are each
+Runtime's native names; there is no cross-Runtime tool model, so the same
+capability has different names: Claude `WebSearch`, Codex `web_search`, MCP
+tools `mcp__<server>__<tool>`, Pi `bash`, DSH its `tool-web` preset rows. An
+entry the child's Runtime does not know is never silently ignored: Codex and
+DSH refuse the create with `unavailable`. Claude's built-in set depends on its
+version, so it is checked after start against the child's system-init tool
+list, and `status` reports `tool_check` with `tools_not_offered`,
+`disallowed_still_offered` and `disallowed_unconfirmed` (a missing deny entry
+that is neither a known built-in nor a tool of one of the child's MCP servers).
+
 - Claude: no flag by default, so Claude Code offers its own default tools
   under the same user, project and managed settings files the host reads;
   their deny rules always win. `tools` -> `--tools`, `disallowed_tools` ->

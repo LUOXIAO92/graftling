@@ -391,10 +391,11 @@ class ExecutionEvents:
         ``tool_marker`` is the execution's ``GRAFTLING_MEMBER_RUN`` value; tool
         processes that left the Runtime's group carry it (457).
         ``tool_descendants`` is the absolute path of the owner's record of the
-        Runtime's descendants (459).
+        Runtime's descendants (459). ``tool_check`` lists create tool entries
+        the native Runtime did not apply as asked (551); ``status`` shows it.
         """
         allowed = {"worker_pid", "runtime_pid", "owned_at", "runtime_exit", "tool_marker",
-                   "tool_descendants"}
+                   "tool_descendants", "tool_check"}
         if set(facts) - allowed:
             raise ValueError("unknown process fact")
         self._apply(lambda record, current: current["process"].update(facts))
@@ -2329,6 +2330,11 @@ class AgentControl:
             "host":    record["host"],
             "session": record["session"],
         }
+        # The latest execution's report of tool entries its Runtime did not apply (551).
+        checked = [execution["process"]["tool_check"] for execution in record["executions"]
+                   if execution.get("process", {}).get("tool_check")]
+        if checked:
+            document["tool_check"] = deepcopy(checked[-1])
         if current is not None:
             document["execution"] = current["id"]
             if current.get("stop_requested_at") is not None:

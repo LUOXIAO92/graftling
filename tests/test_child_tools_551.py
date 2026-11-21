@@ -122,3 +122,29 @@ def test_create_passes_tools_or_refuses_a_driver_without_them(tmp_path: Path) ->
     driver.received = 'untouched'
     new({'action': 'create', 'runtime': 'claude', 'instruction': 'x'})
     assert driver.received is None
+
+
+def test_claude_reports_tool_entries_it_did_not_apply(tmp_path: Path) -> None:
+    """Unknown or unapplied entries are reported after start against system init, never ignored."""
+    execution = _claude(tmp_path, tools=['Read', 'NoSuchTool'],
+                        disallowed_tools=['WebFetch', 'NoSuchDeny', 'Bash(rm:*)', 'mcp__graftling__x', 'mcp__nosuch__y'])
+    offered = ['Read', 'WebFetch', 'mcp__graftling__agents']
+    assert execution.tool_check(offered) == {
+        'tools_not_offered': ['NoSuchTool'],
+        'disallowed_still_offered': ['WebFetch'],
+        'disallowed_unconfirmed': ['NoSuchDeny', 'mcp__nosuch__y'],
+    }
+    assert _claude(tmp_path, tools=['Read'], disallowed_tools=['Bash']).tool_check(['Read']) == {}
+    assert _claude(tmp_path).tool_check(['Read']) == {}
+
+
+def test_tool_check_reaches_the_parent_status(tmp_path: Path) -> None:
+    """A reported tool_check is an execution fact that status shows."""
+    from graftling.control import AgentControl as Control
+
+    control = Control(tmp_path / 'agents', {})
+    record = {'agent': 'agent-x', 'name': 'x', 'runtime': 'claude', 'parent': None, 'creator': {}, 'host': 'h',
+              'session': None, 'retired_at': None, 'selection': {}, 'executions': [
+                  {'id': 'e1', 'state': 'running', 'requests': [],
+                   'process': {'tool_check': {'tools_not_offered': ['NoSuchTool']}}}]}
+    assert control._document(record)['tool_check'] == {'tools_not_offered': ['NoSuchTool']}
