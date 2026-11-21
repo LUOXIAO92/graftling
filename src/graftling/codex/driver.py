@@ -211,7 +211,9 @@ class CodexDriver:
         try:
             return turn.operate({**request, 'session': turn.session, 'execution_id': turn.execution_id})
         except RuntimeAdapterError as error:
-            raise AgentsError(error.code, error.message) from error
+            refused = AgentsError(error.code, error.message)
+            refused.finishing = error.finishing
+            raise refused from error
 
     def deliver(self, run: Run, message: str) -> None:
         """Deliver ordinary text into the active native turn."""

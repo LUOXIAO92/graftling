@@ -258,6 +258,113 @@ def test_unknown_delivery_is_recorded_and_not_resent(root: Path) -> None:
     driver.release(created['execution'])
 
 
+class FinishingDriver(ScriptedDriver):
+    """The Runtime closed input at the turn end but has not reported the end yet (546).
+
+    A send to the first execution is refused with ``runtime-input-closed``; the
+    end is reported ``finish_after`` seconds later, as a closing archive would.
+    """
+
+    finish_after = 0.3
+    finishing = True
+
+    def deliver(self, run, message):
+        """Refuse like Claude/Codex/DSH in their closing window, then finish."""
+        if run.execution == self.started_executions[0]:
+            self.deliveries += 1
+            if self.finish_after is not None:
+                threading.Timer(self.finish_after, self.release, args=(run.execution,)).start()
+            refused = AgentsError('runtime-input-closed', 'Claude finished accepting input for this execution.')
+            if self.finishing is not None:      # None: no fact, as GraphTraj's _native_error raises it
+                refused.finishing = self.finishing
+            raise refused
+        super().deliver(run, message)
+
+    def start(self, run):
+        """Remember execution order."""
+        self.__dict__.setdefault('started_executions', []).append(run.execution)
+        super().start(run)
+
+
+def test_send_while_the_execution_finishes_goes_to_the_next_execution(root: Path) -> None:
+    """546: create then send at the turn end is not refused; it continues the same Session."""
+    driver  = FinishingDriver()
+    control = AgentControl(root, {'scripted': driver})
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    agent, first = created['agent'], created['execution']
+    sent, failed = call(control, main, action='send', agent=agent, message='Now say bye.')
+    assert not failed, sent
+    delivery = sent['result']['delivery']
+    assert delivery['delivery'] == 'next-execution' and delivery['closed_execution'] == first
+    assert delivery['execution'] == sent['execution'] != first and sent['session'] == created['session']
+    assert sent['result']['state'] == 'active' and driver.deliveries == 1
+
+    record = json.loads((root / 'control/agents' / f'{agent}.json').read_text())
+    closed = record['executions'][0]['inputs'][0]
+    assert closed['delivery'] == 'next-execution' and closed['execution'] == sent['execution']
+    assert closed['error']['code'] == 'runtime-input-closed'
+    driver.release(sent['execution'])
+    waited, _ = call(control, main, action='wait', agent=agent, timeout_seconds=5)
+    assert waited['result']['last_result']['last_message'] == 'Now say bye.'
+
+
+def test_a_refusal_without_a_finishing_fact_goes_to_the_next_execution(root: Path) -> None:
+    """546 round 2: a host that drops the fact (plain AgentsError) still gets the closing window handled."""
+    driver  = FinishingDriver()
+    driver.finishing = None
+    control = AgentControl(root, {'scripted': driver})
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    sent, failed = call(control, main, action='send', agent=created['agent'], message='Now say bye.')
+    assert not failed, sent
+    delivery = sent['result']['delivery']
+    assert delivery['delivery'] == 'next-execution' and delivery['closed_execution'] == created['execution']
+    driver.release(sent['execution'])
+
+
+def test_send_refused_by_an_execution_that_never_ends_stays_refused(root: Path) -> None:
+    """546: the next-execution fallback is bounded; a stuck end keeps the native refusal."""
+    driver  = FinishingDriver()
+    driver.finish_after = 30
+    control = AgentControl(root, {'scripted': driver})
+    control.input_closed_wait_seconds = 0.2
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    sent, failed = call(control, main, action='send', agent=created['agent'], message='later')
+    assert failed and sent['error']['code'] == 'runtime-input-closed'
+    assert 'send again once it is in standby' in sent['error']['message']
+    driver.release(created['execution'])
+
+
+@pytest.mark.parametrize('case', ['request-pending', 'not-finishing'])
+def test_a_refusal_of_an_execution_that_is_not_finishing_returns_at_once_rejected(root: Path, case: str) -> None:
+    """546 round 2: only a finishing execution with nothing unanswered is waited for; others refuse as before."""
+    driver  = FinishingDriver()
+    driver.finish_after = None          # the execution would never end by itself
+    driver.finishing = case != 'not-finishing'
+    control = AgentControl(root, {'scripted': driver})
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    agent = created['agent']
+    if case == 'request-pending':
+        ExecutionEvents(control, agent, created['execution']).request(
+            {'request_token': 'token-1', 'method': 'native/approve'})
+    started = time.monotonic()
+    sent, failed = call(control, main, action='send', agent=agent, message='late')
+    assert time.monotonic() - started < 1
+    assert failed and sent['error'] == {'code': 'runtime-input-closed',
+                                        'message': 'Claude finished accepting input for this execution.'}
+    record = json.loads((root / 'control/agents' / f'{agent}.json').read_text())
+    [receipt] = record['executions'][-1]['inputs']
+    assert receipt['delivery'] == 'rejected' and receipt['error'] == sent['error']
+    driver.release(created['execution'])
+
+
 def test_native_requests_reply_once_and_reject_stale_executions(root: Path) -> None:
     """A repeated reply returns the first receipt without a second native reply."""
     driver  = ScriptedDriver()

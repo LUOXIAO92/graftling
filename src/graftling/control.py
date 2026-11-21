@@ -78,6 +78,7 @@ STANDBY = "standby"
 
 # Polling interval of a finite wait; records are replaced atomically.
 WAIT_INTERVAL_SECONDS = 0.05
+INPUT_CLOSED_WAIT_SECONDS = 60.0
 # How long one interrupt_owned call waits for its attempts before answering.
 INTERRUPT_SECONDS = 1.0
 
@@ -662,6 +663,8 @@ class AgentControl:
         session_reads: Callable[[Caller, dict | None], bool] | None = None,
     ) -> None:
         """Bind the data root and the available Runtime drivers."""
+        # How long a send refused at a turn end waits for that end (546).
+        self.input_closed_wait_seconds = INPUT_CLOSED_WAIT_SECONDS
         self.root    = Path(root)
         self.drivers = dict(drivers)
         self._held   = threading.local()
@@ -995,15 +998,63 @@ class AgentControl:
                 driver.require_available(settings)
 
     def send(self, agent: str, message: str, binding: Binding) -> Outcome:
-        """Deliver to the running execution, or continue the Session in standby."""
+        """Deliver to the running execution, or continue the Session in standby.
+
+        A Runtime that already closed input at its turn end but has not
+        reported the end yet refuses with ``runtime-input-closed`` (546). The
+        message then waits, at most ``input_closed_wait_seconds``, for that end
+        and goes to the next execution of the same Session; the result's
+        ``delivery`` says so (``next-execution``, ``closed_execution``,
+        ``execution``). The refused receipt on the closed execution records the
+        same.
+        """
+        run = None
         with self._locked(agent) as record:
             self._require_control(record, binding.caller)
             current = _running(record)
             if current is None:
                 run = self._begin(record, "send", message, binding)
             else:
-                return self._deliver(record, current, message)
+                try:
+                    return self._deliver(record, current, message)
+                except AgentsError as error:
+                    # Wait only with nothing unanswered, no stop requested, and a
+                    # finishing fact that is not explicitly False: a Runtime that
+                    # reports it (graftling drivers) says False while its turn still
+                    # runs; a host that drops it (GraphTraj's AdapterDriver) leaves
+                    # it unknown. Any other refusal stays prompt.
+                    if (error.code != "runtime-input-closed" or current.get("stop_requested_at") is not None
+                            or getattr(error, "finishing", None) is False or _unanswered(current)):
+                        raise
+                    closed, refusal = current["id"], error
+        if run is None:
+            return self._send_after_close(agent, message, binding, closed, refusal)
         return self._launch(run)
+
+    def _send_after_close(self, agent: str, message: str, binding: Binding,
+                          closed: str, refusal: AgentsError) -> Outcome:
+        """Send once the execution that closed input has ended; never into that one again."""
+        deadline = time.monotonic() + self.input_closed_wait_seconds
+        while True:
+            with self._locked(agent) as record:
+                current = _running(record)
+                if current is None or current["id"] != closed:
+                    break
+            if time.monotonic() >= deadline:
+                raise AgentsError(refusal.code, f"{refusal.message} It is still finishing; "
+                                                "send again once it is in standby.")
+            pause(WAIT_INTERVAL_SECONDS)
+        outcome = self.send(agent, message, binding)
+        with self._locked(agent) as record:
+            ended = next(item for item in record["executions"] if item["id"] == closed)
+            receipt = next(item for item in reversed(ended["inputs"])
+                           if item.get("error", {}).get("code") == refusal.code)
+            receipt.update(delivery="next-execution", execution=outcome.execution)
+            delivery = {"at": receipt["at"], "delivery": "next-execution", "closed_execution": closed,
+                        "execution": outcome.execution}
+            if "delivery" in outcome.result:  # it entered an execution another caller started meanwhile
+                delivery["receipt"] = outcome.result["delivery"]
+        return replace(outcome, result={**outcome.result, "delivery": delivery})
 
     def _deliver(self, record: dict, current: dict, message: str) -> Outcome:
         """Send input into the running execution under the held lock.

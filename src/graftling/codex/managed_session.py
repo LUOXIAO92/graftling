@@ -515,7 +515,8 @@ class CodexManagedExecution:
         if request.get('operation') == 'requests' and self.outcome is not None:
             return {'requests': []}
         if request.get('operation') == 'send' and self.outcome is not None:
-            raise RuntimeAdapterError('runtime-input-closed', 'The execution has stopped accepting input.')
+            # The outcome is set: the turn ended and only its end report remains (546).
+            raise RuntimeAdapterError('runtime-input-closed', 'The execution has stopped accepting input.', finishing=True)
         if self.outcome is not None or self.loop is None or self.loop.is_closed():
             raise RuntimeAdapterError('operation-failed', 'The execution is no longer active.')
         try:
