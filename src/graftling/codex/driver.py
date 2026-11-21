@@ -63,7 +63,9 @@ def apply_tools(config: dict, tools: Mapping[str, Any]) -> None:
     tools ``mcp__<server>__<tool>`` (per-server ``enabled_tools`` and
     ``disabled_tools``); any other name is refused, since Codex has no native
     switch for one built-in tool (shell, apply_patch, ...), which stay as
-    captured. Narrowing applies directly. Enabling web search that the
+    captured. An MCP tool of a server the captured config does not define is
+    refused too: Codex rejects a server entry without a transport. Every
+    refusal happens before anything is written. Narrowing applies directly. Enabling web search that the
     captured host config disables has no Codex approval route, so it is
     refused with ``authorization-required`` instead of being granted.
     """
@@ -74,15 +76,21 @@ def apply_tools(config: dict, tools: Mapping[str, Any]) -> None:
     if unknown:
         raise AgentsError('unavailable', f'Codex has no native per-tool switch for {sorted(set(unknown))}; '
                                          'it can allow or deny only web_search and mcp__<server>__<tool>.')
+    servers = config.get('mcp_servers') or {}
+    absent = sorted({server for server, _ in mcp.values() if not isinstance(servers.get(server), dict)})
+    if absent:
+        # Codex rejects a server entry without a transport ('invalid transport'),
+        # so a tool filter is written only beside a server the captured config defines.
+        raise AgentsError('unavailable', f'MCP servers {absent} are not in the captured Codex settings, so '
+                                         'their tools cannot be allowed or denied for this child.')
     if 'web_search' in denied or (allowed is not None and 'web_search' not in allowed):
         config['web_search'] = 'disabled'
     elif allowed is not None and config.get('web_search') == 'disabled':
         raise AgentsError('authorization-required',
                           'web_search is disabled in the host Codex settings; Codex offers no approval to enable '
                           'it for a child, so it was not granted.')
-    servers = config.setdefault('mcp_servers', {})
     for name, (server, tool) in mcp.items():
-        entry = servers.setdefault(server, {})
+        entry = servers[server]
         key = 'disabled_tools' if name in denied else 'enabled_tools'
         entry[key] = list(dict.fromkeys([*entry.get(key, ()), tool]))
 

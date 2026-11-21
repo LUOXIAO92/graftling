@@ -994,7 +994,9 @@ approval to the direct parent, and is not granted without it.
   `web_search` (config `web_search = "disabled"`) and MCP tools
   `mcp__<server>__<tool>` (per-server `enabled_tools`/`disabled_tools`); any
   other name (shell, apply_patch, ...) fails `unavailable` naming it, because
-  Codex has no native switch for one built-in tool. Asking for `web_search`
+  Codex has no native switch for one built-in tool. An MCP tool whose server
+  the captured settings do not define also fails `unavailable`, since Codex
+  rejects a server entry without a transport. Asking for `web_search`
   when the captured host config disables it fails `authorization-required`:
   Codex offers no approval to enable it for a child.
 

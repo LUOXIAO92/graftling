@@ -52,10 +52,20 @@ def test_codex_narrows_what_it_can_express() -> None:
     apply_tools(config, {'tools': None, 'disallowed_tools': ['web_search', 'mcp__docs__write']})
     assert config['web_search'] == 'disabled'
     assert config['mcp_servers']['docs'] == {'command': 'x', 'disabled_tools': ['write']}
-    config = {}
+    config = {'mcp_servers': {'docs': {'command': 'x'}}}
     apply_tools(config, {'tools': ['mcp__docs__read'], 'disallowed_tools': []})
     assert config['web_search'] == 'disabled'
-    assert config['mcp_servers']['docs'] == {'enabled_tools': ['read']}
+    assert config['mcp_servers']['docs'] == {'command': 'x', 'enabled_tools': ['read']}
+
+
+def test_codex_refuses_tools_of_a_server_it_does_not_define() -> None:
+    """Codex rejects a transport-less server entry, so nothing is written and the create is refused."""
+    for config in ({}, {'mcp_servers': {'other': {'command': 'x'}}}):
+        before = {key: dict(value) for key, value in config.items()}
+        with pytest.raises(AgentsError) as refused:
+            apply_tools(config, {'tools': None, 'disallowed_tools': ['web_search', 'mcp__docs__write']})
+        assert refused.value.code == 'unavailable' and 'docs' in refused.value.message
+        assert config == before
 
 
 def test_codex_refuses_what_it_cannot_express_or_authorize() -> None:
