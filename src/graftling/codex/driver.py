@@ -56,8 +56,20 @@ def _select(settings: dict, parameters: dict, selection: Mapping[str, Any]) -> N
         parameters['approvalsReviewer'] = config['approvals_reviewer'] = 'user'
 
 
-def apply_tools(config: dict, tools: Mapping[str, Any]) -> None:
+def owner_tools_kept(pairs: Sequence[ExtraTool], disallowed: Sequence[str] | None, server: str) -> list:
+    """Return the owner's extra tools minus those a create disallowed, bare or as ``mcp__<server>__<name>``."""
+    denied = set(disallowed or ())
+    return [(descriptor, callback) for descriptor, callback in pairs
+            if descriptor.get('name') not in denied and f"mcp__{server}__{descriptor.get('name')}" not in denied]
+
+
+def apply_tools(config: dict, tools: Mapping[str, Any], *, own_server: str | None = None,
+                own_tools: Sequence[str] = ()) -> None:
     """Apply a create's tool choice (551) to captured Codex config in place.
+
+    Names of the owner's own tools (``own_tools``, or any ``mcp__<own_server>__*``)
+    are left out here: the driver drops a disallowed one from the child's
+    extra tools (:func:`owner_tools_kept`), so the child runs without it.
 
     Codex can express only ``web_search`` (config ``web_search``) and MCP
     tools ``mcp__<server>__<tool>`` (per-server ``enabled_tools`` and
@@ -69,7 +81,10 @@ def apply_tools(config: dict, tools: Mapping[str, Any]) -> None:
     captured host config disables has no Codex approval route, so it is
     refused with ``authorization-required`` instead of being granted.
     """
-    allowed, denied = tools.get('tools'), list(tools.get('disallowed_tools') or ())
+    own = (lambda name: name in own_tools
+           or (own_server is not None and name.startswith(f'mcp__{own_server}__')))
+    allowed = None if tools.get('tools') is None else [name for name in tools['tools'] if not own(name)]
+    denied = [name for name in tools.get('disallowed_tools') or () if not own(name)]
     named = [*(allowed or ()), *denied]
     mcp = {name: name[5:].split('__', 1) for name in named if name.startswith('mcp__') and name.count('__') >= 2}
     unknown = [name for name in named if name != 'web_search' and name not in mcp]
@@ -168,7 +183,9 @@ class CodexDriver:
             if selection is not None:
                 _select(settings, parameters, selection)
             if tools is not None:
-                apply_tools(config, tools)
+                apply_tools(config, tools, own_server=self.execution.mcp_server)
+                # The driver drops a disallowed owner tool at start (owner_tools_kept).
+                settings['disallowed_tools'] = list(tools.get('disallowed_tools') or ())
             settings['adapter_request'] = request
             settings.setdefault('evidence', {})
         except (KeyError, RuntimeAdapterError) as error:
@@ -202,7 +219,9 @@ class CodexDriver:
         if run.settings.get('review') is not None:
             options.update(review=run.settings['review'])
         if self.extra_tools is not None:
-            options.update(extra_tools=self.extra_tools(run))
+            # An explicit disallow removes the owner's tool; the child runs without it (551).
+            options.update(extra_tools=owner_tools_kept(self.extra_tools(run), run.settings.get('disallowed_tools'),
+                                                        self.execution.mcp_server))
         request = dict(run.settings['adapter_request'])
         if run.settings.get('pass_env'):
             request['pass_env'] = run.settings['pass_env']

@@ -101,3 +101,48 @@ def test_codex_child_host_tools_need_no_approval(tmp_path: Path, native_settings
     finally:
         for owned in control.interrupt_owned():
             call({'action': 'wait', 'agent': owned, 'timeout_seconds': 10})
+
+
+def _codex_entry(tmp_path: Path, native_settings: dict, **create: object) -> dict:
+    """Create one Codex child with the owner's tasks tool and return its server entry."""
+    driver = CodexDriver(native_settings, execution=_Named,
+                         extra_tools=lambda run: [(DESCRIPTOR, lambda arguments: AgentsResult({}))])
+    control = AgentControl(tmp_path / 'agents', {'codex': driver})
+    call = bind(control, Caller('controlled-host', 'actual-parent', 'parent-session', 'codex'))
+    try:
+        created = call({'action': 'create', 'runtime': 'codex', 'instruction': 'configuration', **create})
+        assert not created.failed, created.document
+        done = call({'action': 'wait', 'agent': created.document['agent'], 'timeout_seconds': 10}).document
+        return json.loads(done['result']['last_result']['last_message'])['config']['mcp_servers']['host_name']
+    finally:
+        for owned in control.interrupt_owned():
+            call({'action': 'wait', 'agent': owned, 'timeout_seconds': 10})
+
+
+def test_codex_disallowed_owner_tool_is_dropped_not_refused(tmp_path: Path, native_settings: dict) -> None:
+    """Disallowing the owner's own tool by its native name starts the child without it."""
+    entry = _codex_entry(tmp_path, native_settings, disallowed_tools=['mcp__host_name__tasks'])
+    assert 'GRAFTLING_EXTRA_TOOLS' not in entry['env'] and 'tools' not in entry
+    assert entry['args'] == ['-m', 'graftling.mcp']
+
+
+def test_codex_tool_choice_keeps_the_owner_server(tmp_path: Path, native_settings: dict) -> None:
+    """An available-tools choice never removes the owner's agents/tasks entry."""
+    entry = _codex_entry(tmp_path, native_settings, tools=['mcp__host_name__agents'])
+    assert json.loads(entry['env']['GRAFTLING_EXTRA_TOOLS']) == [DESCRIPTOR]
+    assert entry['tools'] == {'tasks': {'approval_mode': 'approve'}}
+    assert 'enabled_tools' not in entry
+
+
+def test_codex_unknown_server_is_still_refused() -> None:
+    """A server that is neither captured nor the owner's keeps the unavailable refusal."""
+    from graftling import AgentsError
+    from graftling.codex.driver import apply_tools
+
+    with pytest.raises(AgentsError) as refused:
+        apply_tools({}, {'tools': None, 'disallowed_tools': ['mcp__docs__write']}, own_server='host_name')
+    assert refused.value.code == 'unavailable'
+    config: dict = {}
+    apply_tools(config, {'tools': None, 'disallowed_tools': ['mcp__host_name__tasks', 'tasks']},
+                own_server='host_name', own_tools=('tasks',))
+    assert config == {}

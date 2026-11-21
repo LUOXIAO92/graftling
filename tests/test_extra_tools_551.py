@@ -206,3 +206,21 @@ def test_claude_disallowed_host_tool_is_not_offered(tmp_path: Path, denied: str)
     assert execution.exempt_tools == []
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
     assert [tool['name'] for tool in listed['result']['tools']] == ['agents']
+
+
+@pytest.mark.parametrize('chosen', [['Read'], ['Read', 'WebSearch']])
+def test_claude_tool_choice_keeps_agents_and_host_tools(tmp_path: Path, chosen: list) -> None:
+    """--tools names built-ins only; the in-process agents and host tools stay listed and exempt.
+
+    Claude's --tools limits its built-in set; the in-process SDK server's tools
+    are registered separately (before 551 every child ran with a fixed --tools
+    list and its startup check required mcp__<server>__agents in system init).
+    """
+    execution, replies = _claude(tmp_path)
+    execution.request.update(tools=chosen, disallowed_tools=[])
+    execution.configure_independent(archive=None, agents_callback=lambda request: AgentsResult({}),
+                                    extra_tools=[(DESCRIPTOR, lambda arguments: AgentsResult({}))])
+    assert execution.tool_arguments() == ['--tools', ','.join(chosen)]
+    listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
+    assert [tool['name'] for tool in listed['result']['tools']] == ['agents', 'tasks']
+    assert execution.exempt_tools == [f'mcp__{execution.mcp_server}__tasks']
