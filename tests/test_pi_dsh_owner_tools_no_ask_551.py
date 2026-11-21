@@ -116,3 +116,54 @@ def test_pi_disallowed_owner_tool_is_excluded_natively(tmp_path: Path) -> None:
     """Pi's own --exclude-tools removes MCP tools too, so a denied tasks is not offered."""
     assert tool_arguments({'disallowed_tools': ['mcp__graphtraj__tasks']}, tmp_path) == (
         ['--exclude-tools', 'mcp__graphtraj__tasks'], [])
+
+
+OWNED = ['mcp__graphtraj__agents', 'mcp__graphtraj__tasks']
+
+
+def test_pi_available_set_keeps_the_owners_entries(tmp_path: Path) -> None:
+    """Main's AU pi run: `--tools read,grep` declared no MCP tool. The owner's entries are always named."""
+    assert tool_arguments({'tools': ['read', 'grep']}, tmp_path, OWNED)[0] == [
+        '--tools', 'read,grep,mcp__graphtraj__agents,mcp__graphtraj__tasks']
+    argv, _ = tool_arguments({'tools': ['read', 'grep'], 'disallowed_tools': ['mcp__graphtraj__tasks']}, tmp_path, OWNED)
+    assert argv == ['--tools', 'read,grep,mcp__graphtraj__agents', '--exclude-tools', 'mcp__graphtraj__tasks']
+    # +/- entries change Pi's defaults and keep MCP tools; plain and +/- cannot be mixed, so nothing is added.
+    assert tool_arguments({'tools': ['+grep']}, tmp_path, OWNED)[0] == ['--tools', '+grep']
+    assert tool_arguments({}, tmp_path, OWNED)[0] == []
+
+
+def test_pi_launch_names_the_owner_entries_in_its_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The launch passes the child's server name and declared extra tools to tool_arguments."""
+    from graftling.pi import execution as pi_execution
+
+    # prepare_launch needs a full Pi install to run; the call site's argument is checked in its source.
+    import inspect
+
+    source = inspect.getsource(pi_execution.PiExecution.prepare_launch)
+    assert "f'mcp__{self.mcp_server}__agents'" in source
+    assert "f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools" in source
+    assert 'tool_arguments(request, source, owned)' in source
+
+
+def test_dsh_tool_rows_never_touch_the_owner_mcp_row(tmp_path: Path, dsh: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A `tools` row selection disables preset tool rows only; the agents-mcp row serving agents/tasks stays."""
+    import shutil
+    import yaml
+
+    installed = shutil.which('dsh')
+    if installed is None:
+        pytest.skip('Installed DSH is required for its own preset.')
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'fake-551-key')
+    settings = prepare({**dsh, 'executable': installed}, tmp_path)
+    execution.apply_tools(settings, {'tools': ['tool-fs'], 'disallowed_tools': []})
+    turn = execution.DshExecution({**settings, 'mcp': {'command': '/fake/python', 'args': ['-I', '-m', 'graftling.mcp']}},
+                                  'unused', tmp_path, lambda *_: None, lambda *_: None, tmp_path / 'trace.jsonl', None)
+    turn.extra_tools = {'tasks': (TASKS, lambda arguments: AgentsResult({}))}
+    patch = Path(turn.prepare_launch()['DSH_HOME']) / 'profiles/web/cordis.patch.yml'
+    rows = yaml.load(patch.read_text(), Loader=execution._PatchLoader)
+    mcp = [entry for item in rows for entry in item.get('insert', []) if entry.get('id') == 'agents-mcp']
+    assert len(mcp) == 1 and 'disabled' not in mcp[0]
+    preset = next(item for item in rows if item.get('id') == 'preset-standard')
+    disabled = {row['id'] for row in execution._tool_rows(preset['config']['plugins']) if row.get('disabled') is True}
+    assert 'tool-fs' not in disabled and 'tool-web' in disabled
+    assert not any(row.get('id') == 'agents-mcp' for row in execution._tool_rows(preset['config']['plugins']))

@@ -80,16 +80,24 @@ def host_default_tools(agent_dir: Path) -> set[str]:
     return enabled
 
 
-def tool_arguments(request: Mapping[str, Any], agent_dir: Path) -> tuple[list[str], list[str]]:
+def tool_arguments(request: Mapping[str, Any], agent_dir: Path,
+                   owner_tools: Iterable[str] = ()) -> tuple[list[str], list[str]]:
     """Return Pi's native flags for the child's tool choice (551) and the built-ins beyond the host's.
 
-    ``tools`` is Pi's ``--tools`` allowlist (MCP tools stay unless an entry
-    starts with ``mcp__``; ``+name``/``-name`` entries change the defaults),
-    ``disallowed_tools`` its ``--exclude-tools``. Without either nothing is
-    passed and Pi keeps the host's own settings. A requested built-in that
-    the host's settings do not enable is returned for the parent's approval.
+    ``tools`` is Pi's ``--tools`` allowlist (``+name``/``-name`` entries
+    change the defaults instead), ``disallowed_tools`` its ``--exclude-tools``.
+    Without either nothing is passed and Pi keeps the host's own settings. A
+    plain-name allowlist declares no MCP tool it does not name (Pi docs/cli.md;
+    Main's AU pi run: `--tools read,grep` left the child no agents or tasks),
+    so it also names ``owner_tools``, the owner's own MCP entries
+    (``mcp__<server>__agents`` and each declared extra tool), minus any that
+    ``disallowed_tools`` names: the available set narrows host tools and never
+    drops the owner's entries. A requested built-in that the host's settings
+    do not enable is returned for the parent's approval.
     """
     tools, denied = request.get('tools'), list(request.get('disallowed_tools') or ())
+    if tools is not None and not all(item[:1] in '+-' for item in tools):
+        tools = list(dict.fromkeys([*tools, *(name for name in owner_tools if name not in denied)]))
     argv = (['--tools', ','.join(tools)] if tools is not None else []) + \
            (['--exclude-tools', ','.join(denied)] if denied else [])
     host = host_default_tools(agent_dir)
@@ -439,7 +447,10 @@ class PiExecution:
         if request.get('reasoning_effort'):
             argv += ['--thinking', request['reasoning_effort']]
         # 551: the child's tool choice; a built-in beyond the host's settings waits for its parent's allow.
-        tool_argv, beyond = tool_arguments(request, source)
+        # The owner's own MCP entries exist only where the extension registers the child's server.
+        owned = ([f'mcp__{self.mcp_server}__agents', *(f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools)]
+                 if self.independent and address is not None else [])
+        tool_argv, beyond = tool_arguments(request, source, owned)
         if beyond and not (self.independent and address is not None):
             raise RuntimeAdapterError('authorization-required',
                                       f'Pi tools {beyond} are beyond the host settings and no parent can allow them.')
