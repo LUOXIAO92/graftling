@@ -108,8 +108,16 @@ class AckLost(RuntimeAdapterError):
     """Pi got a command and did not acknowledge it, so it may have acted on it."""
 
 
+# The MCP server name the child's extension registers agents under: the model
+# sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+MCP_SERVER = 'graftling'
+
+
 class PiExecution:
     """Keep native identity, input and queue-aware stopping on one owned pipe."""
+
+    # The independent child's MCP server name (GRAFTLING_MCP_SERVER for the extension).
+    mcp_server = MCP_SERVER
 
     def __init__(
         self,
@@ -500,10 +508,15 @@ class PiExecution:
         )
 
     def connection_environment(self, address: str) -> dict:
-        """Name the existing connection, and any extra tools' descriptors, for the extension's MCP client."""
+        """Name the existing connection, its MCP server name and any extra tools' descriptors.
+
+        The extension registers the child's MCP server under ``mcp_server``
+        (``GRAFTLING_MCP_SERVER``), so its tools are ``mcp__<mcp_server>__*``.
+        """
         from graftling.extra_tools import descriptor_environment
 
         return {'GRAFTLING_CONNECTION': address, 'GRAFTLING_PYTHON': sys.executable,
+                **({'GRAFTLING_MCP_SERVER': self.mcp_server} if self.mcp_server != MCP_SERVER else {}),
                 **descriptor_environment(self.extra_tools)}
 
     def archive_collector(self, header: dict, native: dict):

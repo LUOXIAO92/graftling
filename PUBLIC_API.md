@@ -545,6 +545,16 @@ extra_tools=factory)` with `factory(run)` returning the pairs for that Agent's
 child. The owner lists them to the child's `python -m graftling.mcp` in
 `GRAFTLING_EXTRA_TOOLS` (JSON descriptors). Without extra tools nothing changes.
 
+**The child's server name (551).** `ClaudeExecution`, `CodexManagedExecution`,
+`DshExecution` and `PiExecution` declare `mcp_server` (default `graftling`): the
+name an independent child's MCP server is registered under, so the child sees
+`mcp__<mcp_server>__agents` and its extra tools likewise. A consumer subclass
+sets its own. Pi passes it to the child's extension as `GRAFTLING_MCP_SERVER`
+(only when it is not the default; `childServer(environment)` in
+`pi/extension.mjs` reads it, falling back to `graftling` for a malformed name).
+Codex writes the owner's whole entry under that name, replacing a captured
+server entry of the same name.
+
 **`AgentControl` methods.** Besides `operate` (`bind`'s entry) a host may call
 `create`, `send`, `resume`, `interrupt`, `wait`, `requests`, `reply`,
 `ask_parent`, `retire`, `select`, `require_connections`, `hierarchy`,

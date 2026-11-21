@@ -358,10 +358,17 @@ export function registerToolConfirm(pi, environment = process.env) {
   return true;
 }
 
+/** The server name the owner chose for this child (GRAFTLING_MCP_SERVER), else graftling's. */
+export function childServer(environment = process.env) {
+  const name = environment.GRAFTLING_MCP_SERVER;
+  return typeof name === 'string' && /^[A-Za-z0-9_-]+$/.test(name) ? name : MCP_SERVER;
+}
+
 export default function agents(pi) {
-  registerReview(pi);
+  const server = childServer();
+  registerReview(pi, process.env, server);
   registerToolConfirm(pi);
-  const owner = registerAgents(pi);
+  const owner = registerAgents(pi, { server });
   pi.on('session_start', async (_event, ctx) => { await owner.start(ctx); });
   pi.on('session_shutdown', async () => { await owner.close(); });
 }
