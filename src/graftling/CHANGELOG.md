@@ -28,6 +28,13 @@ The numbers in parentheses are the project's Task numbers.
   links followed, to a regular file of at most 1 MiB inside it, and without a directory it
   is refused. Errors name the given path and a JSON position, never the content.
 
+- The DSH relay service `agentMessages` (`dsh/communication.mjs`) declares the services it reads
+  (`static inject = ['sessionQuery', 'agents']`) instead of relying on the context it is
+  installed in (561). With DSH 0.2.2-rc.5 a context without them refused
+  `cannot get property "sessionQuery" without inject`; the bundled `plugin.mjs` already injects
+  both, so its path is unchanged. Same cordis code for DSH 0.2.2-alpha.2 (4.0.6-alpha) and
+  rc.5 (4.1.0): a class's `static inject` is read by `Inject.resolve(plugin.inject)` in both,
+  so the declaration is supported from 0.2.2-alpha.2 on. Compatible: no public name changes.
 - DSH shows an agents notice as who · event over its Markdown (538). The DSH host relays
   `notice_text` (its notice line gains `text`); graftling-dsh's browser module draws the
   notice title's sender and event over the content through DSH's `MarkdownText`, prints an

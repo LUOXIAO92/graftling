@@ -2,6 +2,10 @@
 export function installCommunication(ctx, { TypertRemoteService, Remote, createUserMessage }) {
   const initializers = [];
   class AgentMessages extends TypertRemoteService {
+    // Its own declaration: DSH 0.2.2-rc.5 refuses `ctx.sessionQuery` in a service
+    // whose context does not inherit the services from plugin.mjs's `inject`.
+    static inject = ['sessionQuery', 'agents'];
+
     constructor(context) {
       super(context, 'agentMessages');
       for (const initialize of initializers) initialize.call(this);
