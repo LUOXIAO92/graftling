@@ -6,7 +6,8 @@ connections, Task notices or Session archives overrides the hook methods.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 from contextlib import ExitStack, nullcontext
 import copy
 import json
@@ -48,6 +49,54 @@ OPTIONAL_TEXT = ('provider_domain', 'base_url', 'provider_api', 'api_key_env', '
                  'native_directory', 'git_common_directory')
 # How long Pi has to acknowledge one RPC command.
 RPC_SECONDS = 30
+
+
+# Pi 1.4.0's built-in tools and its default selection (docs/cli.md "Tools").
+PI_BUILTIN_TOOLS = frozenset({'read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'codemode', 'tool_search'})
+PI_DEFAULT_TOOLS = ('read', 'bash', 'edit', 'write')
+# The built-ins a child may use only after its parent allows them (graftling.pi extension asks on first use).
+CONFIRM_TOOLS_ENV = 'GRAFTLING_PI_CONFIRM_TOOLS'
+CONFIRM_TITLE = 'agents: allow a tool beyond the host settings'
+
+
+def host_default_tools(agent_dir: Path) -> set[str]:
+    """Return the built-ins the host's Pi enables by default: ``defaultTools`` of its settings.json, else Pi's.
+
+    A list of only ``+name``/``-name`` entries changes Pi's defaults; plain
+    names replace them, as Pi itself reads the setting.
+    """
+    try:
+        settings = json.loads((Path(agent_dir) / 'settings.json').read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, ValueError):
+        settings = {}
+    chosen = settings.get('defaultTools') if isinstance(settings, dict) else None
+    enabled = set(PI_DEFAULT_TOOLS)
+    if isinstance(chosen, list) and all(isinstance(item, str) and item for item in chosen):
+        if chosen and all(item[0] in '+-' for item in chosen):
+            for item in chosen:
+                (enabled.add if item[0] == '+' else enabled.discard)(item[1:])
+        else:
+            enabled = set(chosen)
+    return enabled
+
+
+def tool_arguments(request: Mapping[str, Any], agent_dir: Path) -> tuple[list[str], list[str]]:
+    """Return Pi's native flags for the child's tool choice (551) and the built-ins beyond the host's.
+
+    ``tools`` is Pi's ``--tools`` allowlist (MCP tools stay unless an entry
+    starts with ``mcp__``; ``+name``/``-name`` entries change the defaults),
+    ``disallowed_tools`` its ``--exclude-tools``. Without either nothing is
+    passed and Pi keeps the host's own settings. A requested built-in that
+    the host's settings do not enable is returned for the parent's approval.
+    """
+    tools, denied = request.get('tools'), list(request.get('disallowed_tools') or ())
+    argv = (['--tools', ','.join(tools)] if tools is not None else []) + \
+           (['--exclude-tools', ','.join(denied)] if denied else [])
+    host = host_default_tools(agent_dir)
+    wanted = [item.lstrip('+') for item in tools or () if not item.startswith('-')]
+    beyond = [name for name in dict.fromkeys(wanted)
+              if name in PI_BUILTIN_TOOLS and name not in host and name not in denied]
+    return argv, beyond
 
 
 def child_path(sandbox_path: str) -> str:
@@ -381,6 +430,12 @@ class PiExecution:
             argv += ['--extension', str(Path(__file__).with_name('extension.mjs'))]
         if request.get('reasoning_effort'):
             argv += ['--thinking', request['reasoning_effort']]
+        # 551: the child's tool choice; a built-in beyond the host's settings waits for its parent's allow.
+        tool_argv, beyond = tool_arguments(request, source)
+        if beyond and not (self.independent and address is not None):
+            raise RuntimeAdapterError('authorization-required',
+                                      f'Pi tools {beyond} are beyond the host settings and no parent can allow them.')
+        argv += tool_argv
         spec = self.directory / 'pi-process.json'
         spec.write_text(json.dumps({'policy': str(policy_file), 'argv': argv}), encoding='utf-8')
         named = request.get('api_key_env')
@@ -408,6 +463,8 @@ class PiExecution:
             env.update(_git_identity(worktree))
         if address is not None:
             env.update(self.connection_environment(address))
+        if beyond:
+            env[CONFIRM_TOOLS_ENV] = json.dumps(beyond)
         if self.review_title is not None:
             env[REVIEW_ENV] = self.review_title
         # Pi's native find accepts an existing fd on PATH; do not download it or
@@ -984,6 +1041,12 @@ def _validate(request: dict) -> None:
         values = request.get(field, [])
         if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
             raise invalid(field, 'a list of nonempty strings')
+    if request.get('tools') is not None and (not isinstance(request['tools'], list) or any(
+            not isinstance(v, str) or not v for v in request['tools'])):
+        raise invalid('tools', 'a list of nonempty strings when given')
+    if not isinstance(request.get('disallowed_tools', []), list) or any(
+            not isinstance(v, str) or not v for v in request.get('disallowed_tools', [])):
+        raise invalid('disallowed_tools', 'a list of nonempty strings')
     if not isinstance(request.get('allow_local_binding', False), bool):
         raise invalid('allow_local_binding', 'a boolean')
     if request['worktree_access'] == 'write' and not request.get('git_common_directory'):

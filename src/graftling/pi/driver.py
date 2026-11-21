@@ -43,6 +43,12 @@ def _refuse_key_held_by_reviewer(request: Mapping[str, Any]) -> None:
             "api_key_env, or log in to this provider in the connection's home.")
 
 
+def apply_tools(request: dict, tools: Mapping[str, Any]) -> None:
+    """Put a create's tool choice (551) into a Pi launch request; Pi applies it natively at launch."""
+    request['tools'] = list(tools['tools']) if tools.get('tools') is not None else None
+    request['disallowed_tools'] = list(tools.get('disallowed_tools') or ())
+
+
 def selected(request: Mapping[str, Any], selection: Mapping[str, Any]) -> dict:
     """Apply one create selection to the host's Pi launch request.
 
@@ -110,18 +116,23 @@ class PiDriver:
         self.lock = threading.Lock()
 
     def prepare(self, runtime: str, caller: Caller, *, selection: Mapping[str, Any] | None = None,
-                workspace: Path | None = None) -> dict:
+                workspace: Path | None = None, tools: Mapping[str, Any] | None = None) -> dict:
         """Return the chosen native configuration without reading project state.
 
         ``selection`` is the create's resolved connection, model and effort.
         ``workspace`` replaces the host worktree as cwd and sandbox grant root;
         every other read, write and network grant stays as resolved.
+        ``tools`` (551) becomes Pi's ``--tools``/``--exclude-tools``
+        (:func:`graftling.pi.execution.tool_arguments`); omitted, Pi keeps the
+        host's own settings.
         """
         if runtime != 'pi':
             raise AgentsError('unsupported-runtime', 'PiDriver only runs Pi.')
         request = deepcopy(self.request) if selection is None else selected(self.request, selection)
         if workspace is not None:
             request['worktree_path'] = str(within_workspace(workspace, self.request['worktree_path']))
+        if tools is not None:
+            apply_tools(request, tools)
         return {'adapter_request': request, 'evidence': {}, 'cwd': request['worktree_path']}
 
     def require_available(self, connection: Mapping[str, Any]) -> None:

@@ -330,8 +330,37 @@ export function registerReview(pi, environment = process.env, server = MCP_SERVE
   return true;
 }
 
+export const CONFIRM_TITLE = 'agents: allow a tool beyond the host settings';
+
+/**
+ * Ask before the first use of each tool the owner marked as beyond the host's
+ * settings (GRAFTLING_PI_CONFIRM_TOOLS, 551). The ask is Pi's own confirm
+ * dialog, which the owner passes to this child's parent as a native request;
+ * only an explicit allow lets the call run, and it stays allowed for this
+ * Session. Every other tool call is untouched.
+ */
+export function registerToolConfirm(pi, environment = process.env) {
+  let names;
+  try { names = JSON.parse(environment.GRAFTLING_PI_CONFIRM_TOOLS || '[]'); } catch { names = []; }
+  delete environment.GRAFTLING_PI_CONFIRM_TOOLS;
+  if (!Array.isArray(names)) return false;
+  const pending = new Set(names.filter(name => typeof name === 'string' && name));
+  if (pending.size === 0) return false;
+  const allowed = new Set();
+  pi.on('tool_call', async (event, ctx) => {
+    if (!pending.has(event.toolName) || allowed.has(event.toolName)) return undefined;
+    const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input,
+                                  reason: 'beyond the host settings' });
+    const confirmed = await ctx.ui.confirm(CONFIRM_TITLE, call, { signal: ctx.signal });
+    if (confirmed === true) { allowed.add(event.toolName); return undefined; }
+    return { block: true, reason: `${event.toolName} is beyond the host settings and was not allowed; it did not run. Do not retry it; continue with other work or report it as blocked.` };
+  });
+  return true;
+}
+
 export default function agents(pi) {
   registerReview(pi);
+  registerToolConfirm(pi);
   const owner = registerAgents(pi);
   pi.on('session_start', async (_event, ctx) => { await owner.start(ctx); });
   pi.on('session_shutdown', async () => { await owner.close(); });
