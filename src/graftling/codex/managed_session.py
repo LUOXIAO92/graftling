@@ -15,7 +15,7 @@ from concurrent.futures import CancelledError
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 
 import yaml
 
@@ -25,6 +25,7 @@ from graftling.runtime import RuntimeAdapterError
 from .app_server import CodexAppServer, CodexExecution, CodexServerRequest
 from graftling.child_env import child_environment, consumer_environment, is_credential_name
 from graftling.connection import CONNECTION_ENV
+from graftling.extra_tools import ExtraTool, descriptor_environment, extra_tool_table
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from .context import exclude_credentials, native_key_names, restore_codex_context, recovery_environment
@@ -160,13 +161,15 @@ class CodexManagedExecution:
         archive: object | None = None,
         extra_fields: dict | None = None,
         review: Mapping | None = None,
+        extra_tools: Sequence[ExtraTool] | None = None,
     ) -> None:
         """Capture immutable task configuration for one Worker execution.
 
         ``archive`` is the bound :class:`SessionArchive`, or ``None`` to archive
         nothing; ``extra_fields`` goes to the header of a Session first archived here.
         ``review`` is the reviewer judging this execution's native approvals, or
-        ``None`` to keep Codex's own.
+        ``None`` to keep Codex's own. ``extra_tools`` are the host's own tools
+        served beside ``agents`` on the child's channel (:mod:`graftling.extra_tools`).
         """
         self.context = restore_codex_context(request, context_evidence)
         self.connection_environment = recovery_environment(connection or {})
@@ -196,6 +199,7 @@ class CodexManagedExecution:
         self.started = session_started
         self.created = session_created
         self.agent_call = agent_call
+        self.extra_tools = extra_tool_table(extra_tools)
         self.archive = archive
         self.extra_fields = extra_fields
         self.review = review
@@ -284,10 +288,12 @@ class CodexManagedExecution:
             shell = config.setdefault('shell_environment_policy', {}).setdefault('set', {})
             shell[connection_env] = address
             shell['GRAFTLING_NATIVE_RUNTIME'] = 'codex'
-            # A Task host serves agents and tasks itself; an independent one only agents.
+            # A Task host serves agents and tasks itself; an independent one serves
+            # agents and the owner's extra tools, which graftling.mcp lists from its env.
             config.setdefault('mcp_servers', {})[self.mcp_server] = {
                 'command': sys.executable, 'args': ['-m', entry], 'cwd': str(cwd),
-                'env': {connection_env: address, 'GRAFTLING_NATIVE_RUNTIME': 'codex'},
+                'env': {connection_env: address, 'GRAFTLING_NATIVE_RUNTIME': 'codex',
+                        **(descriptor_environment(self.extra_tools) if entry == 'graftling.mcp' else {})},
             }
             self.context = restore_codex_context(request, self.context.evidence_document())
         if self.user_environment:
@@ -881,6 +887,6 @@ class CodexManagedExecution:
         native_context = lambda: {'runtime': 'codex', 'session': self.native_session, 'cwd': str(cwd)}
         address = connections.enter_context(agents_connection(
             self.directory / 'mcp', self.agent_call, self._authenticate_mcp,
-            native_context=native_context,
+            native_context=native_context, extra_tools=list(self.extra_tools.values()),
         ))
         return address, CONNECTION_ENV, 'graftling.mcp'

@@ -17,12 +17,14 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Callable
+from typing import Callable, Sequence
 
 from graftling import AgentsResult, __version__
 from graftling.approval import REVIEW_METHOD, parse_decision, review_failed
 from graftling.discovery import handle_request as discover_agents
 from graftling.mcp import tool_documents
+from graftling.extra_tools import (ExtraTool, call_extra_tool, descriptors as extra_descriptors,
+                                   extra_tool_table)
 from graftling import SessionArchive
 from graftling.sessions.claude_history import read_records
 from graftling.child_env import child_environment, consumer_environment
@@ -120,6 +122,8 @@ class ClaudeExecution:
         # Header ``extra_fields`` for a Session this execution archives first.
         self.extra_fields: dict | None = None
         self.agents_callback: Callable[[dict], AgentsResult] | None = None
+        # Host tools served beside agents to an independent child, by name.
+        self.extra_tools: dict[str, ExtraTool] = {}
         self.collector = None
         # Exact read-only resource settings applied before the first prompt.
         self.resource_settings: dict | None = None
@@ -237,13 +241,17 @@ class ClaudeExecution:
         archive: SessionArchive | None,
         agents_callback: Callable[[dict], AgentsResult],
         extra_fields: dict | None = None,
+        extra_tools: Sequence[ExtraTool] | None = None,
     ) -> None:
         """Bind the core's archive choice and verified caller before starting.
 
         ``extra_fields`` goes to the header of a Session first archived here.
+        ``extra_tools`` are the host's own tools served beside ``agents`` on the
+        same in-process server (see :mod:`graftling.extra_tools`).
         """
         if self.proc is not None:
             raise ValueError('Claude execution is already started.')
+        self.extra_tools = extra_tool_table(extra_tools)
         self.independent = True
         self.archive = archive
         self.extra_fields = extra_fields
@@ -265,9 +273,10 @@ class ClaudeExecution:
                     result = {'protocolVersion': params.get('protocolVersion', '2025-06-18'),
                               'capabilities': {'tools': {}}, 'serverInfo': {'name': 'agents', 'version': __version__}}
                 elif method == 'tools/list':
-                    result = {'tools': tool_documents()}
+                    result = {'tools': tool_documents() + extra_descriptors(self.extra_tools)}
                     self.sdk_tools_listed = True
-                elif method == 'tools/call' and params.get('name') == 'agents':
+                elif method == 'tools/call' and (params.get('name') == 'agents'
+                                                 or params.get('name') in self.extra_tools):
                     if self.session is None or self.stopping.is_set():
                         raise ValueError('Claude caller is not bound to an active execution.')
                     value = self._agents_call(message)
@@ -303,10 +312,15 @@ class ClaudeExecution:
                 if original != message:
                     raise ValueError('SDK request identity was reused with different arguments.')
         if prior is None:
+            params = message.get('params', {})
             try:
-                future.set_result(discover_agents(message.get('params', {}).get('arguments', {}),
-                                                  self.agents_callback,
-                                                  files=Path(self.request['worktree_path'])))
+                if params.get('name') in self.extra_tools:
+                    future.set_result(call_extra_tool(self.extra_tools, params['name'],
+                                                      params.get('arguments', {})))
+                else:
+                    future.set_result(discover_agents(params.get('arguments', {}),
+                                                      self.agents_callback,
+                                                      files=Path(self.request['worktree_path'])))
             except BaseException as error:
                 future.set_exception(error)
                 raise

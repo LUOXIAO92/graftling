@@ -530,6 +530,21 @@ directory against which `archive_collector` resolves relative attachment paths a
 whose `.codex` it keeps out of the archive, as `PiArchive(project=...)` (1.5). A
 consumer whose children work in a worktree of a larger project sets it to that project.
 
+**Host tools beside `agents` (551).** A host may serve its own MCP tools to an
+independent child next to `agents`, through `graftling.extra_tools`: a sequence
+of `(descriptor, callback)` pairs, where `descriptor` is an MCP tool document
+(`name`, `description`, `inputSchema`; any name except `agents`) and
+`callback(arguments)` returns an `AgentsResult`. graftling only lists and routes
+these tools; each callback keeps its own authorization, and an `AgentsError` it
+raises becomes a failed result. They are accepted by
+`ClaudeExecution.configure_independent(..., extra_tools=)` (Claude's in-process
+server), `agents_connection(..., extra_tools=)` (the same authenticated channel,
+with the tagged request `{"tool": name, "arguments": {...}}`),
+`CodexManagedExecution(..., extra_tools=)` and `CodexDriver(...,
+extra_tools=factory)` with `factory(run)` returning the pairs for that Agent's
+child. The owner lists them to the child's `python -m graftling.mcp` in
+`GRAFTLING_EXTRA_TOOLS` (JSON descriptors). Without extra tools nothing changes.
+
 **`AgentControl` methods.** Besides `operate` (`bind`'s entry) a host may call
 `create`, `send`, `resume`, `interrupt`, `wait`, `requests`, `reply`,
 `ask_parent`, `retire`, `select`, `require_connections`, `hierarchy`,

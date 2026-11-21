@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 import shutil
 import threading
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
+from graftling.extra_tools import ExtraTool
 from graftling.runtime import RuntimeAdapterError
 from .context import restore_codex_context
 from .managed_session import CodexManagedExecution
@@ -88,10 +89,16 @@ class CodexDriver:
         settings: Mapping[str, Any] | None = None,
         *,
         execution: Callable[..., CodexManagedExecution] = CodexManagedExecution,
+        extra_tools: Callable[[Run], Sequence[ExtraTool]] | None = None,
     ) -> None:
-        """Capture explicit native settings without starting a Runtime."""
+        """Capture explicit native settings without starting a Runtime.
+
+        ``extra_tools(run)`` returns the host's own tools for that Agent's
+        child, served beside ``agents`` (:mod:`graftling.extra_tools`).
+        """
         self.settings = deepcopy(dict(settings)) if settings is not None else None
         self.execution = execution
+        self.extra_tools = extra_tools
         # A consumer's execution binds its own review policy, not this plugin.
         self.supports_review = execution is CodexManagedExecution
 
@@ -152,6 +159,8 @@ class CodexDriver:
             prompt = f"[agents · {notice['agent']} → {run.agent}]\n{notice['body']}"
         if run.settings.get('review') is not None:
             options.update(review=run.settings['review'])
+        if self.extra_tools is not None:
+            options.update(extra_tools=self.extra_tools(run))
         request = dict(run.settings['adapter_request'])
         if run.settings.get('pass_env'):
             request['pass_env'] = run.settings['pass_env']
