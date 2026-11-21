@@ -1611,7 +1611,8 @@ What the parent sees today:
   (`dsh/communication.mjs`): one native `agent-message` relay message from
   the child's Agent and Session, text `text` (a host without it: `[agents notice from <agent> ·
   <event> · execution <execution>]` followed by the message), communication id `agents-notice:<id>`,
-  placed in the Session's next-step inbox with a wake. The relay admits one
+  placed in the Session's next-turn inbox with a wake (545), so each notice
+  opens a turn of its own and the UI shows it as that turn's block. The relay admits one
   id once per Session, including across processes, by looking for it in the
   Session's persisted events and inbox (`communication.mjs` `deliver`); that is
   the guard against showing a replayed notice twice. Admitted is
@@ -1627,7 +1628,7 @@ What the parent sees today:
 
   | Parent state | What happens | DSH source |
   | --- | --- | --- |
-  | Turn running | The message enters the next-step inbox; the running turn takes it at its next step and does not end while the next-step inbox has input | `dsh-agent-loop/lib/index.js:564-569` (`send`), `:103-105` (`claim`), `:790-798` |
+  | Turn running | The message enters the next-turn inbox; the running turn's later steps claim only next-step input, so it does not take the notice. When that turn ends, the loop opens one new turn per queued notice with no user input | `dsh-agent-loop/lib/index.js:564-569` (`send`), `:103-105` (`claim`), `:737`, `:798`, `:827-831`, `:651-653` |
   | Idle, host alive (a long-lived profile such as `web`, `tui`, `acp` or `sdk`, or `headless` before its runner leaves its loop) | The wake starts a new turn with the notice at once | `dsh-agent-loop/lib/index.js:564-569`, `:618-623` |
   | Idle during maintenance (for example compaction) or right after a cancel | The wake is latched and the turn starts when that activity ends | `dsh-agent-loop/lib/index.js:565-566`, `:619-621` |
   | `headless`, after the parent is idle with no native DSH subagents | The runner flushes and exits. agents children are not native subagents, so it does not wait for them; the host then stops with DSH (next row) | `dsh-headless/lib/index.js:369-373`, `:377-383` |
@@ -1635,7 +1636,8 @@ What the parent sees today:
   | On resume (`dsh --profile headless --session-id <id> "<task>"`, or reopening the Session in a long-lived profile) | DSH registers and announces the Session again and a new host binds the same Session. The plugin tells the host to begin when the Session's first turn begins, or two seconds after its `agents` tool attaches in a Session that starts no turn by itself: a relay message wakes an idle Session, and the `headless` runner applies its permission settings and hands over its task only after the announcement. The host then delivers each held notice once through the relay. A refused notice is tried again, at most six passes five seconds apart in that host's lifetime, and then stays held for a later host. Earlier children are listed by `status` and continue with `resume` | `dsh-agent/lib/index.js:655`, `:710`; `dsh-headless/lib/index.js:263`, `:344`, `:361` |
 
   Cases without immediate delivery: (1) a running parent receives a notice
-  only at its next step, after the current model response or tool call;
+  only after its running turn ends, in a turn of its own; a parent that needs
+  a child's answer within the running turn calls `wait` for it;
   (2) during maintenance or right after a cancel, only when that activity
   ends; (3) a `headless` parent whose task has ended receives a later notice
   only when resumed: its children are interrupted when DSH exits and their ends
