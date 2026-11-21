@@ -86,6 +86,23 @@ def test_installed_native_relay_without_duplicate_model_content() -> None:
     assert saved[-1]['data']['stream'] == native['stream']
 
 
+def test_agent_messages_declares_the_services_it_reads() -> None:
+    """The relay service declares its own inject, so DSH 0.2.2-rc.5 lets it read sessionQuery (561)."""
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is required.')
+    module = Path(__file__).resolve().parents[1] / 'src/graftling/dsh/communication.mjs'
+    script = (f'const {{ installCommunication }} = await import({json.dumps(module.as_uri())});\n'
+              'class TypertRemoteService { constructor(ctx) { this.ctx = ctx; } }\n'
+              'let service;\n'
+              'installCommunication({ plugin: plugin => (service = plugin) },'
+              ' { TypertRemoteService, Remote: () => {}, createUserMessage: message => message });\n'
+              'console.log(JSON.stringify(service.inject ?? null));\n')
+    result = subprocess.run([node, '--input-type=module', '-e', script], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    assert sorted(json.loads(result.stdout)) == ['agents', 'sessionQuery']
+
+
 def test_standalone_driver_with_only_independent_package(tmp_path: Path) -> None:
     """Exercise explicit preparation and control without GraphTraj imports."""
     if shutil.which('dsh') is None:
