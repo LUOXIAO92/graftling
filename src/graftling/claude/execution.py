@@ -196,6 +196,16 @@ class ClaudeExecution:
         """
         return f'mcp__{self.mcp_server}__agents'
 
+    @property
+    def exempt_tools(self) -> list[str]:
+        """Native names of the owner's extra tools, which run without a review or permission ask (551).
+
+        Like ``agents``, each keeps its owner's own authorization; the owner
+        declared it for this child, so asking the user adds nothing. A tool the
+        create disallowed is never offered, so never exempt.
+        """
+        return [f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools]
+
     def _parent_notice(self, message: str, details: dict) -> dict:
         """Require the owning host to bind native permission delivery."""
         raise RuntimeAdapterError('RUNTIME_REQUEST_UNHANDLED', 'No parent notice receiver is bound.')
@@ -251,7 +261,10 @@ class ClaudeExecution:
         """
         if self.proc is not None:
             raise ValueError('Claude execution is already started.')
-        self.extra_tools = extra_tool_table(extra_tools)
+        # A tool the create disallows, by its own or its native name, is not offered (551).
+        denied = set(self.request.get('disallowed_tools') or ())
+        self.extra_tools = {name: tool for name, tool in extra_tool_table(extra_tools).items()
+                            if name not in denied and f'mcp__{self.mcp_server}__{name}' not in denied}
         self.independent = True
         self.archive = archive
         self.extra_fields = extra_fields
@@ -654,6 +667,9 @@ class ClaudeExecution:
                 self._reply(event['request_id'], {})
             elif request.get('subtype') == 'hook_callback' and request.get('callback_id') == 'agents_review':
                 self._review_hook(event)
+            elif request.get('subtype') == 'can_use_tool' and request.get('tool_name') in self.exempt_tools:
+                # The owner's declared tool: allowed at once, no parent request (551).
+                self._reply(event['request_id'], {'behavior': 'allow', 'updatedInput': request.get('input')})
             elif request.get('subtype') == 'can_use_tool':
                 if not self._reviewed_prompt(event):
                     self._permission(event)
@@ -720,7 +736,7 @@ class ClaudeExecution:
         identity = event['request_id']
         native = event['request'].get('input')
         native = native if isinstance(native, dict) else {}
-        if native.get('tool_name') == self.agents_tool:
+        if native.get('tool_name') == self.agents_tool or native.get('tool_name') in self.exempt_tools:
             self._reply(identity, {})
             return
         with self.lock:

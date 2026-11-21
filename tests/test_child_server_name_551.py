@@ -85,3 +85,19 @@ def test_codex_child_server_replaces_a_captured_entry_of_that_name(
     finally:
         for owned in control.interrupt_owned():
             call({'action': 'wait', 'agent': owned, 'timeout_seconds': 10})
+
+
+def test_codex_child_host_tools_need_no_approval(tmp_path: Path, native_settings: dict) -> None:
+    """The owner's declared tools carry Codex's per-tool approval_mode approve; agents is unchanged."""
+    driver = CodexDriver(native_settings, execution=_Named,
+                         extra_tools=lambda run: [(DESCRIPTOR, lambda arguments: AgentsResult({}))])
+    control = AgentControl(tmp_path / 'agents', {'codex': driver})
+    call = bind(control, Caller('controlled-host', 'actual-parent', 'parent-session', 'codex'))
+    try:
+        agent = call({'action': 'create', 'runtime': 'codex', 'instruction': 'configuration'}).document['agent']
+        done = call({'action': 'wait', 'agent': agent, 'timeout_seconds': 10}).document
+        entry = json.loads(done['result']['last_result']['last_message'])['config']['mcp_servers']['host_name']
+        assert entry['tools'] == {'tasks': {'approval_mode': 'approve'}}
+    finally:
+        for owned in control.interrupt_owned():
+            call({'action': 'wait', 'agent': owned, 'timeout_seconds': 10})

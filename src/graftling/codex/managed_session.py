@@ -294,6 +294,10 @@ class CodexManagedExecution:
                 'command': sys.executable, 'args': ['-m', entry], 'cwd': str(cwd),
                 'env': {connection_env: address, 'GRAFTLING_NATIVE_RUNTIME': 'codex',
                         **(descriptor_environment(self.extra_tools) if entry == 'graftling.mcp' else {})},
+                # The owner's declared tools run without an approval ask, as its
+                # authorization stays the owner's (551; Codex per-tool approval_mode).
+                **({'tools': {name: {'approval_mode': 'approve'} for name in self.extra_tools}}
+                   if entry == 'graftling.mcp' and self.extra_tools else {}),
             }
             self.context = restore_codex_context(request, self.context.evidence_document())
         if self.user_environment:

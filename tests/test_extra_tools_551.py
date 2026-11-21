@@ -164,3 +164,45 @@ def test_claude_child_without_host_tools_lists_agents_only(tmp_path: Path) -> No
     execution.configure_independent(archive=None, agents_callback=lambda request: AgentsResult({}))
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
     assert [tool['name'] for tool in listed['result']['tools']] == ['agents']
+
+
+def _can_use_tool(execution: ClaudeExecution, replies: queue.Queue, tool: str, identity: str) -> object:
+    """Send one native permission request; return its direct reply, or None when it went to the parent."""
+    notices: list = []
+    execution.parent_notice = lambda message, details: (notices.append(details), {'delivery': 'retained'})[1]
+    execution._control_event({'type': 'control_request', 'request_id': identity, 'request': {
+        'subtype': 'can_use_tool', 'tool_name': tool, 'input': {'action': 'discover'}, 'tool_use_id': identity}})
+    try:
+        return replies.get(timeout=0.5)
+    except queue.Empty:
+        return ('parent', notices or execution.pending)
+
+
+def test_claude_host_tools_are_allowed_without_a_parent_request(tmp_path: Path) -> None:
+    """The owner's declared tool is allowed at once (551); any other tool still goes to the parent."""
+    execution, replies = _claude(tmp_path)
+    execution.mcp_server = 'host_name'
+    execution.configure_independent(archive=None, agents_callback=lambda request: AgentsResult({}),
+                                    extra_tools=[(DESCRIPTOR, lambda arguments: AgentsResult({}))])
+    execution.session = 'session'
+    assert execution.exempt_tools == ['mcp__host_name__tasks']
+    identity, reply = _can_use_tool(execution, replies, 'mcp__host_name__tasks', 'one')
+    assert identity == 'one' and reply == {'behavior': 'allow', 'updatedInput': {'action': 'discover'}}
+    assert execution.pending == {}
+    asked = _can_use_tool(execution, replies, 'WebSearch', 'two')
+    assert asked[0] == 'parent' and [item['params']['tool_name'] for item in execution.pending.values()] == ['WebSearch']
+    # The same name on another server is not the owner's tool.
+    assert _can_use_tool(execution, replies, 'mcp__other__tasks', 'three')[0] == 'parent'
+
+
+@pytest.mark.parametrize('denied', ['tasks', 'mcp__host_name__tasks'])
+def test_claude_disallowed_host_tool_is_not_offered(tmp_path: Path, denied: str) -> None:
+    """disallowed_tools naming the owner's tool removes it, so it is neither listed nor exempt."""
+    execution, replies = _claude(tmp_path)
+    execution.request['disallowed_tools'] = [denied]
+    execution.mcp_server = 'host_name'
+    execution.configure_independent(archive=None, agents_callback=lambda request: AgentsResult({}),
+                                    extra_tools=[(DESCRIPTOR, lambda arguments: AgentsResult({}))])
+    assert execution.exempt_tools == []
+    listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
+    assert [tool['name'] for tool in listed['result']['tools']] == ['agents']
