@@ -323,6 +323,27 @@ def within_workspace(workspace: str | Path, boundary: str | Path) -> Path:
     return resolved
 
 
+def tool_selection(
+    preset: Mapping[str, Any] | None, tools: list[str] | None, disallowed_tools: list[str] | None,
+) -> dict | None:
+    """Combine a preset's and a create's tool choices (551); ``None`` keeps the host's.
+
+    ``tools`` (the available set) given at create replaces the preset's;
+    ``disallowed_tools`` is the union of both, since a deny only narrows.
+    Returns ``{"tools": [...] or None, "disallowed_tools": [...]}``.
+    """
+    preset = preset or {}
+    chosen = tools if tools is not None else preset.get("tools")
+    denied = list(dict.fromkeys([*(preset.get("disallowed_tools") or ()), *(disallowed_tools or ())]))
+    for name, value in (("tools", chosen), ("disallowed_tools", denied)):
+        if value is not None and (not isinstance(value, list)
+                                  or not all(isinstance(item, str) and item.strip() for item in value)):
+            raise AgentsError("invalid-input", f"request.{name}: expected a list of tool names")
+    if chosen is None and not denied:
+        return None
+    return {"tools": list(dict.fromkeys(chosen)) if chosen is not None else None, "disallowed_tools": denied}
+
+
 def _accepts(method: Callable, name: str) -> bool:
     """Whether ``method`` takes keyword ``name``; older drivers do not."""
     import inspect
@@ -697,7 +718,9 @@ class AgentControl:
                                preset=arguments.get("preset"), model=arguments.get("model"),
                                reasoning_effort=arguments.get("reasoning_effort"),
                                extra_fields=arguments.get("extra_fields"),
-                               workspace=arguments.get("workspace"))
+                               workspace=arguments.get("workspace"),
+                               tools=arguments.get("tools"),
+                               disallowed_tools=arguments.get("disallowed_tools"))
         if action == "ask_parent":
             return self.ask_parent(binding.caller, arguments["kind"], arguments["question"],
                                    arguments["timeout_seconds"])
@@ -757,8 +780,15 @@ class AgentControl:
         reasoning_effort: str | None = None,
         extra_fields: Mapping[str, Any] | None = None,
         workspace: str | None = None,
+        tools: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
     ) -> Outcome:
         """Register a new Agent under the caller and start its first execution.
+
+        ``tools`` (the available set) and ``disallowed_tools`` (551) are
+        combined with the preset's by :func:`tool_selection` and passed to the
+        driver as ``prepare(tools=)``; omitted, the child keeps the host's own
+        tool settings. A driver that cannot apply them refuses the create.
 
         Returns once the driver has started native work; it never waits for
         the Agent's result. ``preset``, ``model`` and ``reasoning_effort`` are
@@ -800,6 +830,12 @@ class AgentControl:
             if not _accepts(driver.prepare, "workspace"):
                 raise unavailable("create", f"this host's {runtime} driver cannot assign a workspace")
             options["workspace"] = Path(workspace)
+        chosen_tools = tool_selection(self._preset_tools(preset), tools, disallowed_tools)
+        if chosen_tools is not None:
+            # A driver that cannot apply them must not run the child with other tools.
+            if not _accepts(driver.prepare, "tools"):
+                raise unavailable("create", f"this host's {runtime} driver cannot set a child's tools")
+            options["tools"] = chosen_tools
         review = (selection or {}).get("review")
         if review is not None:
             if getattr(driver, "supports_review", False) is not True:
@@ -832,7 +868,8 @@ class AgentControl:
             "selection":  {**{name: (selection or {}).get(name) for name in
                               ("preset", "connection", "model", "reasoning_effort")},
                            "review": review["name"] if review is not None else None,
-                           "configuration": applied.get("configuration")},
+                           "configuration": applied.get("configuration"),
+                           **({"tools": chosen_tools} if chosen_tools is not None else {})},
             "workspace":  str(Path(workspace).resolve()) if workspace is not None else None,
             "created_at": _now(),
             "retired_at": None,
@@ -946,6 +983,16 @@ class AgentControl:
             f"To allow it, add {needed} to pass_env of {caller.agent}'s connection in your own "
             f"configuration; a create argument cannot name a key.",
         )
+
+    def _preset_tools(self, preset: str | None) -> dict | None:
+        """Return the named preset's declared tool choices, if any (551)."""
+        if preset is None:
+            return None
+        try:
+            entry = read_connections(self.root)["presets"].get(preset) or {}
+        except ValueError as error:
+            raise AgentsError("invalid-config", str(error)) from None
+        return {name: entry[name] for name in ("tools", "disallowed_tools") if name in entry}
 
     def _pass_env(self, selection: Mapping[str, Any] | None) -> list[str]:
         """Return the declared names: the selected connection's, else the file's default."""

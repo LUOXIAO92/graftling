@@ -469,6 +469,24 @@ class ClaudeExecution:
                     absorbed.add(source)
         return len(absorbed)
 
+    def tool_arguments(self) -> list[str]:
+        """Return the native tool flags: none keeps the host's own tool settings (551).
+
+        Without ``request['tools']`` Claude Code offers its own default tools
+        under the same user, project and managed settings files the host
+        reads, whose deny rules always win. ``tools`` names the available set
+        (``--tools``) and ``disallowed_tools`` removes tools
+        (``--disallowedTools``). Neither grants a use: a call the settings do
+        not pre-allow still asks through ``can_use_tool``, which goes to the
+        direct parent, and a tool the settings deny stays off.
+        """
+        request, argv = self.request, []
+        if request.get('tools') is not None:
+            argv += ['--tools', ','.join(request['tools'])]
+        if request.get('disallowed_tools'):
+            argv += ['--disallowedTools', ','.join(request['disallowed_tools'])]
+        return argv
+
     def _prepare(self, address: str | None) -> tuple[list[str], dict]:
         """Use native restricted mode and mandatory sandboxing without bypass flags."""
         request = self.request
@@ -487,7 +505,7 @@ class ClaudeExecution:
                 # admits the declared read-only directories, still Edit-denied.
                 *[item for path in settings['permissions']['additionalDirectories'] for item in ('--add-dir', path)],
                 '--mcp-config', json.dumps(mcp), '--settings', json.dumps(settings),
-                '--tools', 'Bash,Read,Write,Edit,Glob,Grep', '--model', request['model'],
+                *self.tool_arguments(), '--model', request['model'],
                 '--append-system-prompt', request['instructions'],
                 '--resume' if self.expected else '--session-id', self.native_id]
         if request['reasoning_effort'] is not None:

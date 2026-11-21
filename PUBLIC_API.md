@@ -968,6 +968,36 @@ connection declared for the Runtime) reaches the driver exactly as before.
 `configuration` keeps its meaning and may be combined with the new arguments;
 independent hosts still refuse it with `invalid-config`.
 
+**Tools (551).** `create` and `config.yml` presets accept optional `tools`
+(the native tool names the child may have) and `disallowed_tools` (names it
+must not have), both lists of strings. Omitted, the child keeps the host's own
+tool settings: no tool list is hard-coded. A create's `tools` replaces the
+preset's; `disallowed_tools` is the union of both. The driver receives
+`prepare(..., tools={"tools": [...] or None, "disallowed_tools": [...]})`; a
+driver whose `prepare` lacks `tools` makes the create fail `unavailable` rather
+than run the child with other tools. The choice is recorded as
+`selection.tools`. Narrowing needs no authorization. Nothing here grants a use
+beyond the host's settings: what exceeds them goes through the Runtime's own
+approval to the direct parent, and is not granted without it.
+
+- Claude: no flag by default, so Claude Code offers its own default tools
+  under the same user, project and managed settings files the host reads;
+  their deny rules always win. `tools` -> `--tools`, `disallowed_tools` ->
+  `--disallowedTools`. A use the settings do not pre-allow still asks through
+  `can_use_tool`, which reaches the direct parent as a pending request; a
+  tool the settings deny stays off, visible as absent from the child's
+  system init tool list. The host process's own command-line flags (its own
+  `--tools`, `--disallowedTools`) are not observable and so not inherited.
+  `--restricted`, the mandatory sandbox and the runtime-home and
+  private-state denies are unchanged.
+- Codex: the captured host config is kept. Codex can express only
+  `web_search` (config `web_search = "disabled"`) and MCP tools
+  `mcp__<server>__<tool>` (per-server `enabled_tools`/`disabled_tools`); any
+  other name (shell, apply_patch, ...) fails `unavailable` naming it, because
+  Codex has no native switch for one built-in tool. Asking for `web_search`
+  when the captured host config disables it fails `authorization-required`:
+  Codex offers no approval to enable it for a child.
+
 **Drivers.** The selection reaches the driver as
 `prepare(runtime, caller, selection={"preset", "connection", "model",
 "reasoning_effort", "provider", "settings", "review"})`, where `settings` is the

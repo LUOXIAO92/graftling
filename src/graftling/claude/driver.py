@@ -72,12 +72,14 @@ class ClaudeDriver:
         self.lock = threading.Lock()
 
     def prepare(self, runtime: str, caller: Caller, *, configuration: str | None = None,
-                selection: Mapping[str, Any] | None = None, workspace: Path | None = None) -> dict:
+                selection: Mapping[str, Any] | None = None, workspace: Path | None = None,
+                tools: Mapping[str, Any] | None = None) -> dict:
         """Validate explicit Claude configuration, independently of caller roles.
 
         ``selection`` is the create's resolved connection, model and effort.
         ``workspace`` replaces the host cwd, and with it the native sandbox's
-        working directory; every other grant stays as configured.
+        working directory; every other grant stays as configured. ``tools`` is
+        the create's tool choice (551), applied by ``ClaudeExecution.tool_arguments``.
         """
         if configuration is not None:
             raise AgentsError('invalid-config', 'This host uses its explicitly supplied Claude configuration.')
@@ -87,6 +89,8 @@ class ClaudeDriver:
         settings = prepare(config, self.cwd if workspace is None else within_workspace(workspace, self.cwd))
         if selection is not None and selection.get('review') is not None:
             settings['review'] = deepcopy(dict(selection['review']))
+        if tools is not None:
+            settings.update(tools=tools['tools'], disallowed_tools=list(tools['disallowed_tools']))
         return settings
 
     def require_available(self, connection: Mapping[str, Any]) -> None:

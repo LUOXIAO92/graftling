@@ -56,6 +56,37 @@ def _select(settings: dict, parameters: dict, selection: Mapping[str, Any]) -> N
         parameters['approvalsReviewer'] = config['approvals_reviewer'] = 'user'
 
 
+def apply_tools(config: dict, tools: Mapping[str, Any]) -> None:
+    """Apply a create's tool choice (551) to captured Codex config in place.
+
+    Codex can express only ``web_search`` (config ``web_search``) and MCP
+    tools ``mcp__<server>__<tool>`` (per-server ``enabled_tools`` and
+    ``disabled_tools``); any other name is refused, since Codex has no native
+    switch for one built-in tool (shell, apply_patch, ...), which stay as
+    captured. Narrowing applies directly. Enabling web search that the
+    captured host config disables has no Codex approval route, so it is
+    refused with ``authorization-required`` instead of being granted.
+    """
+    allowed, denied = tools.get('tools'), list(tools.get('disallowed_tools') or ())
+    named = [*(allowed or ()), *denied]
+    mcp = {name: name[5:].split('__', 1) for name in named if name.startswith('mcp__') and name.count('__') >= 2}
+    unknown = [name for name in named if name != 'web_search' and name not in mcp]
+    if unknown:
+        raise AgentsError('unavailable', f'Codex has no native per-tool switch for {sorted(set(unknown))}; '
+                                         'it can allow or deny only web_search and mcp__<server>__<tool>.')
+    if 'web_search' in denied or (allowed is not None and 'web_search' not in allowed):
+        config['web_search'] = 'disabled'
+    elif allowed is not None and config.get('web_search') == 'disabled':
+        raise AgentsError('authorization-required',
+                          'web_search is disabled in the host Codex settings; Codex offers no approval to enable '
+                          'it for a child, so it was not granted.')
+    servers = config.setdefault('mcp_servers', {})
+    for name, (server, tool) in mcp.items():
+        entry = servers.setdefault(server, {})
+        key = 'disabled_tools' if name in denied else 'enabled_tools'
+        entry[key] = list(dict.fromkeys([*entry.get(key, ()), tool]))
+
+
 def _receive_children(turn: CodexManagedExecution, run: Run) -> None:
     """Deliver a child's end or request once, as the Claude and DSH bindings do."""
     def receive(event: dict) -> bool:
@@ -103,7 +134,8 @@ class CodexDriver:
         self.supports_review = execution is CodexManagedExecution
 
     def prepare(self, runtime: str, caller: Caller, *, configuration: str | None = None,
-                selection: Mapping[str, Any] | None = None, workspace: Path | None = None) -> dict:
+                selection: Mapping[str, Any] | None = None, workspace: Path | None = None,
+                tools: Mapping[str, Any] | None = None) -> dict:
         """Validate retained native values, with native auto review as the default.
 
         ``selection`` is the create's resolved connection, model and effort.
@@ -127,6 +159,8 @@ class CodexDriver:
             config['features'] = {**config.get('features', {}), 'exec_permission_approvals': True}
             if selection is not None:
                 _select(settings, parameters, selection)
+            if tools is not None:
+                apply_tools(config, tools)
             settings['adapter_request'] = request
             settings.setdefault('evidence', {})
         except (KeyError, RuntimeAdapterError) as error:
