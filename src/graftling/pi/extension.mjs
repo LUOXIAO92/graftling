@@ -265,7 +265,10 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
         // Identity is verified by the owning host's kernel-authenticated pipe.
         pi.registerMcpServer(server, {
           command: process.env.GRAFTLING_PYTHON, args: ['-I', '-m', 'graftling.mcp'],
-          cwd: ctx.cwd, env: {GRAFTLING_CONNECTION: process.env.GRAFTLING_CONNECTION}, exposure: 'direct',
+          cwd: ctx.cwd, exposure: 'direct',
+          // The owner's extra tools (graftling.extra_tools), listed by graftling.mcp beside agents.
+          env: {GRAFTLING_CONNECTION: process.env.GRAFTLING_CONNECTION,
+                ...(process.env.GRAFTLING_EXTRA_TOOLS ? {GRAFTLING_EXTRA_TOOLS: process.env.GRAFTLING_EXTRA_TOOLS} : {})},
         });
         return true;
       }

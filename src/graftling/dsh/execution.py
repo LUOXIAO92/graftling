@@ -21,6 +21,7 @@ from .service import DshService, redact_native, secret_values
 from .errors import DshError
 from graftling.child_env import child_environment, consumer_environment
 from graftling.connection import CONNECTION_ENV
+from graftling.extra_tools import EXTRA_TOOLS_ENV, descriptor_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from .settings import _DEFAULT_KEY_ENV, AMBIENT_ENDPOINTS, credential_environment, resumes_by_address
@@ -176,6 +177,8 @@ class DshExecution:
     service_type = DshService
     host_connection = None
     connection_env = 'GRAFTLING_CONNECTION'
+    # The host's own tools served beside agents (graftling.extra_tools), by name; bind_run sets them.
+    extra_tools: dict = {}
     # The MCP server name of the plugin row; review lets only its agents tool through.
     mcp_server = MCP_SERVER
     parent_notice = None
@@ -279,7 +282,8 @@ class DshExecution:
             mcp = self.request['mcp']
             patches.append({'insert': [{'id': 'agents-mcp', 'name': str(Path(__file__).with_name('plugin.mjs')),
                                         'config': {'mcpCommand': mcp['command'], 'mcpArgs': mcp.get('args', []),
-                                                   'mcpEnv': [self.connection_env],
+                                                   'mcpEnv': [self.connection_env,
+                                                              *([EXTRA_TOOLS_ENV] if self.extra_tools else [])],
                                                    'mcpServer': self.mcp_server}}]})
         if self.request.get('review'):
             # Review lets through only the agents tool of the server registered above.
@@ -307,6 +311,9 @@ class DshExecution:
         })
         for ambient in AMBIENT_ENDPOINTS:
             environment.pop(ambient, None)
+        # The extra tools' descriptors, which the plugin row passes to its MCP server
+        # (mcpEnv above); nothing without extra tools.
+        environment.update(descriptor_environment(self.extra_tools))
         # After child_environment, which drops an inherited marker: this execution's
         # own, kept by DSH's scrubbedParentEnv for every tool it starts.
         environment[MEMBER_RUN_ENV] = self.member_marker

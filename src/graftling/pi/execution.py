@@ -121,6 +121,9 @@ class PiExecution:
         self.agent = None
         self.parent_notice = None
         self.agent_call = None
+        # The host's own tools served beside agents on this child's channel, by
+        # name (graftling.extra_tools.extra_tool_table); none by default.
+        self.extra_tools: dict = {}
         # Review plugin state, unused without ``request['review']``: the reserved
         # dialog title and the native dialogs still with the reviewer.
         self.review_title = 'agents-review:' + uuid.uuid4().hex if request.get('review') else None
@@ -436,11 +439,15 @@ class PiExecution:
             self.directory / 'mcp', self.agent_call,
             lambda pid: authenticate_process(self.proc, pid),
             files=Path(self.request['worktree_path']),
+            extra_tools=list(self.extra_tools.values()),
         )
 
     def connection_environment(self, address: str) -> dict:
-        """Name the existing connection for the extension's MCP client."""
-        return {'GRAFTLING_CONNECTION': address, 'GRAFTLING_PYTHON': sys.executable}
+        """Name the existing connection, and any extra tools' descriptors, for the extension's MCP client."""
+        from graftling.extra_tools import descriptor_environment
+
+        return {'GRAFTLING_CONNECTION': address, 'GRAFTLING_PYTHON': sys.executable,
+                **descriptor_environment(self.extra_tools)}
 
     def archive_collector(self, header: dict, native: dict):
         """Collect the native Session into the bound archive; without one, archive nothing."""

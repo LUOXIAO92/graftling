@@ -2,10 +2,11 @@
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 
 from graftling import Run
 from graftling.connection import agents_connection
+from graftling.extra_tools import ExtraTool, extra_tool_table
 from graftling.notices import notice_id
 from graftling.process import authenticate_process
 from .execution import DshExecution
@@ -21,10 +22,15 @@ def session_context(turn: DshExecution) -> dict | None:
             'source': 'child' if child else 'main', 'cwd': header.get('cwd')}
 
 
-def bind_run(turn: DshExecution, run: Run) -> None:
-    """Use the existing core identity; no preparation or second controller."""
+def bind_run(turn: DshExecution, run: Run, extra_tools: Sequence[ExtraTool] | None = None) -> None:
+    """Use the existing core identity; no preparation or second controller.
+
+    ``extra_tools`` are the host's own tools served beside ``agents`` on the
+    same channel (:mod:`graftling.extra_tools`); each keeps its own authorization.
+    """
     if run.call is None:
         raise ValueError('The DSH execution needs its owning Agents callback.')
+    turn.extra_tools = extra_tool_table(extra_tools)
     if 'completion_message' in run.settings:
         # GraphTraj nests native settings in adapter_request; the independent
         # Driver passes them directly. Both receive the same verified notice.
@@ -37,7 +43,8 @@ def bind_run(turn: DshExecution, run: Run) -> None:
             """Use only the still-owned native service's OS ancestry."""
             authenticate_process(turn.service.process if turn.service else None, pid)
 
-        with agents_connection(directory, run.call, authenticate, native_context=lambda: session_context(turn)) as address:
+        with agents_connection(directory, run.call, authenticate, native_context=lambda: session_context(turn),
+                               extra_tools=list(turn.extra_tools.values())) as address:
             yield address
 
     def receive(event: dict) -> bool:
