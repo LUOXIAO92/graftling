@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 import os
 from pathlib import Path
+import re
 import shutil
 import threading
 from typing import Any, Mapping
@@ -43,10 +45,87 @@ def _refuse_key_held_by_reviewer(request: Mapping[str, Any]) -> None:
             "api_key_env, or log in to this provider in the connection's home.")
 
 
-def apply_tools(request: dict, tools: Mapping[str, Any]) -> None:
-    """Put a create's tool choice (551) into a Pi launch request; Pi applies it natively at launch."""
-    request['tools'] = list(tools['tools']) if tools.get('tools') is not None else None
-    request['disallowed_tools'] = list(tools.get('disallowed_tools') or ())
+def _mcp_servers(*files: Path) -> set[str]:
+    """The MCP server names Pi's mcp.json files configure (``mcpServers``/``servers`` keys, else top level)."""
+    names: set[str] = set()
+    for path in files:
+        try:
+            document = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        if isinstance(document, dict):
+            servers = document.get('mcpServers', document.get('servers', document))
+            names |= {name for name, value in (servers.items() if isinstance(servers, dict) else ())
+                      if isinstance(value, dict)}
+    return names
+
+
+def _may_add_tools(*directories: Path) -> bool:
+    """Whether Pi may load host extensions or packages here, whose tools cannot be known before start."""
+    for directory in directories:
+        for name in ('extensions', 'npm'):
+            folder = directory / name
+            if folder.is_dir() and any(folder.iterdir()):
+                return True
+        try:
+            settings = json.loads((directory / 'settings.json').read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        if isinstance(settings, dict) and (settings.get('packages') or settings.get('extensions')):
+            return True
+    return False
+
+
+def check_tool_names(request: Mapping[str, Any], names: list[str], own_server: str = 'graftling') -> list[str]:
+    """Refuse (``unavailable``) the entries Pi provably does not know; return those it cannot check before start.
+
+    Known: Pi's built-ins, the child's own ``mcp__<own_server>__*`` (agents and the owner's tools), and a
+    well-formed ``mcp__<server>__<tool>`` of a server the host or project ``mcp.json`` configures. A plain
+    non-built-in name is provably unknown when the host loads no extension or package; with them it could be
+    an extension tool, which Pi alone knows at start: such names, ``*`` patterns and the tool part of another
+    configured server are returned as unverified (551: refused or reported, never silently ignored).
+    """
+    from .execution import PI_BUILTIN_TOOLS
+
+    agent = Path(request.get('agent_dir') or os.environ.get('PI_CODING_AGENT_DIR') or Path.home() / '.pi/agent')
+    project = Path(request['worktree_path']) / '.pi' if request.get('worktree_path') else None
+    places = [agent, *([project] if project else [])]
+    servers = _mcp_servers(*(place / 'mcp.json' for place in places))
+    extensions = _may_add_tools(*places)
+    unknown, unverified = [], []
+    for raw in dict.fromkeys(names):
+        name = raw[1:] if raw[:1] in '+-' else raw
+        if '*' in name:
+            unverified.append(raw)
+        elif name.startswith('mcp__'):
+            match = re.fullmatch(r'mcp__([A-Za-z0-9_-]+?)__([A-Za-z0-9_.-]+)', name)
+            if match is None or (match.group(1) != own_server and match.group(1) not in servers):
+                unknown.append(raw)
+            elif match.group(1) != own_server:
+                unverified.append(raw)
+        elif name not in PI_BUILTIN_TOOLS:
+            (unverified if extensions else unknown).append(raw)
+    if unknown:
+        raise AgentsError('unavailable', f'Pi does not know the tools {unknown}: not a Pi built-in '
+                                         f'({sorted(PI_BUILTIN_TOOLS)}), not this child\'s mcp__{own_server}__*, '
+                                         f'and not a tool of a configured MCP server ({sorted(servers)})'
+                                         + ('' if extensions else '; the host loads no Pi extension') + '.')
+    return unverified
+
+
+def apply_tools(request: dict, tools: Mapping[str, Any], own_server: str = 'graftling') -> None:
+    """Put a create's tool choice (551) into a Pi launch request; Pi applies it natively at launch.
+
+    Every entry is checked first (:func:`check_tool_names`): a provably unknown one refuses the create;
+    ones Pi alone can resolve at start are kept in ``request['unverified_tools']`` and reported.
+    """
+    chosen = list(tools['tools']) if tools.get('tools') is not None else None
+    denied = list(tools.get('disallowed_tools') or ())
+    unverified = check_tool_names(request, [*(chosen or ()), *denied], own_server)
+    request['tools'] = chosen
+    request['disallowed_tools'] = denied
+    if unverified:
+        request['unverified_tools'] = unverified
 
 
 def selected(request: Mapping[str, Any], selection: Mapping[str, Any]) -> dict:

@@ -63,15 +63,48 @@ def test_pi_choice_maps_to_native_flags_and_names_what_is_beyond_the_host(tmp_pa
     assert tool_arguments({'disallowed_tools': ['grep']}, directory) == (['--exclude-tools', 'grep'], [])
 
 
-def test_pi_driver_keeps_the_choice_only_when_given() -> None:
-    request = {'executable': '/x/pi', 'worktree_path': '/w'}
+def test_pi_driver_keeps_the_choice_only_when_given(tmp_path: Path) -> None:
+    request = {'executable': '/x/pi', 'worktree_path': str(tmp_path), 'agent_dir': str(agent_dir(tmp_path, None))}
     driver = PiDriver(request)
     assert 'tools' not in driver.prepare('pi', CALLER)['adapter_request']
     chosen = driver.prepare('pi', CALLER, tools={'tools': ['read'], 'disallowed_tools': ['bash']})['adapter_request']
     assert (chosen['tools'], chosen['disallowed_tools']) == (['read'], ['bash'])
-    plain = {}
-    pi_apply_tools(plain, {'tools': None, 'disallowed_tools': ['web']})
-    assert plain == {'tools': None, 'disallowed_tools': ['web']}
+    plain = {'agent_dir': request['agent_dir']}
+    pi_apply_tools(plain, {'tools': None, 'disallowed_tools': ['grep']})
+    assert plain == {'agent_dir': request['agent_dir'], 'tools': None, 'disallowed_tools': ['grep']}
+
+
+def test_pi_refuses_provably_unknown_entries(tmp_path: Path) -> None:
+    """551 user decision: an entry Pi does not know is refused at create, never silently ignored."""
+    request = {'agent_dir': str(agent_dir(tmp_path, None)), 'worktree_path': str(tmp_path)}
+    for tools in ({'tools': ['nosuchtool'], 'disallowed_tools': []},
+                  {'tools': None, 'disallowed_tools': ['nosuchtool']},
+                  {'tools': ['read', 'mcp__nosuchserver__x'], 'disallowed_tools': []},
+                  {'tools': ['read', 'mcp__graftling__tasks'], 'disallowed_tools': []}):
+        with pytest.raises(AgentsError) as refused:
+            pi_apply_tools(dict(request), tools, own_server='graphtraj')
+        assert refused.value.code == 'unavailable'
+        assert ([*(tools['tools'] or ()), *tools['disallowed_tools']][-1]) in refused.value.message
+    known = dict(request)
+    pi_apply_tools(known, {'tools': ['read', '+grep', 'mcp__graphtraj__tasks'], 'disallowed_tools': ['mcp__graphtraj__agents']},
+                   own_server='graphtraj')
+    assert 'unverified_tools' not in known
+
+
+def test_pi_reports_what_only_pi_can_resolve_at_start(tmp_path: Path) -> None:
+    """Patterns, another configured server's tools, and (with host extensions) non-built-in names are reported."""
+    directory = agent_dir(tmp_path, None)
+    (directory / 'mcp.json').write_text(json.dumps({'mcpServers': {'playwright': {'command': 'x'}}}))
+    request = {'agent_dir': str(directory), 'worktree_path': str(tmp_path)}
+    pi_apply_tools(request, {'tools': ['read', 'mcp__playwright__browser_navigate', 'mcp__graftling__*'],
+                             'disallowed_tools': []})
+    assert request['unverified_tools'] == ['mcp__playwright__browser_navigate', 'mcp__graftling__*']
+    with pytest.raises(AgentsError):  # no host extension: a non-built-in plain name is provably unknown
+        pi_apply_tools(dict(request), {'tools': ['plan_mode'], 'disallowed_tools': []})
+    (directory / 'extensions').mkdir()
+    (directory / 'extensions' / 'plan.ts').write_text('export default () => {}\n')
+    pi_apply_tools(request, {'tools': ['plan_mode'], 'disallowed_tools': []})
+    assert request['unverified_tools'] == ['plan_mode']
 
 
 # Pi's extension: what the confirm hook asks and blocks, with the parent's answer given per call.
