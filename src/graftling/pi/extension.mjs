@@ -313,15 +313,29 @@ const REVIEW_TITLE = Symbol.for('agents.pi.review-title');
  * by agents' authority checks, and must work when the reviewer is down. A tool
  * named agents on any other MCP server is reviewed.
  */
+/**
+ * The tools of `server` the owner declared beside agents (GRAFTLING_EXTRA_TOOLS, 551), as Pi names them.
+ * Like agents they are the owner's own entries with their own authorization, so review lets them through.
+ */
+export function ownerTools(environment = process.env, server = MCP_SERVER) {
+  let declared;
+  try { declared = JSON.parse(environment.GRAFTLING_EXTRA_TOOLS || '[]'); } catch { declared = []; }
+  if (!Array.isArray(declared)) return [];
+  return declared.filter(item => typeof item?.name === 'string' && /^[A-Za-z0-9_-]+$/.test(item.name) && item.name !== 'agents')
+    .map(item => `mcp__${server}__${item.name}`);
+}
+
 export function registerReview(pi, environment = process.env, server = MCP_SERVER) {
   const agentsTool = `mcp__${server}__agents`;
+  // The owner's own entries pass without an ask: agents and every extra tool it declared (551).
+  const exempt = new Set([agentsTool, ...ownerTools(environment, server)]);
   const title = environment.GRAFTLING_PI_REVIEW || globalThis[REVIEW_TITLE];
   delete environment.GRAFTLING_PI_REVIEW;
   if (!title) return false;
   globalThis[REVIEW_TITLE] = title;
   pi.registerCommand('agents-review-hook', { description: 'The agents review plugin is active.', handler: async () => {} });
   pi.on('tool_call', async (event, ctx) => {
-    if (event.toolName === agentsTool) return undefined;
+    if (exempt.has(event.toolName)) return undefined;
     const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input });
     const confirmed = await ctx.ui.confirm(title, call, { signal: ctx.signal });
     if (confirmed === true) return undefined;

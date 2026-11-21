@@ -199,7 +199,9 @@ def apply_tools(request: dict, tools: Mapping[str, Any]) -> None:
         raise AgentsError('unavailable', "The installed DSH agent preset cannot be read, so a child's tools "
                                          'cannot be chosen.')
     rows = {row['id']: row for row in _tool_rows(preset['config']['plugins'])}
-    unknown = [name for name in dict.fromkeys([*(chosen or ()), *denied]) if name not in rows]
+    # An `mcp__<server>__<tool>` deny is kept for bind_run, which stops offering that owner tool (551).
+    unknown = [name for name in dict.fromkeys([*(chosen or ()), *(d for d in denied if not d.startswith('mcp__'))])
+               if name not in rows]
     if unknown:
         raise AgentsError('unavailable', f"DSH chooses a child's tools by agent-preset plugin row, one row "
                                          f"possibly carrying several tools; unknown {unknown}; rows: {sorted(rows)}.")
@@ -335,10 +337,13 @@ class DshExecution:
                                                               *([EXTRA_TOOLS_ENV] if self.extra_tools else [])],
                                                    'mcpServer': self.mcp_server}}]})
         if self.request.get('review'):
-            # Review lets through only the agents tool of the server registered above.
+            # Review lets through only the owner's own entries on the server registered above: its agents
+            # tool and every extra tool the owner declared (551; each keeps its own authorization).
             patches.append({'insert': [{'id': 'agents-review', 'name': str(Path(__file__).with_name('review.mjs')),
                                         'config': {'readyFile': str(self.review_ready),
-                                                   **({'mcpServer': self.mcp_server}
+                                                   **({'mcpServer': self.mcp_server,
+                                                       **({'ownerTools': sorted(self.extra_tools)}
+                                                          if self.extra_tools else {})}
                                                       if self.request.get('mcp') else {})}}]})
         if self.request.get('connection'):
             # Native selectModel otherwise saves the selection to the shared

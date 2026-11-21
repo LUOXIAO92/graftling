@@ -30,7 +30,20 @@ def bind_run(turn: DshExecution, run: Run, extra_tools: Sequence[ExtraTool] | No
     """
     if run.call is None:
         raise ValueError('The DSH execution needs its owning Agents callback.')
-    turn.extra_tools = extra_tool_table(extra_tools)
+    table = extra_tool_table(extra_tools)
+    # disallowed_tools naming an owner tool as `mcp__<server>__<name>` (551): it is not offered at all. DSH cannot
+    # hide any other MCP tool (agents included), so such a deny refuses the create instead of being ignored.
+    denied = [name for name in (getattr(turn, 'request', {}) or {}).get('disallowed_tools') or () if name.startswith('mcp__')]
+    own = {f'mcp__{getattr(turn, "mcp_server", "graftling")}__{name}': name for name in table}
+    refused = [name for name in denied if name not in own]
+    if refused:
+        from graftling.tool import AgentsError
+
+        raise AgentsError('unavailable', f'DSH can deny only the owner tools {sorted(own)} among MCP tools; '
+                                         f'{refused} cannot be hidden from this child.')
+    for name in denied:
+        table.pop(own[name], None)
+    turn.extra_tools = table
     if 'completion_message' in run.settings:
         # GraphTraj nests native settings in adapter_request; the independent
         # Driver passes them directly. Both receive the same verified notice.

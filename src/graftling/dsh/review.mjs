@@ -20,11 +20,14 @@ export const MARKER = 'agents-review';
  * ``mcpServer`` every tool is.
  */
 export function apply(ctx, config) {
-  const agentsTool = config.mcpServer ? `mcp__${config.mcpServer}__agents` : undefined;
+  // ``config.ownerTools`` (551): the extra tools the owner declared on that server (e.g. tasks); like agents
+  // they are the owner's own entries with their own authorization, so they are not reviewed either.
+  const exempt = new Set(config.mcpServer ? ['agents', ...(Array.isArray(config.ownerTools) ? config.ownerTools : [])]
+    .filter(name => typeof name === 'string' && name).map(name => `mcp__${config.mcpServer}__${name}`) : []);
   ctx.on('tools/pre-execute', async (exec, next) => {
     const decision = await next();
     // A native deny stays denied; a native ask stays a native request for the parent.
-    if (decision.kind !== 'allow' || (agentsTool && exec.name === agentsTool)) return decision;
+    if (decision.kind !== 'allow' || exempt.has(exec.name)) return decision;
     const call = { tool: exec.name, call_id: exec.callId, input: exec.arguments };
     return { kind: 'ask', reason: `agents review of tool "${exec.name}"`,
       displayReason: { en: `agents review of tool "${exec.name}"`, [MARKER]: JSON.stringify(call) } };
