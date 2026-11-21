@@ -1018,7 +1018,10 @@ class AgentControl:
                 try:
                     return self._deliver(record, current, message)
                 except AgentsError as error:
-                    if error.code != "runtime-input-closed" or current.get("stop_requested_at") is not None:
+                    # Wait only for an execution the Runtime reports as finishing
+                    # (turn ended, nothing pending); any other refusal stays prompt.
+                    if (error.code != "runtime-input-closed" or current.get("stop_requested_at") is not None
+                            or not getattr(error, "finishing", False) or _unanswered(current)):
                         raise
                     closed, refusal = current["id"], error
         if run is None:

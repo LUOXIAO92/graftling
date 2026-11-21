@@ -266,13 +266,17 @@ class FinishingDriver(ScriptedDriver):
     """
 
     finish_after = 0.3
+    finishing = True
 
     def deliver(self, run, message):
         """Refuse like Claude/Codex/DSH in their closing window, then finish."""
         if run.execution == self.started_executions[0]:
             self.deliveries += 1
-            threading.Timer(self.finish_after, self.release, args=(run.execution,)).start()
-            raise AgentsError('runtime-input-closed', 'Claude finished accepting input for this execution.')
+            if self.finish_after is not None:
+                threading.Timer(self.finish_after, self.release, args=(run.execution,)).start()
+            refused = AgentsError('runtime-input-closed', 'Claude finished accepting input for this execution.')
+            refused.finishing = self.finishing
+            raise refused
         super().deliver(run, message)
 
     def start(self, run):
@@ -317,6 +321,31 @@ def test_send_refused_by_an_execution_that_never_ends_stays_refused(root: Path) 
     sent, failed = call(control, main, action='send', agent=created['agent'], message='later')
     assert failed and sent['error']['code'] == 'runtime-input-closed'
     assert 'send again once it is in standby' in sent['error']['message']
+    driver.release(created['execution'])
+
+
+@pytest.mark.parametrize('case', ['request-pending', 'not-finishing'])
+def test_a_refusal_of_an_execution_that_is_not_finishing_returns_at_once_rejected(root: Path, case: str) -> None:
+    """546 round 2: only a finishing execution with nothing unanswered is waited for; others refuse as before."""
+    driver  = FinishingDriver()
+    driver.finish_after = None          # the execution would never end by itself
+    driver.finishing = case != 'not-finishing'
+    control = AgentControl(root, {'scripted': driver})
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    agent = created['agent']
+    if case == 'request-pending':
+        ExecutionEvents(control, agent, created['execution']).request(
+            {'request_token': 'token-1', 'method': 'native/approve'})
+    started = time.monotonic()
+    sent, failed = call(control, main, action='send', agent=agent, message='late')
+    assert time.monotonic() - started < 1
+    assert failed and sent['error'] == {'code': 'runtime-input-closed',
+                                        'message': 'Claude finished accepting input for this execution.'}
+    record = json.loads((root / 'control/agents' / f'{agent}.json').read_text())
+    [receipt] = record['executions'][-1]['inputs']
+    assert receipt['delivery'] == 'rejected' and receipt['error'] == sent['error']
     driver.release(created['execution'])
 
 

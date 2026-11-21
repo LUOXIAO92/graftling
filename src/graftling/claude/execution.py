@@ -1267,7 +1267,8 @@ class ClaudeExecution:
                 return {'requests': list(self.pending.values()) if not self.done.is_set() else []}
             if (operation == 'send' and not self.accepting
                     and not self.stopping.is_set() and self.session is not None):
-                raise RuntimeAdapterError('runtime-input-closed', 'Claude finished accepting input for this execution.')
+                raise RuntimeAdapterError('runtime-input-closed', 'Claude finished accepting input for this execution.',
+                                          finishing=self.turn_ended and not self.pending)
             if self.done.is_set():
                 raise RuntimeAdapterError('operation-failed', 'Claude execution has ended.')
             if operation == 'reply':

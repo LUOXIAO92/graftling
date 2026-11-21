@@ -29,12 +29,18 @@ class RuntimeAdapterError(Exception):
         message: str,
         *,
         terminal_confirmed: bool = True,
+        finishing: bool = False,
     ) -> None:
-        """Retain the native error and whether execution termination is confirmed."""
+        """Retain the native error and whether execution termination is confirmed.
+
+        ``finishing`` marks a ``runtime-input-closed`` refusal given because the
+        turn ended and the execution is closing, with nothing pending (546).
+        """
         super().__init__(message)
         self.code = code
         self.message = message
         self.terminal_confirmed = terminal_confirmed
+        self.finishing = finishing
 
 
 class RuntimeTurn(Protocol):
