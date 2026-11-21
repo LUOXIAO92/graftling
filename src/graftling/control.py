@@ -1018,10 +1018,13 @@ class AgentControl:
                 try:
                     return self._deliver(record, current, message)
                 except AgentsError as error:
-                    # Wait only for an execution the Runtime reports as finishing
-                    # (turn ended, nothing pending); any other refusal stays prompt.
+                    # Wait only with nothing unanswered, no stop requested, and a
+                    # finishing fact that is not explicitly False: a Runtime that
+                    # reports it (graftling drivers) says False while its turn still
+                    # runs; a host that drops it (GraphTraj's AdapterDriver) leaves
+                    # it unknown. Any other refusal stays prompt.
                     if (error.code != "runtime-input-closed" or current.get("stop_requested_at") is not None
-                            or not getattr(error, "finishing", False) or _unanswered(current)):
+                            or getattr(error, "finishing", None) is False or _unanswered(current)):
                         raise
                     closed, refusal = current["id"], error
         if run is None:

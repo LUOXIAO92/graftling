@@ -275,7 +275,8 @@ class FinishingDriver(ScriptedDriver):
             if self.finish_after is not None:
                 threading.Timer(self.finish_after, self.release, args=(run.execution,)).start()
             refused = AgentsError('runtime-input-closed', 'Claude finished accepting input for this execution.')
-            refused.finishing = self.finishing
+            if self.finishing is not None:      # None: no fact, as GraphTraj's _native_error raises it
+                refused.finishing = self.finishing
             raise refused
         super().deliver(run, message)
 
@@ -307,6 +308,21 @@ def test_send_while_the_execution_finishes_goes_to_the_next_execution(root: Path
     driver.release(sent['execution'])
     waited, _ = call(control, main, action='wait', agent=agent, timeout_seconds=5)
     assert waited['result']['last_result']['last_message'] == 'Now say bye.'
+
+
+def test_a_refusal_without_a_finishing_fact_goes_to_the_next_execution(root: Path) -> None:
+    """546 round 2: a host that drops the fact (plain AgentsError) still gets the closing window handled."""
+    driver  = FinishingDriver()
+    driver.finishing = None
+    control = AgentControl(root, {'scripted': driver})
+    main    = Caller('test-host', None)
+
+    created, _ = call(control, main, action='create', runtime='scripted', instruction='Say hi.')
+    sent, failed = call(control, main, action='send', agent=created['agent'], message='Now say bye.')
+    assert not failed, sent
+    delivery = sent['result']['delivery']
+    assert delivery['delivery'] == 'next-execution' and delivery['closed_execution'] == created['execution']
+    driver.release(sent['execution'])
 
 
 def test_send_refused_by_an_execution_that_never_ends_stays_refused(root: Path) -> None:
