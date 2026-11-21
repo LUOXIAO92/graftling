@@ -770,3 +770,21 @@ def test_a_resume_that_cannot_start_tells_the_standalone_parent_why(
     assert resumed.failed
     failure = resumed.document['result']['last_result']['error']
     assert failure['code'] == 'RUNTIME_START_FAILED' and REASON in failure['message']
+
+
+@pytest.mark.parametrize(('outcome', 'stopping', 'code'), [
+    ('completed', False, 'runtime-input-closed'),
+    (None, False, 'operation-unavailable'),
+    ('interrupted', True, 'operation-unavailable'),
+])
+def test_a_send_after_the_turn_completed_is_input_closed(tmp_path: Path, outcome, stopping, code) -> None:
+    """546: between quiescence and the reported end, a send is refused as input closed, not unavailable."""
+    turn = execution.DshExecution({}, 'unused', tmp_path, lambda *_: None, lambda *_: None,
+                                  tmp_path / 'trace.jsonl', 'session-1')
+    turn.outcome = outcome
+    if stopping:
+        turn.stopping.set()
+    with pytest.raises(DshError) as refused:
+        turn.operate({'operation': 'send', 'session': 'session-1', 'execution_id': turn.execution_id,
+                      'instruction': 'late'})
+    assert refused.value.code == code

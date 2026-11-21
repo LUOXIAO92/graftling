@@ -831,6 +831,9 @@ class DshExecution:
                 result = self.service.rpc('agentMessages/receive', message)
                 self.end = None
                 return result
+            if operation == 'send' and self.outcome is not None and not self.stopping.is_set():
+                # The turn completed and closed input; its end is not reported yet (546).
+                raise self.error_type('runtime-input-closed', 'DSH finished accepting input for this execution.')
             raise self.error_type('operation-unavailable', 'DSH operation unavailable for this execution.')
 
     def terminate(self) -> bool:
