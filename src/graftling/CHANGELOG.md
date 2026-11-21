@@ -14,6 +14,12 @@ The numbers in parentheses are the project's Task numbers.
 
 ## Unreleased (compatible; the next version is 0.6.3)
 
+- DSH shows an agents notice as who · event over its Markdown (538). The DSH host relays
+  `notice_text` (its notice line gains `text`); graftling-dsh's browser module draws the
+  notice title's sender and event over the content through DSH's `MarkdownText`, prints an
+  equal agent/session pair once and leaves out a recipient that is the open conversation.
+  DSH's own card below keeps the model's text.
+
 - The Claude Code Main shows agents traffic as who and what (533). A pushed notice's text
   is the new public `notice_text(event)`, the same for every Runtime: the unchanged title
   `[Graftling notice from <alias> · <event>[ · execution <id>]]`, then the content as

@@ -1606,11 +1606,11 @@ What the parent sees today:
   their Session: a new or forked Pi Session does not receive them.
 - **DSH host** (1.7): it enables `request_notices` and `hold_notices`, for
   children of every Runtime it runs. Each notice `{"id", "agent", "session", "event",
-  "message", "execution"}` (the id as for Claude above) goes to the plugin,
-  which hands it to the existing `agentMessages.receive` relay
+  "message", "execution", "text"}` (the id as for Claude above; `text` is `notice_text`, 538) goes
+  to the plugin, which hands it to the existing `agentMessages.receive` relay
   (`dsh/communication.mjs`): one native `agent-message` relay message from
-  the child's Agent and Session, text `[agents notice from <agent> ·
-  <event> · execution <execution>]` followed by the message, communication id `agents-notice:<id>`,
+  the child's Agent and Session, text `text` (a host without it: `[agents notice from <agent> ·
+  <event> · execution <execution>]` followed by the message), communication id `agents-notice:<id>`,
   placed in the Session's next-step inbox with a wake. The relay admits one
   id once per Session, including across processes, by looking for it in the
   Session's persisted events and inbox (`communication.mjs` `deliver`); that is

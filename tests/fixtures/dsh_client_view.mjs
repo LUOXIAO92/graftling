@@ -13,7 +13,10 @@ vm.runInNewContext(readFileSync(clientPath, 'utf8'), { window: { __ModuleLoader_
   load(definition) { module = definition; },
 } } });
 assert.equal(module.id, 'graftling-dsh');
+function MarkdownText(props) { return props.text; }
 const views = module.factory(name => {
+  // react, and DSH's Markdown view from the primitives its Chat package uses (538)
+  if (name === '@deepseek-ai/dsh-client-ui-primitives') return { MarkdownText };
   assert.equal(name, 'react');
   return { createElement: (tag, props, ...children) => ({ tag, props, children }) };
 });
@@ -72,3 +75,31 @@ for (const other of [{ kind: 'goal' }, { kind: 'agent-message', senderSessionId:
   assert.equal(original.props, unchanged);
 }
 console.log('Native keyed slot: true sender/recipient, one unchanged body, other triggers delegated');
+
+// 538: a GraphTraj/Graftling notice relayed from the member to this conversation: who · event over
+// the Markdown content (DSH's MarkdownText), no title or Facts line, and each value once: the sender's
+// equal agent/session ids and a recipient that is this conversation are not printed.
+const noticeText = '[Graftling notice from agent-abc · completed · execution exec-1]\n\n'
+  + '## Result 538\n\n- alpha\n- beta\n\n```\necho 538\n```\n\nFacts: execution_id `exec-1` · outcome `completed`';
+const noticeSource = Object.freeze({ kind: 'agent-message', form: 'relay', senderSessionId: 'agent-abc',
+  senderAgentId: 'agent-abc', recipientAgentId: 'main-session', communicationId: 'graphtraj-notice:main-session:2:0' });
+const noticeProps = Object.freeze({ sessionId: 'main-session', t: key => `t:${key}`, node: Object.freeze({ kind: 'turn-trigger',
+  data: Object.freeze({ source: noticeSource, seq: 48, time: 12346, content: Object.freeze([{ type: 'text', text: noticeText }]) }) }) });
+const shown = incoming.component(noticeProps);
+assert.equal(shown.children.at(-1).tag, NativeTrigger);       // the model's text stays in DSH's card
+assert.equal(shown.children.at(-1).props, noticeProps);
+const ours = JSON.stringify(shown.children.slice(0, -1));
+assert.equal(ours.match(/agent-abc/g).length, 1);
+assert.ok(ours.includes('agent-abc · completed'));
+assert.ok(!/From|To Agent|main-session|Facts|exec-1|Graftling notice/.test(ours), ours);
+const md = shown.children[0].children[1].children[0];
+assert.equal(md.tag, MarkdownText);
+assert.equal(md.props.text, '## Result 538\n\n- alpha\n- beta\n\n```\necho 538\n```');
+assert.equal(md.props.labels.code.copyLabel, 't:copy');
+// A plain relay whose agent and session ids are equal: 'From' and the value once.
+const plain = incoming.component({ ...noticeProps, node: { ...noticeProps.node, data: { ...noticeProps.node.data,
+  content: [{ type: 'text', text: 'plain message' }] } } });
+const plainOurs = JSON.stringify(plain.children.slice(0, -1));
+assert.equal(plainOurs.match(/agent-abc/g).length, 1);
+assert.ok(plainOurs.includes('"From"') && !plainOurs.includes('main-session'), plainOurs);
+console.log('Notice: who · event over Markdown; each value once; the native card keeps the model text');

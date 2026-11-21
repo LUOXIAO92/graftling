@@ -39,8 +39,12 @@ export function sessionEnvironment(agent) {
 export function noticeMessage(notice, session) {
   const { id, agent, event, message, execution } = notice;
   const named = execution ? ` · execution ${execution}` : '';
+  // 538: the host's notice_text (title with the execution, Markdown content, Facts), which graftling-dsh's
+  // browser module draws as who · event over Markdown; the older title only for a host that sends none.
+  const body = typeof notice.text === 'string' && notice.text ? notice.text
+    : `[agents notice from ${agent} · ${event}${named}]\n${message}`;
   return { id: `agents-notice:${id}`, sessionId: session, senderSessionId: notice.session || agent,
-    sender: agent, recipient: session, body: `[agents notice from ${agent} · ${event}${named}]\n${message}` };
+    sender: agent, recipient: session, body };
 }
 
 /**

@@ -25,7 +25,7 @@ from typing import Any, Callable, Mapping, TextIO
 
 from graftling import AgentControl, AgentsError, AgentsResult, Caller, bind
 from graftling.connection import agents_connection
-from graftling.notices import notice_id
+from graftling.notices import notice_id, notice_text
 from graftling.process import process_ancestors, process_arguments, process_executable
 from graftling.shutdown import CLOSE_SECONDS, exit_if_unconfirmed, stop_children
 
@@ -175,7 +175,10 @@ class Notices:
                 self.stream.write(json.dumps({'notice': {
                     'id': identity, 'agent': notice['agent'], 'session': notice.get('session'),
                     'event': notice['outcome'], 'message': message,
-                    'execution': notice['execution']}}) + '\n')
+                    'execution': notice['execution'],
+                    # 538: the Runtime-independent text (533) the plugin relays as the model input
+                    'text': notice_text({'alias': notice['agent'], 'event': notice['outcome'], 'message': message,
+                                         'execution': notice['execution'], 'request': notice.get('request')})}}) + '\n')
                 self.stream.flush()
             except (OSError, ValueError):
                 self.waiting.pop(identity, None)
