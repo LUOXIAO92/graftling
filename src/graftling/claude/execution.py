@@ -305,7 +305,8 @@ class ClaudeExecution:
         if prior is None:
             try:
                 future.set_result(discover_agents(message.get('params', {}).get('arguments', {}),
-                                                  self.agents_callback))
+                                                  self.agents_callback,
+                                                  files=Path(self.request['worktree_path'])))
             except BaseException as error:
                 future.set_exception(error)
                 raise

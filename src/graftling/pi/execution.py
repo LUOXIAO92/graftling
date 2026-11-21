@@ -435,6 +435,7 @@ class PiExecution:
         return agents_connection(
             self.directory / 'mcp', self.agent_call,
             lambda pid: authenticate_process(self.proc, pid),
+            files=Path(self.request['worktree_path']),
         )
 
     def connection_environment(self, address: str) -> dict:

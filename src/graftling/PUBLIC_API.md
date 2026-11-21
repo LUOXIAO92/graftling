@@ -176,7 +176,26 @@ Every entry (MCP, CLI, host-registered function) takes the same envelope:
 | `query` | string | `discover`; words that must all match |
 | `feature` | string | `describe`, `execute`; required there |
 | `schema` | boolean, default false | `describe`; return only the input schema |
-| `arguments` | object | `execute`; required there |
+| `arguments` | object | `execute`; this or `arguments_file` is required there |
+| `arguments_file` | string | `execute`; path of a JSON file holding the arguments object (since 555) |
+
+**Arguments from a file (555).** A caller with long arguments writes them once to a
+UTF-8 JSON file holding one object and passes its path as `arguments_file`; after an
+error it fixes only the file and calls again. Inline `arguments` may be given too:
+their top-level fields replace the file's. The host, never the request, supplies the
+directory the caller may read such a file from: `handle_request(request, execute,
+files=<directory>)`, and `validate_envelope(request, files=...)` and
+`read_envelope_arguments(request, files)` (1.3) for a host running its own features.
+A relative path starts in that directory. The path is resolved, links followed, and must
+be a regular file of at most 1 MiB inside it. Without a directory, `arguments_file` is
+refused (`request.arguments_file: this host accepts no arguments file`). agents' own
+hosts supply the caller's workspace: the verified native Session cwd on an owner
+connection with native facts (Codex and DSH children, the DSH host), the project for the
+Claude Code host, the worktree for Claude and Pi children and the Pi host's cwd. The
+CLI's installed host plugins (1.4) receive none. Refusals (missing, outside, not a
+regular file, too large, not UTF-8, invalid JSON with its line and column only, not an
+object) name the path the caller gave, never the file's content. The content is only the
+arguments object and is validated like inline `arguments`.
 
 `discover` returns `{"features": [{"feature", "description"}], "describe":
 {...}}`. `describe` returns `{"feature", "description", "input_schema"}`, or
@@ -348,7 +367,14 @@ once the first ends.
 Envelope validation errors in `discover`, `describe` and `execute`
 (malformed envelope, unknown feature, `arguments` failing the feature's
 schema) use the same structure, with `action` set to the envelope's `action`
-and code `invalid-input`. Before 388 they returned `{"error": "<text>"}`
+and code `invalid-input`. Since 555 every problem of one request is returned
+at once: the envelope's, the arguments file's and, when the feature is known, every
+argument violation. The error then also holds `errors`, a list of `{"path",
+"reason"}` (for example `{"path": "arguments.name", "reason": "expected string"}`),
+and `message` joins them with `; `. The `agents` function (`bind`,
+`validate_request`) lists its problems the same way. An unmatched `anyOf` reports the
+problems of the one alternative whose `type` the value has, else one problem naming
+each alternative's. Before 388 they returned `{"error": "<text>"}`
 without a code; the change is a fix under 7.
 
 ### 1.3 Python names
@@ -395,9 +421,17 @@ Parts for building a host or a consumer on agents (since 0.2.2), also in
   over it, `record_lock_owner` proves a lock's owning process,
   `client_native_context` reads the caller's native Session facts and
   `verify_native_context` compares them with what the host expects;
-- the progressive envelope of 1.2: `ENVELOPE_SCHEMA`, `validate_envelope`,
-  `handle_request(request, execute)`, and `validate_schema(value, schema, path)`
-  for the JSON Schema vocabulary agents uses;
+- the progressive envelope of 1.2: `ENVELOPE_SCHEMA`, `validate_envelope(request,
+  *, files=None)`, `handle_request(request, execute, *, files=None)`,
+  `read_envelope_arguments(request, files)` (an `execute` request's arguments with its
+  `arguments_file` read, 1.2), and `validate_schema(value, schema, path)` for the
+  JSON Schema vocabulary agents uses. `files` is the directory the host lets this
+  caller read an arguments file from; `None` refuses one. Since 555 `validate_schema`
+  and `validate_envelope` raise `ValidationErrors`, a `ValueError` whose `errors` lists
+  every `{"path", "reason"}`; `schema_errors(value, schema, path)` returns that list
+  without raising. A host adds its own feature-level problems with
+  `ValidationErrors(found.errors + its_own)` and returns `{"code": "invalid-input",
+  "message": str(error), "errors": error.errors}` in one response;
 - MCP server parts, the framing of `agents-mcp`: `ConcurrentServer`,
   `ClientGone`, `mcp_serve`, `mcp_respond`, `mcp_result_response`,
   `mcp_error_response`, `mcp_tool_documents`;

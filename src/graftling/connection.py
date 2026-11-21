@@ -377,26 +377,32 @@ def agents_connection(
     *,
     native_context: Callable[[], dict | None] | None = None,
     close_seconds: float | None = None,
+    files: Path | None = None,
 ) -> Iterator[str]:
     """Serve one bound caller, optionally checking host-owned native Session facts.
 
     Native facts only constrain the existing binding. They never select an
     Agent or substitute for kernel-PID authentication. The host obtains its
     expected context from the actual native Session, not child environment.
-    ``close_seconds`` is :func:`worker_connection`'s.
+    ``close_seconds`` is :func:`worker_connection`'s. ``files`` is the
+    directory the caller may read an ``arguments_file`` from; by default the
+    verified native ``cwd``, and without either an arguments file is refused.
     """
     from graftling.discovery import handle_request
 
     def operate(request: dict) -> dict:
         """Reuse shared discovery and the host's existing business callback."""
+        readable = files
         if native_context is not None:
             if not isinstance(request, dict) or set(request) != {'request', 'native'}:
                 raise AgentsError('authority-denied', 'The native Session context is required.')
-            verify_native_context(request['native'], native_context())
+            expected = native_context()
+            verify_native_context(request['native'], expected)
             request = request['request']
+            readable = files if files is not None else Path(expected['cwd'])
         elif isinstance(request, dict) and 'native' in request:
             raise AgentsError('authority-denied', 'This channel has no matching native Session binding.')
-        result = handle_request(request, call)
+        result = handle_request(request, call, files=readable)
         return {'document': result.document, 'failed': result.failed}
 
     directory.mkdir(parents=True, exist_ok=True)

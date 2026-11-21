@@ -95,6 +95,9 @@ __getattr__ = _lazy_names({
     "handle_request": ("graftling.discovery", "handle_request"),
     "validate_envelope": ("graftling.discovery", "validate_envelope"),
     "validate_schema": ("graftling.schema", "validate"),
+    "ValidationErrors": ("graftling.schema", "ValidationErrors"),
+    "schema_errors": ("graftling.schema", "schema_errors"),
+    "read_envelope_arguments": ("graftling.discovery", "read_arguments"),
     # MCP server parts.
     "ClientGone": ("graftling.mcp", "ClientGone"),
     "ConcurrentServer": ("graftling.mcp", "ConcurrentServer"),
@@ -142,6 +145,7 @@ __all__ = [
     "client_native_context", "connection_operation", "record_lock_owner",
     "verify_native_context", "worker_connection",
     "ENVELOPE_SCHEMA", "handle_request", "validate_envelope", "validate_schema",
+    "ValidationErrors", "schema_errors", "read_envelope_arguments",
     "ClientGone", "ConcurrentServer", "mcp_error_response", "mcp_respond",
     "mcp_result_response", "mcp_serve", "mcp_tool_documents",
     "END_EVENTS", "needs_parent", "notice_id", "notice_text",

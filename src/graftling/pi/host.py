@@ -477,8 +477,9 @@ def main() -> None:
             raise AgentsError('authority-denied', 'The client is not owned by this native Pi host.')
 
     try:
+        # The host runs in the Pi main Session's verified cwd (start), its readable workspace.
         with agents_connection(root / 'live' / 'pi-host', operate, authenticate,
-                               close_seconds=CLOSE_SECONDS) as address:
+                               close_seconds=CLOSE_SECONDS, files=Path.cwd()) as address:
             notices.write({'connection': address})
             # Only readiness, acknowledgements and lifecycle EOF travel over this
             # private extension pipe. Model requests use the shared authenticated bridge.

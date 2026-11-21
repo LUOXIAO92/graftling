@@ -14,6 +14,20 @@ The numbers in parentheses are the project's Task numbers.
 
 ## Unreleased (compatible; the next version is 0.6.3)
 
+- One call returns every input problem, and `execute` can take its arguments from a JSON
+  file (555). Envelope validation, a feature's argument schema and the flat `agents`
+  function now report all problems at once: an `invalid-input` error keeps its `code` and
+  readable `message` (the problems joined by `; `, unchanged for a single one) and gains
+  `errors`, a list of `{path, reason}`. An unmatched `anyOf` reports the one alternative of
+  the value's type, else names each alternative's problems. New public names:
+  `ValidationErrors` (a `ValueError` carrying `errors`, raised by `validate_schema` and
+  `validate_envelope`), `schema_errors` and `read_envelope_arguments`. The envelope gains
+  `arguments_file`: a UTF-8 JSON object file whose fields inline `arguments` replace. The
+  host supplies the directory it may come from (`handle_request(..., files=)`; agents'
+  own hosts pass the caller's verified workspace); the path must resolve,
+  links followed, to a regular file of at most 1 MiB inside it, and without a directory it
+  is refused. Errors name the given path and a JSON position, never the content.
+
 - DSH shows an agents notice as who · event over its Markdown (538). The DSH host relays
   `notice_text` (its notice line gains `text`); graftling-dsh's browser module draws the
   notice title's sender and event over the content through DSH's `MarkdownText`, prints an

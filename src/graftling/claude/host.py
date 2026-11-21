@@ -297,7 +297,7 @@ class IndependentCalls(NativeCalls):
             """Expose agents only through the verified native association."""
             if tool != 'agents':
                 raise AgentsError('invalid-input', 'The independent host exposes agents only.')
-            result = handle_request(request, self.callers[session])
+            result = handle_request(request, self.callers[session], files=cwd)
             # Reuse the native host's next-result delivery when prompt push is
             # unavailable (notably print mode); the mod renders this same fact.
             # A cancelled call's result is never shown, so it hands over nothing.

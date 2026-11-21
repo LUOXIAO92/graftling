@@ -34,7 +34,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
 
-from graftling.schema import validate
+from graftling.schema import ValidationErrors, schema_errors
 
 
 TOOL_NAME = "agents"
@@ -135,13 +135,18 @@ TOOL_DESCRIPTION = (
 
 
 class AgentsError(Exception):
-    """A backend or contract rejection with a stable code and readable message."""
+    """A backend or contract rejection with a stable code and readable message.
 
-    def __init__(self, code: str, message: str) -> None:
+    ``errors``, when given, lists every ``{"path", "reason"}`` problem of an
+    ``invalid-input`` request; the result document then carries it too.
+    """
+
+    def __init__(self, code: str, message: str, errors: list[dict[str, str]] | None = None) -> None:
         """Keep the code machine-readable and the message for the model."""
         super().__init__(message)
         self.code    = code
         self.message = message
+        self.errors  = errors
 
 
 @dataclass(frozen=True)
@@ -259,31 +264,34 @@ def validate_request(request: Any) -> tuple[str, dict[str, Any]]:
     Raises
     ------
     AgentsError
-        With code ``invalid-input`` naming the first offending field.
+        With code ``invalid-input`` and ``errors`` listing every offending field.
     """
-    try:
-        validate(request, INPUT_SCHEMA, "request")
-    except ValueError as error:
-        raise AgentsError("invalid-input", str(error)) from None
+    errors = schema_errors(request, INPUT_SCHEMA, "request")
+    if not isinstance(request, dict) or request.get("action") not in ACTION_FIELDS:
+        raise AgentsError("invalid-input", str(ValidationErrors(errors)), errors)
 
     action              = request["action"]
     required, optional  = ACTION_FIELDS[action]
     arguments           = {name: value for name, value in request.items() if name != "action"}
 
+    reported = {error["path"] for error in errors}
     for name in sorted(arguments.keys() - required - optional):
-        raise AgentsError("invalid-input", f"request.{name}: not valid for {action}")
+        if f"request.{name}" not in reported:
+            errors.append({"path": f"request.{name}", "reason": f"not valid for {action}"})
     for name in sorted(required - arguments.keys()):
-        raise AgentsError("invalid-input", f"request.{name}: required")
+        errors.append({"path": f"request.{name}", "reason": "required"})
     for name, value in arguments.items():
         if isinstance(value, str) and not value.strip():
-            raise AgentsError("invalid-input", f"request.{name}: must not be empty")
+            errors.append({"path": f"request.{name}", "reason": "must not be empty"})
 
     if action == "session_read" and ("agent" in arguments) == ("session" in arguments):
-        raise AgentsError("invalid-input", "request: session_read needs exactly one of agent or session")
-    if action in ("wait", "ask_parent"):
-        timeout = arguments["timeout_seconds"]
-        if not (math.isfinite(timeout) and timeout > 0):
-            raise AgentsError("invalid-input", "request.timeout_seconds: must be finite and above 0")
+        errors.append({"path": "request", "reason": "session_read needs exactly one of agent or session"})
+    timeout = arguments.get("timeout_seconds")
+    if (action in ("wait", "ask_parent") and isinstance(timeout, (int, float)) and not isinstance(timeout, bool)
+            and not (math.isfinite(timeout) and timeout > 0)):
+        errors.append({"path": "request.timeout_seconds", "reason": "must be finite and above 0"})
+    if errors:
+        raise AgentsError("invalid-input", str(ValidationErrors(errors)), errors)
     return action, arguments
 
 
@@ -320,8 +328,9 @@ def bind(
             action, arguments = validate_request(request)
             outcome           = backend.operate(action, arguments, binding)
         except AgentsError as error:
+            found = {"errors": error.errors} if error.errors else {}
             return AgentsResult(
-                {"action": action, "error": {"code": error.code, "message": error.message}},
+                {"action": action, "error": {"code": error.code, "message": error.message, **found}},
                 failed=True,
             )
         return AgentsResult({
