@@ -433,8 +433,11 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
         if event.get('type') == 'control_response' and reply.get('request_id') == 'catalog':
             if reply.get('subtype') != 'success':
                 raise ValueError('Claude initialization failed.')
+            # resolved_model: the full id Claude starts for this entry, e.g. haiku -> claude-haiku-5-5 (574).
             return {'models': [{
                 'id': item['value'], 'alias': item.get('displayName', item['value']),
                 'provider': 'anthropic', 'supported_efforts': item.get('supportedEffortLevels'),
+                **({'resolved_model': item['resolvedModel']} if isinstance(item.get('resolvedModel'), str)
+                   and item['resolvedModel'] else {}),
             } for item in reply['response']['models']]}
     raise ValueError('Claude did not expose a model catalog.')

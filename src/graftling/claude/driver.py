@@ -87,6 +87,8 @@ class ClaudeDriver:
             raise AgentsError('unsupported-runtime', 'This driver runs Claude only.')
         config = self.configuration if selection is None else selected(self.configuration, selection)
         settings = prepare(config, self.cwd if workspace is None else within_workspace(workspace, self.cwd))
+        if selection is not None and selection.get('expected_model'):
+            settings['expected_model'] = selection['expected_model']   # the alias's catalog resolution (574)
         if selection is not None and selection.get('review') is not None:
             settings['review'] = deepcopy(dict(selection['review']))
         if tools is not None:
@@ -136,6 +138,8 @@ class ClaudeDriver:
         turn.parent_notice = lambda message, details: (run.events.request(details), {'delivery': 'retained'})[1]
         # Tool entries the child's Claude did not apply reach the parent's status (551).
         turn.tool_report = lambda check: run.events.process(tool_check=check)
+        # The full model Claude started for a requested catalog alias (574).
+        turn.model_report = lambda model: run.events.process(resolved_model=model)
         if self.configure is not None:
             self.configure(turn, run)
         with self.lock:

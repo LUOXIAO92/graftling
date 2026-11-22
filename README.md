@@ -96,7 +96,11 @@ lists the features, `describe` gives one feature's input, and `execute` runs it.
 `model` must be a known candidate, and agents never silently replaces it. When a
 Runtime answers with another model, as with a safeguard fallback, the child ends
 `failed` with `RUNTIME_REQUEST_FAILED`, and `last_result.error` names the requested
-model, the observed model and the reason. Every other code is in
+model, the observed model and the reason. A Claude alias such as `haiku` is the
+one stated exception: Claude may start it as the full id its own model catalog
+names for it, such as `claude-haiku-5-5`. `model` keeps the alias, and `status`
+shows the full id as `resolved_model`. You can also request that full id
+directly ([`PUBLIC_API.md`](PUBLIC_API.md) section 2, rule 5). Every other code is in
 [`PUBLIC_API.md`](PUBLIC_API.md) 1.2.
 
 Inside a host, a process the host started can also call the same request as

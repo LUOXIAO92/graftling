@@ -12,6 +12,16 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased (compatible)
+
+- A Claude child requested by a catalog alias such as `haiku` no longer fails at
+  start with `RUNTIME_REQUEST_FAILED` when Claude reports the full id its catalog
+  resolves the alias to (`resolvedModel`, `claude-haiku-5-5`). `model` keeps the
+  alias, and `status` adds `resolved_model`. Any other model still fails the child.
+  A full id that a catalog entry resolves to, such as `claude-haiku-5-5`, is now a
+  candidate of the native Claude login instead of `invalid-model`. Claude entries
+  from `discover_models` carry `resolved_model` (574).
+
 ## 0.7.0 (incompatible)
 
 One change is incompatible by section 7: a Claude Code child no longer gets the fixed

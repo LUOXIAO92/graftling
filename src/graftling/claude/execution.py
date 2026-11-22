@@ -65,6 +65,9 @@ class ClaudeExecution:
     parent_notice = None
     # Optional receiver of a non-empty tool_check (551), e.g. the Agent record.
     tool_report = None
+    # Optional receiver of the full model Claude started for a catalog alias (574).
+    model_report = None
+    resolved_model = None
     host_connection = None
     # The variable naming the owner channel when a consumer, not ``bind``, owns it.
     connection_env = CONNECTION_ENV
@@ -1065,10 +1068,16 @@ class ClaudeExecution:
                             answered.add(id(event))
                             self._control_event(event)
                     elif kind == 'system' and event.get('subtype') == 'init':
-                        if event.get('session_id') != self.native_id or event.get('model') != self.request['model']:
+                        resolved = alias_resolution(self.request, event.get('model'))
+                        if event.get('session_id') != self.native_id or (
+                                event.get('model') != self.request['model'] and resolved is None):
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED', model_change_message(
                                 'Claude selected a different Session or model', self.request['model'],
                                 event.get('model'), model_reason))
+                        if resolved is not None:
+                            self.resolved_model = resolved
+                            if self.model_report is not None:
+                                self.model_report(resolved)
                         if self.independent and (not self.sdk_tools_listed
                                 or self.agents_tool not in event.get('tools', [])):
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
@@ -1108,7 +1117,8 @@ class ClaudeExecution:
                             result_error = redact(str(event.get('errors') or event.get('result') or event.get('subtype')))
                     elif kind == 'assistant' and event.get('parent_tool_use_id') is None:
                         model = event.get('message', {}).get('model')
-                        if model is not None and model != '<synthetic>' and not event.get('error') and model != self.request['model']:
+                        if (model is not None and model != '<synthetic>' and not event.get('error')
+                                and model != (self.resolved_model or self.request['model'])):
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED', model_change_message(
                                 'Claude changed the configured model', self.request['model'], model, model_reason))
                         last = '\n'.join(block.get('text', '') for block in event.get('message', {}).get('content', [])
@@ -1438,6 +1448,18 @@ def native_model_reason(event: dict) -> str | None:
     if not (text or facts):
         return None
     return redact(f"{event.get('subtype')}: {text}" + (f' ({facts})' if facts else ''))
+
+
+def alias_resolution(request: dict, observed: object) -> str | None:
+    """Return ``observed`` when it is the full id the native catalog resolves the requested alias to (574).
+
+    Only a create whose model was a catalog alias carries ``expected_model``
+    (Claude's ``resolvedModel``, e.g. ``haiku`` -> ``claude-haiku-5-5``), and
+    only that id is accepted in its place. Anything else is a model change and
+    fails the child.
+    """
+    expected = request.get('expected_model')
+    return observed if expected and observed == expected and observed != request['model'] else None
 
 
 def model_change_message(summary: str, requested: object, observed: object, reason: str | None) -> str:

@@ -394,7 +394,9 @@ Public: `graftling.__version__` and the names in `graftling.__all__`:
   connection mapping (as `read_connections` returns it, or `{"runtime":
   ...}` for the native default login) and returns `{"runtime", "status":
   "available"|"unknown", "models": [{"id", "alias", "provider",
-  "supported_efforts"}], "message"}`; DSH may add `provider_status`.
+  "supported_efforts"}], "message"}`; DSH may add `provider_status`, and a
+  Claude catalog entry may add `resolved_model`, the full id Claude starts
+  for it (section 2, rule 5).
   `supported_efforts` is a list or `null` when the Runtime does not enumerate
   them. A connection with `models` returns those without querying the
   Runtime. It never runs an inference turn and never returns credentials.
@@ -978,6 +980,19 @@ replaced by another one.
    models). Not a candidate, discovery `status: unknown`, or several
    providers offering the id fail with `invalid-model`. Without `model`, the
    host's or Runtime's default model applies and nothing is checked.
+   Claude aliases (574): Claude's native catalog lists aliases such as
+   `haiku`, `opus` and `default`, each with the full id it resolves to
+   (`resolvedModel`, kept as `resolved_model`). A full id is a candidate when
+   it equals an entry's `id` or, failing that, an entry's `resolved_model`
+   (`claude-haiku-5-5` through `haiku`). The child must then start as
+   exactly that id. A requested alias may start only as its own
+   `resolved_model` (`haiku` as `claude-haiku-5-5`, `default` as whatever the
+   catalog names). `model` stays the alias, and `status` adds
+   `resolved_model` with the full id Claude reported. Any other model,
+   including another model of the same family, fails the child with
+   `RUNTIME_REQUEST_FAILED` (see *Fallback*). A catalog entry without
+   `resolvedModel`, and a connection's declared `models`, are matched
+   exactly, as before.
    Discovery runs synchronously inside `create`: a native catalog query may
    take up to about 30 seconds before `create` returns; declared `models`
    avoid it.

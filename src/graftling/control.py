@@ -393,9 +393,11 @@ class ExecutionEvents:
         ``tool_descendants`` is the absolute path of the owner's record of the
         Runtime's descendants (459). ``tool_check`` lists create tool entries
         the native Runtime did not apply as asked (551); ``status`` shows it.
+        ``resolved_model`` is the full model a Runtime started for a requested
+        catalog alias (574); ``status`` shows it beside ``model``.
         """
         allowed = {"worker_pid", "runtime_pid", "owned_at", "runtime_exit", "tool_marker",
-                   "tool_descendants", "tool_check"}
+                   "tool_descendants", "tool_check", "resolved_model"}
         if set(facts) - allowed:
             raise ValueError("unknown process fact")
         self._apply(lambda record, current: current["process"].update(facts))
@@ -911,7 +913,9 @@ class AgentControl:
         declared connection for the Runtime), else ``{"preset", "connection"
         (its name), "model", "reasoning_effort", "provider", "settings" (the
         declared connection entry or None), "review" (the reviewer entry the
-        connection names, or None)}``.
+        connection names, or None)}``, plus ``"expected_model"`` (the full id
+        the native catalog resolves ``model`` to) when ``model`` is an alias
+        such as Claude's ``haiku`` (574).
         """
         try:
             declared = read_connections(self.root)
@@ -953,9 +957,13 @@ class AgentControl:
         if settings is not None and hasattr(driver, "require_available"):
             driver.require_available(settings)
         provider = (settings or {}).get("provider")
+        alias    = {}
         if chosen["model"] is not None:
             candidate = self._candidate(runtime, settings, chosen["model"])
             provider  = provider or candidate.get("provider")
+            if candidate.get("resolved_model") not in (None, chosen["model"]):
+                # The native catalog resolves this alias at start; the driver accepts exactly that id (574).
+                alias = {"expected_model": candidate["resolved_model"]}
             supported = candidate.get("supported_efforts")
             effort    = chosen["reasoning_effort"]
             if effort is not None and supported is not None and effort not in supported:
@@ -964,7 +972,7 @@ class AgentControl:
                                   f"not {effort!r}.")
         review = declared.get("reviewers", {}).get((settings or {}).get("review"))
         return {"preset": preset, "connection": connection, "provider": provider,
-                "settings": deepcopy(settings), "review": deepcopy(review), **chosen}
+                "settings": deepcopy(settings), "review": deepcopy(review), **chosen, **alias}
 
     def _require_held_key(self, caller: Caller, runtime: str, settings: Mapping[str, Any]) -> None:
         """Refuse a child Agent's create whose new Agent names a key the child does not hold.
@@ -1017,8 +1025,16 @@ class AgentControl:
                               "without discovery.")
         matches = [item for item in found["models"] if item["id"] == model]
         if not matches:
+            # The full id a native catalog entry resolves to, e.g. claude-haiku-5-5 for haiku (574).
+            # Claude must then report exactly this id: the candidate keeps it as its own resolution.
+            matches = [{**item, "id": model, "resolved_model": model}
+                       for item in found["models"] if item.get("resolved_model") == model]
+        if not matches:
+            rule = (" A full id is also accepted when the native catalog resolves a listed entry to it."
+                    if runtime == "claude" and settings.get("models") is None else "")
             raise AgentsError("invalid-model", f"Model {model!r} is not a candidate of {where}; candidates: "
-                                               f"{sorted({item['id'] for item in found['models']}) or 'none'}. "
+                                               f"{sorted({item['id'] for item in found['models']}) or 'none'}."
+                                               f"{rule} "
                                                f"If it serves this model, list the id under `models` of a {runtime} "
                                                f"connection in {self.root / CONFIG_FILE}.")
         if len({item.get("provider") for item in matches}) > 1:
@@ -2335,6 +2351,11 @@ class AgentControl:
                    if execution.get("process", {}).get("tool_check")]
         if checked:
             document["tool_check"] = deepcopy(checked[-1])
+        # The full model the Runtime started for a requested alias, latest first (574).
+        resolved = [execution["process"]["resolved_model"] for execution in record["executions"]
+                    if execution.get("process", {}).get("resolved_model")]
+        if resolved:
+            document["resolved_model"] = resolved[-1]
         if current is not None:
             document["execution"] = current["id"]
             if current.get("stop_requested_at") is not None:
