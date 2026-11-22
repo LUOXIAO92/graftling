@@ -12,8 +12,37 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased (compatible; the next version is 0.6.3)
+## 0.6.3 (compatible)
 
+Every change below adds a public name, field, parameter or export, or changes only what a
+host shows; none removes or renames a public name, result or archive format, so the
+release is compatible by section 7 and raises the patch version. GraphTraj's range
+`graftling>=0.6.0,<0.7` includes it; a GraphTraj that uses 555's names needs
+`graftling>=0.6.3,<0.7`.
+
+- The repository uses a conventional layout (560). `pyproject.toml`, `README.md`,
+  `CHANGELOG.md` and `PUBLIC_API.md` are at the repository root and the install guides
+  in `docs/install/`; `src/graftling/` holds the code and the files it reads at run
+  time. Build a wheel with `pip wheel .` from the root (no longer `./src/graftling`).
+  The wheel's modules, data files, entry points (`agents`, `agents-mcp`) and public
+  interface are unchanged; it no longer carries `README.md` or `CHANGELOG.md`.
+  `PUBLIC_API.md` and the install guides are still shipped as `graftling/PUBLIC_API.md` and
+  `graftling/install/*.md`, because GraphTraj's tests read the installed copies.
+- `agents send` that reaches an execution which already closed input at its turn end, but
+  has not reported that end yet, goes to the next execution of the same Session (546).
+  Claude, Codex and DSH close input at the turn end and report the end only after
+  archiving; a send in that window was refused with `runtime-input-closed` while the Agent
+  still showed active. `AgentControl.send` now waits, at most
+  `input_closed_wait_seconds` (60 s), for that end, but only when nothing is unanswered, no
+  stop is requested and the refusal does not say the turn is still running; the result's
+  `delivery` is then `next-execution` with `closed_execution` and `execution`, and the
+  refused receipt records the same. Any other refusal returns at once, rejected, as before.
+  DSH refuses such a send as `runtime-input-closed` instead of `operation-unavailable`; Pi
+  queues natively and is unchanged. Error codes and messages are unchanged.
+- DSH places a relayed agents notice in the Session's next-turn inbox instead of the
+  next-step inbox (545), so a notice that reaches a running turn opens a turn of its own
+  after it ends and shows as that turn's block; a parent that needs a child's answer within
+  the running turn calls `wait`. An idle parent is unchanged.
 - One call returns every input problem, and `execute` can take its arguments from a JSON
   file (555). Envelope validation, a feature's argument schema and the flat `agents`
   function now report all problems at once: an `invalid-input` error keeps its `code` and
