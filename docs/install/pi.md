@@ -59,6 +59,15 @@ that is the directory `pi` starts in, because Pi has no option to set it. This i
 the Claude Code host's default, and the DSH plugin's, so the hosts share one data
 root and each Main sees only its own children.
 
+**Pi children need more.** A Pi child is refused on this default root, because
+the root lies inside the project the child may read (`Pi cannot deny reading
+<project>/.agents-control inside the readable <project>`). Claude, Codex and DSH
+children work on it. For Pi children:
+
+- give a data root outside the project with `--agents-config`;
+- install [what a Pi child needs](../../README.md#what-a-pi-child-needs)
+  (agent-sandbox, srt, node, rg).
+
 A Session whose working directory is not an absolute, existing directory gets no
 `agents` tool. A data root that cannot be created stops the start too. In both
 cases the message names `--agents-config`.
