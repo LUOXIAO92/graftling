@@ -58,7 +58,8 @@ ends in the command to run once. That command downloads them from PyPI:
 Then start DSH again.
 
 What the plugin does in each case. Each refusal fails the Session's `agent/created`
-handler with the message, and the Session has no `agents` tool:
+handler with the message, so the Session does not start
+([A refused start](#a-refused-start)):
 
 | Case | What happens |
 | --- | --- |
@@ -140,10 +141,11 @@ Session:
 > interface have not been run with this plugin.
 
 A Session that records no working directory, or one that is not an absolute path to an
-existing directory, gets no host and no `agents` tool. Its start fails with
+existing directory, gets no host, and the Session does not start
+([A refused start](#a-refused-start)). The message is
 `graftling-dsh: this DSH Session records no usable project directory (...)`, which names
 `GRAFTLING_DSH_CONFIG` as the fix. A project directory where `.agents-control` cannot be
-created is refused the same way. A home directory is not special: a Session started in
+created is refused the same way, with `Cannot create the default data root ...`. A home directory is not special: a Session started in
 `~` keeps its data in `~/.agents-control`, as Claude Code started in `~` does.
 
 ### Sharing `.agents-control` with Claude Code
@@ -213,8 +215,17 @@ To continue a `headless` Session, from the same directory:
 env -u DEEPSEEK_BASE_URL dsh --profile headless --session-id "<session id>" "Next task."
 ```
 
-A refused start prints one `{"error": {"code", "message"}}` line, DSH's `agent/created`
-handler fails with that text, and the Session has no `agents` tool.
+### A refused start
+
+A refused host start makes the DSH Session fail to start. The host prints one
+`{"error": {"code", "message"}}` line, or the plugin refuses before starting it, and
+DSH's `agent/created` handler fails with that text. Since the plugin is on by default,
+this covers missing PyYAML or websockets, a Session without a usable working directory
+and a `.agents-control` that cannot be created. Observed in `headless`: the run prints
+only `dsh: graftling-dsh: ...` with the message and exits 1; the task does not run.
+Fix the cause the message names, or remove the plugin from the profile
+([Turning it off](#turning-it-off)), and start again. The TUI and the web interface have
+not been run with a refused start.
 
 > Not yet walked on a real host from a wheel-only install: these steps run as written
 > in a clean environment. The same host ran on real DSH 0.2.2-alpha.2 with `--patch` in
