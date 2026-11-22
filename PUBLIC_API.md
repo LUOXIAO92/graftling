@@ -470,9 +470,9 @@ with its own `__all__`:
 | Package | Names |
 | --- | --- |
 | `graftling.claude` | `ClaudeDriver`, `ClaudeExecution`, `collect_hook_event`, `hook_source`, `NativeCalls`, `REFUSAL_FILE`, `claim_channel`, `context_endpoint`, `ended_by_claude`, `log_replaced_channel`, `require_free_channel`, `serve_refusal`, `claude_host_plugin`, `kept_host_paths`, `write_adoption` |
-| `graftling.codex` | `CodexDriver`, `CodexManagedExecution`, `CodexAppServer`, `CodexExecution`, `CodexSession`, `CodexServerRequest`, `CodexRPCError`, `CodexAdapterError`, `CodexRuntimeContext`, `restore_codex_context`, `validate_codex_launch_request`, `reject_legacy_sandbox_config`, `codex_api_key_env`, `codex_connection_environment`, `find_native_session`, `project_access`, `validate_connection`, `in_thread` |
-| `graftling.pi` | `PiDriver`, `PiExecution`, `current_connection`, `session_record`, `session_source`, `verify_main`, `pi_destination` |
-| `graftling.dsh` | `DshDriver`, `DshService`, `DshError`, `DshExecution`, `bind_run`, `session_context`, `dsh_version_refusal` |
+| `graftling.codex` | `CodexDriver`, `CodexManagedExecution`, `CodexAppServer`, `CodexExecution`, `CodexSession`, `CodexServerRequest`, `CodexRPCError`, `CodexAdapterError`, `CodexRuntimeContext`, `restore_codex_context`, `validate_codex_launch_request`, `reject_legacy_sandbox_config`, `codex_api_key_env`, `codex_connection_environment`, `find_native_session`, `project_access`, `validate_connection`, `in_thread`, `apply_tools` |
+| `graftling.pi` | `PiDriver`, `PiExecution`, `current_connection`, `session_record`, `session_source`, `verify_main`, `pi_destination`, `apply_tools` |
+| `graftling.dsh` | `DshDriver`, `DshService`, `DshError`, `DshExecution`, `bind_run`, `session_context`, `dsh_version_refusal`, `apply_tools` |
 | `graftling.sessions` | `SessionArchive` (the JSONL archive; `graftling.SessionArchive` is the interface a backend expects), `ConfiguredSessionArchive`, `JsonlSessionStore`, `archive_path`, `find_session`, `read_events`, `redact_session`, `SESSION_FORMAT_VERSION`, `INITIAL_COLLECTION_TYPE`, `append_stream_record`, `native_record`, `retain_native`, `snapshot_event`, `upgrade_event`, `upgrade_header`, `validate_header`, `validate_session`, `CodexJsonlArchive`, `CodexHistoryArchive`, `NativeInputError`, `rollout_record`, `codex_attachments`, `DshArchive`, `DshLiveFrames`, `attachment_refs`, `attempt_usage`, `collect_jsonl`, `PiArchive`, `import_native`, `import_sqlite`, `verify_sqlite` |
 
 Session reading (since 466), the parts of `session_read` (1.2) for a host or a
@@ -531,7 +531,7 @@ whose `.codex` it keeps out of the archive, as `PiArchive(project=...)` (1.5). A
 consumer whose children work in a worktree of a larger project sets it to that project.
 
 **Host tools beside `agents` (551).** A host may serve its own MCP tools to an
-independent child next to `agents`, through `graftling.extra_tools`: a sequence
+independent child next to `agents` as its extra tools: a sequence
 of `(descriptor, callback)` pairs, where `descriptor` is an MCP tool document
 (`name`, `description`, `inputSchema`; any name except `agents`) and
 `callback(arguments)` returns an `AgentsResult`. graftling only lists and routes
@@ -544,6 +544,17 @@ with the tagged request `{"tool": name, "arguments": {...}}`),
 extra_tools=factory)` with `factory(run)` returning the pairs for that Agent's
 child. The owner lists them to the child's `python -m graftling.mcp` in
 `GRAFTLING_EXTRA_TOOLS` (JSON descriptors). Without extra tools nothing changes.
+`extra_tool_table(pairs)` (in `graftling.__all__`) returns the pairs by name, the
+form `PiExecution.extra_tools` holds, and raises `ValueError` for a malformed or
+repeated entry or one named `agents`.
+
+**A create's `tools` / `disallowed_tools` (551).** Each Runtime package publishes
+`apply_tools`, which a driver calls to put a create's tool choice into the
+child's launch: `graftling.codex.apply_tools(config, tools, *, own_server=None,
+own_tools=())` into the captured Codex config, `graftling.pi.apply_tools(request,
+tools, own_server='graftling')` and `graftling.dsh.apply_tools(request, tools)`
+into the launch request. Each raises `AgentsError` for an entry its Runtime cannot
+express or that goes beyond the host's settings without authorization (section 2).
 
 **The child's server name (551).** `ClaudeExecution`, `CodexManagedExecution`,
 `DshExecution` and `PiExecution` declare `mcp_server` (default `graftling`): the
@@ -580,7 +591,7 @@ every other `.mjs` file, is internal.
 
 | File | Exports |
 | --- | --- |
-| `graftling/pi/extension.mjs` | `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `registerNoticeDisplay` (536), `sessionEnvironment`, `startAgentHost` |
+| `graftling/pi/extension.mjs` | `childServer` (551), `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `registerNoticeDisplay` (536), `sessionEnvironment`, `startAgentHost` |
 | `graftling/dsh/plugin.mjs` | `sessionEnvironment` |
 
 ### 1.4 Host plugins: the `graftling.hosts` entry point

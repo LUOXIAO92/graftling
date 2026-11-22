@@ -54,7 +54,8 @@ def test_pi_extension_forwards_only_the_declared_descriptors(declared: bool) -> 
 
 
 def pi_turn(tmp_path: Path) -> PiExecution:
-    return PiExecution({}, 'unused', tmp_path, lambda *_: None, lambda *_: None, tmp_path / 'trace.jsonl', None)
+    """Return a Pi owner whose request names only its worktree, as the channel needs (555)."""
+    return PiExecution({'worktree_path': str(tmp_path)}, 'unused', tmp_path, lambda *_: None, lambda *_: None, tmp_path / 'trace.jsonl', None)
 
 
 def test_pi_connection_environment_differs_only_by_the_descriptors(tmp_path: Path) -> None:

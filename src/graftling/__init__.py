@@ -131,6 +131,8 @@ __getattr__ = _lazy_names({
     "child_environment": ("graftling.child_env", "child_environment"),
     "is_credential_name": ("graftling.child_env", "is_credential_name"),
     "CODEX_SHELL_EXCLUDE": ("graftling.child_env", "CODEX_SHELL_EXCLUDE"),
+    # Host tools beside agents (551).
+    "extra_tool_table": ("graftling.extra_tools", "extra_tool_table"),
 })
 
 __all__ = [
@@ -154,4 +156,5 @@ __all__ = [
     "read_tool_descendants", "stop_tool_processes",
     "RuntimeAdapterError", "RuntimeContext", "RuntimeExecutionResult", "RuntimeTurn",
     "SessionStarted", "credential_environment", "child_environment", "is_credential_name", "CODEX_SHELL_EXCLUDE",
+    "extra_tool_table",
 ]
