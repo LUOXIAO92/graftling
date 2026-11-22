@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 import shutil
 import threading
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
+from graftling.extra_tools import ExtraTool
 from graftling.runtime import RuntimeAdapterError
 from .context import restore_codex_context
 from .managed_session import CodexManagedExecution
@@ -55,6 +56,60 @@ def _select(settings: dict, parameters: dict, selection: Mapping[str, Any]) -> N
         parameters['approvalsReviewer'] = config['approvals_reviewer'] = 'user'
 
 
+def owner_tools_kept(pairs: Sequence[ExtraTool], disallowed: Sequence[str] | None, server: str) -> list:
+    """Return the owner's extra tools minus those a create disallowed, bare or as ``mcp__<server>__<name>``."""
+    denied = set(disallowed or ())
+    return [(descriptor, callback) for descriptor, callback in pairs
+            if descriptor.get('name') not in denied and f"mcp__{server}__{descriptor.get('name')}" not in denied]
+
+
+def apply_tools(config: dict, tools: Mapping[str, Any], *, own_server: str | None = None,
+                own_tools: Sequence[str] = ()) -> None:
+    """Apply a create's tool choice (551) to captured Codex config in place.
+
+    Names of the owner's own tools (``own_tools``, or any ``mcp__<own_server>__*``)
+    are left out here: the driver drops a disallowed one from the child's
+    extra tools (:func:`owner_tools_kept`), so the child runs without it.
+
+    Codex can express only ``web_search`` (config ``web_search``) and MCP
+    tools ``mcp__<server>__<tool>`` (per-server ``enabled_tools`` and
+    ``disabled_tools``); any other name is refused, since Codex has no native
+    switch for one built-in tool (shell, apply_patch, ...), which stay as
+    captured. An MCP tool of a server the captured config does not define is
+    refused too: Codex rejects a server entry without a transport. Every
+    refusal happens before anything is written. Narrowing applies directly. Enabling web search that the
+    captured host config disables has no Codex approval route, so it is
+    refused with ``authorization-required`` instead of being granted.
+    """
+    own = (lambda name: name in own_tools
+           or (own_server is not None and name.startswith(f'mcp__{own_server}__')))
+    allowed = None if tools.get('tools') is None else [name for name in tools['tools'] if not own(name)]
+    denied = [name for name in tools.get('disallowed_tools') or () if not own(name)]
+    named = [*(allowed or ()), *denied]
+    mcp = {name: name[5:].split('__', 1) for name in named if name.startswith('mcp__') and name.count('__') >= 2}
+    unknown = [name for name in named if name != 'web_search' and name not in mcp]
+    if unknown:
+        raise AgentsError('unavailable', f'Codex has no native per-tool switch for {sorted(set(unknown))}; '
+                                         'it can allow or deny only web_search and mcp__<server>__<tool>.')
+    servers = config.get('mcp_servers') or {}
+    absent = sorted({server for server, _ in mcp.values() if not isinstance(servers.get(server), dict)})
+    if absent:
+        # Codex rejects a server entry without a transport ('invalid transport'),
+        # so a tool filter is written only beside a server the captured config defines.
+        raise AgentsError('unavailable', f'MCP servers {absent} are not in the captured Codex settings, so '
+                                         'their tools cannot be allowed or denied for this child.')
+    if 'web_search' in denied or (allowed is not None and 'web_search' not in allowed):
+        config['web_search'] = 'disabled'
+    elif allowed is not None and config.get('web_search') == 'disabled':
+        raise AgentsError('authorization-required',
+                          'web_search is disabled in the host Codex settings; Codex offers no approval to enable '
+                          'it for a child, so it was not granted.')
+    for name, (server, tool) in mcp.items():
+        entry = servers[server]
+        key = 'disabled_tools' if name in denied else 'enabled_tools'
+        entry[key] = list(dict.fromkeys([*entry.get(key, ()), tool]))
+
+
 def _receive_children(turn: CodexManagedExecution, run: Run) -> None:
     """Deliver a child's end or request once, as the Claude and DSH bindings do."""
     def receive(event: dict) -> bool:
@@ -88,15 +143,22 @@ class CodexDriver:
         settings: Mapping[str, Any] | None = None,
         *,
         execution: Callable[..., CodexManagedExecution] = CodexManagedExecution,
+        extra_tools: Callable[[Run], Sequence[ExtraTool]] | None = None,
     ) -> None:
-        """Capture explicit native settings without starting a Runtime."""
+        """Capture explicit native settings without starting a Runtime.
+
+        ``extra_tools(run)`` returns the host's own tools for that Agent's
+        child, served beside ``agents`` (:mod:`graftling.extra_tools`).
+        """
         self.settings = deepcopy(dict(settings)) if settings is not None else None
         self.execution = execution
+        self.extra_tools = extra_tools
         # A consumer's execution binds its own review policy, not this plugin.
         self.supports_review = execution is CodexManagedExecution
 
     def prepare(self, runtime: str, caller: Caller, *, configuration: str | None = None,
-                selection: Mapping[str, Any] | None = None, workspace: Path | None = None) -> dict:
+                selection: Mapping[str, Any] | None = None, workspace: Path | None = None,
+                tools: Mapping[str, Any] | None = None) -> dict:
         """Validate retained native values, with native auto review as the default.
 
         ``selection`` is the create's resolved connection, model and effort.
@@ -120,6 +182,10 @@ class CodexDriver:
             config['features'] = {**config.get('features', {}), 'exec_permission_approvals': True}
             if selection is not None:
                 _select(settings, parameters, selection)
+            if tools is not None:
+                apply_tools(config, tools, own_server=self.execution.mcp_server)
+                # The driver drops a disallowed owner tool at start (owner_tools_kept).
+                settings['disallowed_tools'] = list(tools.get('disallowed_tools') or ())
             settings['adapter_request'] = request
             settings.setdefault('evidence', {})
         except (KeyError, RuntimeAdapterError) as error:
@@ -152,6 +218,10 @@ class CodexDriver:
             prompt = f"[agents · {notice['agent']} → {run.agent}]\n{notice['body']}"
         if run.settings.get('review') is not None:
             options.update(review=run.settings['review'])
+        if self.extra_tools is not None:
+            # An explicit disallow removes the owner's tool; the child runs without it (551).
+            options.update(extra_tools=owner_tools_kept(self.extra_tools(run), run.settings.get('disallowed_tools'),
+                                                        self.execution.mcp_server))
         request = dict(run.settings['adapter_request'])
         if run.settings.get('pass_env'):
             request['pass_env'] = run.settings['pass_env']

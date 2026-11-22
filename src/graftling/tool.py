@@ -44,7 +44,7 @@ TOOL_NAME = "agents"
 ACTION_FIELDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "create":    (frozenset({"runtime", "instruction"}),
                   frozenset({"name", "configuration", "preset", "model", "reasoning_effort", "extra_fields",
-                             "workspace"})),
+                             "workspace", "tools", "disallowed_tools"})),
     "send":      (frozenset({"agent", "message"}), frozenset({"reports_only"})),
     "status":    (frozenset(), frozenset({"agent"})),
     "wait":      (frozenset({"agent", "timeout_seconds"}), frozenset()),
@@ -76,6 +76,12 @@ INPUT_SCHEMA: dict[str, Any] = {
         "workspace": {"type": "string",
                       "description": "Existing absolute directory inside your own workspace, assigned to the "
                                      "new Agent as its working directory. It only narrows access."},
+        "tools": {"type": "array", "items": {"type": "string"},
+                  "description": "Native tool names the new Agent may have; omitted keeps the host's own "
+                                 "tool settings. Anything beyond the host's settings still needs the "
+                                 "Runtime's own approval and is not granted without it."},
+        "disallowed_tools": {"type": "array", "items": {"type": "string"},
+                             "description": "Native tool names the new Agent must not have. It only narrows."},
         "kind": {"type": "string", "enum": ["decision", "resources"],
                  "description": "decision: ask your direct parent to decide; resources: ask for more "
                                 "time, scope or other resources."},

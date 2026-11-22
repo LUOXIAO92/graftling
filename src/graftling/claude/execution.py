@@ -17,12 +17,14 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Callable
+from typing import Callable, Sequence
 
 from graftling import AgentsResult, __version__
 from graftling.approval import REVIEW_METHOD, parse_decision, review_failed
 from graftling.discovery import handle_request as discover_agents
 from graftling.mcp import tool_documents
+from graftling.extra_tools import (ExtraTool, call_extra_tool, descriptors as extra_descriptors,
+                                   extra_tool_table)
 from graftling import SessionArchive
 from graftling.sessions.claude_history import read_records
 from graftling.child_env import child_environment, consumer_environment
@@ -45,6 +47,14 @@ MCP_SERVER = 'graftling'
 # The host answers a PreToolUse hook before its timeout, so nothing depends on what
 # Claude does past it. See PUBLIC_API.md 4.1 for what is known.
 REVIEW_HOOK_MIN_SECONDS = 600
+# Claude Code built-in tool names known to graftling. Advisory only: a deny
+# entry outside it that the child lacks is reported as unconfirmed, never refused,
+# since a newer Claude Code may add tools (551).
+KNOWN_BUILTIN_TOOLS = frozenset({
+    'Agent', 'Task', 'Bash', 'BashOutput', 'KillShell', 'Edit', 'MultiEdit', 'Write', 'Read', 'Glob', 'Grep',
+    'LS', 'NotebookEdit', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite', 'ExitPlanMode', 'SlashCommand',
+    'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool',
+})
 REVIEW_HOOK_MARGIN_SECONDS = 60
 
 
@@ -53,6 +63,8 @@ class ClaudeExecution:
 
     # Optional (message, details) -> receipt replacing the Runner parent notice.
     parent_notice = None
+    # Optional receiver of a non-empty tool_check (551), e.g. the Agent record.
+    tool_report = None
     host_connection = None
     # The variable naming the owner channel when a consumer, not ``bind``, owns it.
     connection_env = CONNECTION_ENV
@@ -120,6 +132,8 @@ class ClaudeExecution:
         # Header ``extra_fields`` for a Session this execution archives first.
         self.extra_fields: dict | None = None
         self.agents_callback: Callable[[dict], AgentsResult] | None = None
+        # Host tools served beside agents to an independent child, by name.
+        self.extra_tools: dict[str, ExtraTool] = {}
         self.collector = None
         # Exact read-only resource settings applied before the first prompt.
         self.resource_settings: dict | None = None
@@ -192,6 +206,16 @@ class ClaudeExecution:
         """
         return f'mcp__{self.mcp_server}__agents'
 
+    @property
+    def exempt_tools(self) -> list[str]:
+        """Native names of the owner's extra tools, which run without a review or permission ask (551).
+
+        Like ``agents``, each keeps its owner's own authorization; the owner
+        declared it for this child, so asking the user adds nothing. A tool the
+        create disallowed is never offered, so never exempt.
+        """
+        return [f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools]
+
     def _parent_notice(self, message: str, details: dict) -> dict:
         """Require the owning host to bind native permission delivery."""
         raise RuntimeAdapterError('RUNTIME_REQUEST_UNHANDLED', 'No parent notice receiver is bound.')
@@ -237,13 +261,20 @@ class ClaudeExecution:
         archive: SessionArchive | None,
         agents_callback: Callable[[dict], AgentsResult],
         extra_fields: dict | None = None,
+        extra_tools: Sequence[ExtraTool] | None = None,
     ) -> None:
         """Bind the core's archive choice and verified caller before starting.
 
         ``extra_fields`` goes to the header of a Session first archived here.
+        ``extra_tools`` are the host's own tools served beside ``agents`` on the
+        same in-process server (see :mod:`graftling.extra_tools`).
         """
         if self.proc is not None:
             raise ValueError('Claude execution is already started.')
+        # A tool the create disallows, by its own or its native name, is not offered (551).
+        denied = set(self.request.get('disallowed_tools') or ())
+        self.extra_tools = {name: tool for name, tool in extra_tool_table(extra_tools).items()
+                            if name not in denied and f'mcp__{self.mcp_server}__{name}' not in denied}
         self.independent = True
         self.archive = archive
         self.extra_fields = extra_fields
@@ -265,9 +296,10 @@ class ClaudeExecution:
                     result = {'protocolVersion': params.get('protocolVersion', '2025-06-18'),
                               'capabilities': {'tools': {}}, 'serverInfo': {'name': 'agents', 'version': __version__}}
                 elif method == 'tools/list':
-                    result = {'tools': tool_documents()}
+                    result = {'tools': tool_documents() + extra_descriptors(self.extra_tools)}
                     self.sdk_tools_listed = True
-                elif method == 'tools/call' and params.get('name') == 'agents':
+                elif method == 'tools/call' and (params.get('name') == 'agents'
+                                                 or params.get('name') in self.extra_tools):
                     if self.session is None or self.stopping.is_set():
                         raise ValueError('Claude caller is not bound to an active execution.')
                     value = self._agents_call(message)
@@ -303,10 +335,15 @@ class ClaudeExecution:
                 if original != message:
                     raise ValueError('SDK request identity was reused with different arguments.')
         if prior is None:
+            params = message.get('params', {})
             try:
-                future.set_result(discover_agents(message.get('params', {}).get('arguments', {}),
-                                                  self.agents_callback,
-                                                  files=Path(self.request['worktree_path'])))
+                if params.get('name') in self.extra_tools:
+                    future.set_result(call_extra_tool(self.extra_tools, params['name'],
+                                                      params.get('arguments', {})))
+                else:
+                    future.set_result(discover_agents(params.get('arguments', {}),
+                                                      self.agents_callback,
+                                                      files=Path(self.request['worktree_path'])))
             except BaseException as error:
                 future.set_exception(error)
                 raise
@@ -455,6 +492,59 @@ class ClaudeExecution:
                     absorbed.add(source)
         return len(absorbed)
 
+    def tool_arguments(self) -> list[str]:
+        """Return the native tool flags: none keeps the host's own tool settings (551).
+
+        Without ``request['tools']`` Claude Code offers its own default tools
+        under the same user, project and managed settings files the host
+        reads, whose deny rules always win. ``tools`` names the available set
+        (``--tools``) and ``disallowed_tools`` removes tools
+        (``--disallowedTools``). Neither grants a use: a call the settings do
+        not pre-allow still asks through ``can_use_tool``, which goes to the
+        direct parent, and a tool the settings deny stays off.
+        """
+        request, argv = self.request, []
+        if request.get('tools') is not None:
+            argv += ['--tools', ','.join(request['tools'])]
+        if request.get('disallowed_tools'):
+            argv += ['--disallowedTools', ','.join(request['disallowed_tools'])]
+        return argv
+
+    def tool_check(self, offered: object) -> dict:
+        """Compare the create's tool entries with the child's system-init tools (551).
+
+        Claude Code's built-in set depends on its version, so names cannot be
+        checked before start, and it ignores an unknown ``--tools`` or
+        ``--disallowedTools`` name. Returned, and reported to the parent:
+        ``tools_not_offered`` (an available-set entry the child does not have:
+        unknown, or denied by its settings), ``disallowed_still_offered`` (a
+        deny that did not remove the tool) and ``disallowed_unconfirmed`` (an
+        absent deny entry that is neither a known built-in nor an MCP tool of a
+        server the child has, so it may be a name Claude does not know).
+        Empty when nothing is to report or nothing was chosen.
+        """
+        request = self.request
+        chosen, denied = request.get('tools'), request.get('disallowed_tools') or []
+        if chosen is None and not denied:
+            return {}
+        present = set(offered) if isinstance(offered, list) else set()
+        servers = {name.split('__')[1] for name in present if name.startswith('mcp__') and name.count('__') >= 2}
+        servers.add(self.mcp_server)
+        base = lambda name: name.split('(', 1)[0]
+
+        def known(name: str) -> bool:
+            if name.startswith('mcp__') and name.count('__') >= 2:
+                return name.split('__')[1] in servers
+            return name in KNOWN_BUILTIN_TOOLS
+
+        check = {
+            'tools_not_offered': [name for name in chosen or () if base(name) not in present],
+            'disallowed_still_offered': [name for name in denied if base(name) in present],
+            'disallowed_unconfirmed': [name for name in denied
+                                       if base(name) not in present and not known(base(name))],
+        }
+        return {key: value for key, value in check.items() if value}
+
     def _prepare(self, address: str | None) -> tuple[list[str], dict]:
         """Use native restricted mode and mandatory sandboxing without bypass flags."""
         request = self.request
@@ -473,7 +563,7 @@ class ClaudeExecution:
                 # admits the declared read-only directories, still Edit-denied.
                 *[item for path in settings['permissions']['additionalDirectories'] for item in ('--add-dir', path)],
                 '--mcp-config', json.dumps(mcp), '--settings', json.dumps(settings),
-                '--tools', 'Bash,Read,Write,Edit,Glob,Grep', '--model', request['model'],
+                *self.tool_arguments(), '--model', request['model'],
                 '--append-system-prompt', request['instructions'],
                 '--resume' if self.expected else '--session-id', self.native_id]
         if request['reasoning_effort'] is not None:
@@ -622,6 +712,9 @@ class ClaudeExecution:
                 self._reply(event['request_id'], {})
             elif request.get('subtype') == 'hook_callback' and request.get('callback_id') == 'agents_review':
                 self._review_hook(event)
+            elif request.get('subtype') == 'can_use_tool' and request.get('tool_name') in self.exempt_tools:
+                # The owner's declared tool: allowed at once, no parent request (551).
+                self._reply(event['request_id'], {'behavior': 'allow', 'updatedInput': request.get('input')})
             elif request.get('subtype') == 'can_use_tool':
                 if not self._reviewed_prompt(event):
                     self._permission(event)
@@ -688,7 +781,7 @@ class ClaudeExecution:
         identity = event['request_id']
         native = event['request'].get('input')
         native = native if isinstance(native, dict) else {}
-        if native.get('tool_name') == self.agents_tool:
+        if native.get('tool_name') == self.agents_tool or native.get('tool_name') in self.exempt_tools:
             self._reply(identity, {})
             return
         with self.lock:
@@ -981,10 +1074,15 @@ class ClaudeExecution:
                             raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
                                                       'Claude did not register the bound agents SDK function.')
                         self.native_init = event
+                        check = self.tool_check(event.get('tools'))
                         with self.lock:
                             self.diagnostics['system_init'] = native_projection(event)
                             self.diagnostics['system_init']['model'] = model_projection(event.get('model'))
+                            if check:
+                                self.diagnostics['tool_check'] = check
                             self._save_diagnostics()
+                        if check and self.tool_report is not None:
+                            self.tool_report(check)
                         if self.session is not None:
                             observed = yaml_document(self.directory / 'session.yml')
                             observed['native_init'] = event

@@ -26,6 +26,8 @@ optional named presets::
         connection: work-claude      # or runtime: <name>, never both
         model: claude-opus-5-5       # optional
         reasoning_effort: high       # optional
+        tools: [Read, Grep]          # optional available set; omitted keeps the host's
+        disallowed_tools: [WebFetch] # optional deny list; it only narrows
     reviewers:
       local-review:                  # a chat completions endpoint, or
         base_url: http://127.0.0.1:1234/v1
@@ -80,7 +82,7 @@ RUNTIMES = ("claude", "codex", "pi", "dsh")
 CONNECTION_FIELDS = frozenset({"runtime", "home", "provider", "base_url", "api_key_env", "models", "review",
                                "pass_env"})
 MODEL_FIELDS      = frozenset({"id", "alias", "provider", "supported_efforts"})
-PRESET_FIELDS     = frozenset({"connection", "runtime", "model", "reasoning_effort"})
+PRESET_FIELDS     = frozenset({"connection", "runtime", "model", "reasoning_effort", "tools", "disallowed_tools"})
 REVIEWER_HTTP_FIELDS = frozenset({"base_url", "model", "api_key_env", "json_mode"})
 REVIEWER_FIELDS      = REVIEWER_HTTP_FIELDS | {"command", "timeout_seconds"}
 
@@ -312,7 +314,8 @@ def _read(root: Path) -> tuple[dict[str, bool], dict[str, dict], dict[str, dict]
                 if field not in PRESET_FIELDS:
                     raise fail(field_key, f"{label}: unknown field; expected "
                                           + ", ".join(sorted(PRESET_FIELDS)))
-                entry[field] = string(item, label)
+                entry[field] = (strings(item, label) if field in ("tools", "disallowed_tools")
+                                else string(item, label))
                 if field == "runtime" and entry[field] not in RUNTIMES:
                     raise fail(item, f"{label}: expected one of {', '.join(RUNTIMES)}")
                 if field == "connection" and entry[field] not in connections:

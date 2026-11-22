@@ -13,9 +13,10 @@ __getattr__ = _lazy_names({
     'bind_run': ('graftling.dsh.binding', 'bind_run'),
     'session_context': ('graftling.dsh.binding', 'session_context'),
     'dsh_version_refusal': ('graftling.dsh.settings', 'dsh_version_refusal'),
+    'apply_tools': ('graftling.dsh.execution', 'apply_tools'),
 })
 
 __all__ = [
     'DshError', 'DshService', 'DshDriver', 'DshExecution', 'bind_run',
-    'session_context', 'dsh_version_refusal',
+    'session_context', 'dsh_version_refusal', 'apply_tools',
 ]

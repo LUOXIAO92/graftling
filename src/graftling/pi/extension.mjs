@@ -265,7 +265,10 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
         // Identity is verified by the owning host's kernel-authenticated pipe.
         pi.registerMcpServer(server, {
           command: process.env.GRAFTLING_PYTHON, args: ['-I', '-m', 'graftling.mcp'],
-          cwd: ctx.cwd, env: {GRAFTLING_CONNECTION: process.env.GRAFTLING_CONNECTION}, exposure: 'direct',
+          cwd: ctx.cwd, exposure: 'direct',
+          // The owner's extra tools (graftling.extra_tools), listed by graftling.mcp beside agents.
+          env: {GRAFTLING_CONNECTION: process.env.GRAFTLING_CONNECTION,
+                ...(process.env.GRAFTLING_EXTRA_TOOLS ? {GRAFTLING_EXTRA_TOOLS: process.env.GRAFTLING_EXTRA_TOOLS} : {})},
         });
         return true;
       }
@@ -310,15 +313,29 @@ const REVIEW_TITLE = Symbol.for('agents.pi.review-title');
  * by agents' authority checks, and must work when the reviewer is down. A tool
  * named agents on any other MCP server is reviewed.
  */
+/**
+ * The tools of `server` the owner declared beside agents (GRAFTLING_EXTRA_TOOLS, 551), as Pi names them.
+ * Like agents they are the owner's own entries with their own authorization, so review lets them through.
+ */
+export function ownerTools(environment = process.env, server = MCP_SERVER) {
+  let declared;
+  try { declared = JSON.parse(environment.GRAFTLING_EXTRA_TOOLS || '[]'); } catch { declared = []; }
+  if (!Array.isArray(declared)) return [];
+  return declared.filter(item => typeof item?.name === 'string' && /^[A-Za-z0-9_-]+$/.test(item.name) && item.name !== 'agents')
+    .map(item => `mcp__${server}__${item.name}`);
+}
+
 export function registerReview(pi, environment = process.env, server = MCP_SERVER) {
   const agentsTool = `mcp__${server}__agents`;
+  // The owner's own entries pass without an ask: agents and every extra tool it declared (551).
+  const exempt = new Set([agentsTool, ...ownerTools(environment, server)]);
   const title = environment.GRAFTLING_PI_REVIEW || globalThis[REVIEW_TITLE];
   delete environment.GRAFTLING_PI_REVIEW;
   if (!title) return false;
   globalThis[REVIEW_TITLE] = title;
   pi.registerCommand('agents-review-hook', { description: 'The agents review plugin is active.', handler: async () => {} });
   pi.on('tool_call', async (event, ctx) => {
-    if (event.toolName === agentsTool) return undefined;
+    if (exempt.has(event.toolName)) return undefined;
     const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input });
     const confirmed = await ctx.ui.confirm(title, call, { signal: ctx.signal });
     if (confirmed === true) return undefined;
@@ -327,9 +344,45 @@ export function registerReview(pi, environment = process.env, server = MCP_SERVE
   return true;
 }
 
+export const CONFIRM_TITLE = 'agents: allow a tool beyond the host settings';
+
+/**
+ * Ask before the first use of each tool the owner marked as beyond the host's
+ * settings (GRAFTLING_PI_CONFIRM_TOOLS, 551). The ask is Pi's own confirm
+ * dialog, which the owner passes to this child's parent as a native request;
+ * only an explicit allow lets the call run, and it stays allowed for this
+ * Session. Every other tool call is untouched.
+ */
+export function registerToolConfirm(pi, environment = process.env) {
+  let names;
+  try { names = JSON.parse(environment.GRAFTLING_PI_CONFIRM_TOOLS || '[]'); } catch { names = []; }
+  delete environment.GRAFTLING_PI_CONFIRM_TOOLS;
+  if (!Array.isArray(names)) return false;
+  const pending = new Set(names.filter(name => typeof name === 'string' && name));
+  if (pending.size === 0) return false;
+  const allowed = new Set();
+  pi.on('tool_call', async (event, ctx) => {
+    if (!pending.has(event.toolName) || allowed.has(event.toolName)) return undefined;
+    const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input,
+                                  reason: 'beyond the host settings' });
+    const confirmed = await ctx.ui.confirm(CONFIRM_TITLE, call, { signal: ctx.signal });
+    if (confirmed === true) { allowed.add(event.toolName); return undefined; }
+    return { block: true, reason: `${event.toolName} is beyond the host settings and was not allowed; it did not run. Do not retry it; continue with other work or report it as blocked.` };
+  });
+  return true;
+}
+
+/** The server name the owner chose for this child (GRAFTLING_MCP_SERVER), else graftling's. */
+export function childServer(environment = process.env) {
+  const name = environment.GRAFTLING_MCP_SERVER;
+  return typeof name === 'string' && /^[A-Za-z0-9_-]+$/.test(name) ? name : MCP_SERVER;
+}
+
 export default function agents(pi) {
-  registerReview(pi);
-  const owner = registerAgents(pi);
+  const server = childServer();
+  registerReview(pi, process.env, server);
+  registerToolConfirm(pi);
+  const owner = registerAgents(pi, { server });
   pi.on('session_start', async (_event, ctx) => { await owner.start(ctx); });
   pi.on('session_shutdown', async () => { await owner.close(); });
 }

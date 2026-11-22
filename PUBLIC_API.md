@@ -470,9 +470,9 @@ with its own `__all__`:
 | Package | Names |
 | --- | --- |
 | `graftling.claude` | `ClaudeDriver`, `ClaudeExecution`, `collect_hook_event`, `hook_source`, `NativeCalls`, `REFUSAL_FILE`, `claim_channel`, `context_endpoint`, `ended_by_claude`, `log_replaced_channel`, `require_free_channel`, `serve_refusal`, `claude_host_plugin`, `kept_host_paths`, `write_adoption` |
-| `graftling.codex` | `CodexDriver`, `CodexManagedExecution`, `CodexAppServer`, `CodexExecution`, `CodexSession`, `CodexServerRequest`, `CodexRPCError`, `CodexAdapterError`, `CodexRuntimeContext`, `restore_codex_context`, `validate_codex_launch_request`, `reject_legacy_sandbox_config`, `codex_api_key_env`, `codex_connection_environment`, `find_native_session`, `project_access`, `validate_connection`, `in_thread` |
-| `graftling.pi` | `PiDriver`, `PiExecution`, `current_connection`, `session_record`, `session_source`, `verify_main`, `pi_destination` |
-| `graftling.dsh` | `DshDriver`, `DshService`, `DshError`, `DshExecution`, `bind_run`, `session_context`, `dsh_version_refusal` |
+| `graftling.codex` | `CodexDriver`, `CodexManagedExecution`, `CodexAppServer`, `CodexExecution`, `CodexSession`, `CodexServerRequest`, `CodexRPCError`, `CodexAdapterError`, `CodexRuntimeContext`, `restore_codex_context`, `validate_codex_launch_request`, `reject_legacy_sandbox_config`, `codex_api_key_env`, `codex_connection_environment`, `find_native_session`, `project_access`, `validate_connection`, `in_thread`, `apply_tools` |
+| `graftling.pi` | `PiDriver`, `PiExecution`, `current_connection`, `session_record`, `session_source`, `verify_main`, `pi_destination`, `apply_tools` |
+| `graftling.dsh` | `DshDriver`, `DshService`, `DshError`, `DshExecution`, `bind_run`, `session_context`, `dsh_version_refusal`, `apply_tools` |
 | `graftling.sessions` | `SessionArchive` (the JSONL archive; `graftling.SessionArchive` is the interface a backend expects), `ConfiguredSessionArchive`, `JsonlSessionStore`, `archive_path`, `find_session`, `read_events`, `redact_session`, `SESSION_FORMAT_VERSION`, `INITIAL_COLLECTION_TYPE`, `append_stream_record`, `native_record`, `retain_native`, `snapshot_event`, `upgrade_event`, `upgrade_header`, `validate_header`, `validate_session`, `CodexJsonlArchive`, `CodexHistoryArchive`, `NativeInputError`, `rollout_record`, `codex_attachments`, `DshArchive`, `DshLiveFrames`, `attachment_refs`, `attempt_usage`, `collect_jsonl`, `PiArchive`, `import_native`, `import_sqlite`, `verify_sqlite` |
 
 Session reading (since 466), the parts of `session_read` (1.2) for a host or a
@@ -530,6 +530,42 @@ directory against which `archive_collector` resolves relative attachment paths a
 whose `.codex` it keeps out of the archive, as `PiArchive(project=...)` (1.5). A
 consumer whose children work in a worktree of a larger project sets it to that project.
 
+**Host tools beside `agents` (551).** A host may serve its own MCP tools to an
+independent child next to `agents` as its extra tools: a sequence
+of `(descriptor, callback)` pairs, where `descriptor` is an MCP tool document
+(`name`, `description`, `inputSchema`; any name except `agents`) and
+`callback(arguments)` returns an `AgentsResult`. graftling only lists and routes
+these tools; each callback keeps its own authorization, and an `AgentsError` it
+raises becomes a failed result. They are accepted by
+`ClaudeExecution.configure_independent(..., extra_tools=)` (Claude's in-process
+server), `agents_connection(..., extra_tools=)` (the same authenticated channel,
+with the tagged request `{"tool": name, "arguments": {...}}`),
+`CodexManagedExecution(..., extra_tools=)` and `CodexDriver(...,
+extra_tools=factory)` with `factory(run)` returning the pairs for that Agent's
+child. The owner lists them to the child's `python -m graftling.mcp` in
+`GRAFTLING_EXTRA_TOOLS` (JSON descriptors). Without extra tools nothing changes.
+`extra_tool_table(pairs)` (in `graftling.__all__`) returns the pairs by name, the
+form `PiExecution.extra_tools` holds, and raises `ValueError` for a malformed or
+repeated entry or one named `agents`.
+
+**A create's `tools` / `disallowed_tools` (551).** Each Runtime package publishes
+`apply_tools`, which a driver calls to put a create's tool choice into the
+child's launch: `graftling.codex.apply_tools(config, tools, *, own_server=None,
+own_tools=())` into the captured Codex config, `graftling.pi.apply_tools(request,
+tools, own_server='graftling')` and `graftling.dsh.apply_tools(request, tools)`
+into the launch request. Each raises `AgentsError` for an entry its Runtime cannot
+express or that goes beyond the host's settings without authorization (section 2).
+
+**The child's server name (551).** `ClaudeExecution`, `CodexManagedExecution`,
+`DshExecution` and `PiExecution` declare `mcp_server` (default `graftling`): the
+name an independent child's MCP server is registered under, so the child sees
+`mcp__<mcp_server>__agents` and its extra tools likewise. A consumer subclass
+sets its own. Pi passes it to the child's extension as `GRAFTLING_MCP_SERVER`
+(only when it is not the default; `childServer(environment)` in
+`pi/extension.mjs` reads it, falling back to `graftling` for a malformed name).
+Codex writes the owner's whole entry under that name, replacing a captured
+server entry of the same name.
+
 **`AgentControl` methods.** Besides `operate` (`bind`'s entry) a host may call
 `create`, `send`, `resume`, `interrupt`, `wait`, `requests`, `reply`,
 `ask_parent`, `retire`, `select`, `require_connections`, `hierarchy`,
@@ -555,7 +591,7 @@ every other `.mjs` file, is internal.
 
 | File | Exports |
 | --- | --- |
-| `graftling/pi/extension.mjs` | `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `registerNoticeDisplay` (536), `sessionEnvironment`, `startAgentHost` |
+| `graftling/pi/extension.mjs` | `childServer` (551), `loadHostSdk`, `registerAgents`, `registerAgentDisplay`, `registerNoticeDisplay` (536), `sessionEnvironment`, `startAgentHost` |
 | `graftling/dsh/plugin.mjs` | `sessionEnvironment` |
 
 ### 1.4 Host plugins: the `graftling.hosts` entry point
@@ -952,6 +988,50 @@ A request that selects nothing (no preset, model or effort, and no
 connection declared for the Runtime) reaches the driver exactly as before.
 `configuration` keeps its meaning and may be combined with the new arguments;
 independent hosts still refuse it with `invalid-config`.
+
+**Tools (551).** `create` and `config.yml` presets accept optional `tools`
+(the native tool names the child may have) and `disallowed_tools` (names it
+must not have), both lists of strings. Omitted, the child keeps the host's own
+tool settings: no tool list is hard-coded. A create's `tools` replaces the
+preset's; `disallowed_tools` is the union of both. The driver receives
+`prepare(..., tools={"tools": [...] or None, "disallowed_tools": [...]})`; a
+driver whose `prepare` lacks `tools` makes the create fail `unavailable` rather
+than run the child with other tools. The choice is recorded as
+`selection.tools`. Narrowing needs no authorization. Nothing here grants a use
+beyond the host's settings: what exceeds them goes through the Runtime's own
+approval to the direct parent, and is not granted without it.
+
+"Host settings" means the child's own Runtime configuration on this machine
+(that Runtime's local settings), not the parent's. Tool names are each
+Runtime's native names; there is no cross-Runtime tool model, so the same
+capability has different names: Claude `WebSearch`, Codex `web_search`, MCP
+tools `mcp__<server>__<tool>`, Pi `bash`, DSH its `tool-web` preset rows. An
+entry the child's Runtime does not know is never silently ignored: Codex and
+DSH refuse the create with `unavailable`. Claude's built-in set depends on its
+version, so it is checked after start against the child's system-init tool
+list, and `status` reports `tool_check` with `tools_not_offered`,
+`disallowed_still_offered` and `disallowed_unconfirmed` (a missing deny entry
+that is neither a known built-in nor a tool of one of the child's MCP servers).
+
+- Claude: no flag by default, so Claude Code offers its own default tools
+  under the same user, project and managed settings files the host reads;
+  their deny rules always win. `tools` -> `--tools`, `disallowed_tools` ->
+  `--disallowedTools`. A use the settings do not pre-allow still asks through
+  `can_use_tool`, which reaches the direct parent as a pending request; a
+  tool the settings deny stays off, visible as absent from the child's
+  system init tool list. The host process's own command-line flags (its own
+  `--tools`, `--disallowedTools`) are not observable and so not inherited.
+  `--restricted`, the mandatory sandbox and the runtime-home and
+  private-state denies are unchanged.
+- Codex: the captured host config is kept. Codex can express only
+  `web_search` (config `web_search = "disabled"`) and MCP tools
+  `mcp__<server>__<tool>` (per-server `enabled_tools`/`disabled_tools`); any
+  other name (shell, apply_patch, ...) fails `unavailable` naming it, because
+  Codex has no native switch for one built-in tool. An MCP tool whose server
+  the captured settings do not define also fails `unavailable`, since Codex
+  rejects a server entry without a transport. Asking for `web_search`
+  when the captured host config disables it fails `authorization-required`:
+  Codex offers no approval to enable it for a child.
 
 **Drivers.** The selection reaches the driver as
 `prepare(runtime, caller, selection={"preset", "connection", "model",

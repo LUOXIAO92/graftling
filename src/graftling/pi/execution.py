@@ -6,7 +6,8 @@ connections, Task notices or Session archives overrides the hook methods.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 from contextlib import ExitStack, nullcontext
 import copy
 import json
@@ -50,6 +51,62 @@ OPTIONAL_TEXT = ('provider_domain', 'base_url', 'provider_api', 'api_key_env', '
 RPC_SECONDS = 30
 
 
+# Pi 1.4.0's built-in tools and its default selection (docs/cli.md "Tools").
+PI_BUILTIN_TOOLS = frozenset({'read', 'bash', 'edit', 'write', 'grep', 'find', 'ls', 'codemode', 'tool_search'})
+PI_DEFAULT_TOOLS = ('read', 'bash', 'edit', 'write')
+# The built-ins a child may use only after its parent allows them (graftling.pi extension asks on first use).
+CONFIRM_TOOLS_ENV = 'GRAFTLING_PI_CONFIRM_TOOLS'
+CONFIRM_TITLE = 'agents: allow a tool beyond the host settings'
+
+
+def host_default_tools(agent_dir: Path) -> set[str]:
+    """Return the built-ins the host's Pi enables by default: ``defaultTools`` of its settings.json, else Pi's.
+
+    A list of only ``+name``/``-name`` entries changes Pi's defaults; plain
+    names replace them, as Pi itself reads the setting.
+    """
+    try:
+        settings = json.loads((Path(agent_dir) / 'settings.json').read_text(encoding='utf-8'))
+    except (OSError, UnicodeError, ValueError):
+        settings = {}
+    chosen = settings.get('defaultTools') if isinstance(settings, dict) else None
+    enabled = set(PI_DEFAULT_TOOLS)
+    if isinstance(chosen, list) and all(isinstance(item, str) and item for item in chosen):
+        if chosen and all(item[0] in '+-' for item in chosen):
+            for item in chosen:
+                (enabled.add if item[0] == '+' else enabled.discard)(item[1:])
+        else:
+            enabled = set(chosen)
+    return enabled
+
+
+def tool_arguments(request: Mapping[str, Any], agent_dir: Path,
+                   owner_tools: Iterable[str] = ()) -> tuple[list[str], list[str]]:
+    """Return Pi's native flags for the child's tool choice (551) and the built-ins beyond the host's.
+
+    ``tools`` is Pi's ``--tools`` allowlist (``+name``/``-name`` entries
+    change the defaults instead), ``disallowed_tools`` its ``--exclude-tools``.
+    Without either nothing is passed and Pi keeps the host's own settings. A
+    plain-name allowlist declares no MCP tool it does not name (Pi docs/cli.md;
+    Main's AU pi run: `--tools read,grep` left the child no agents or tasks),
+    so it also names ``owner_tools``, the owner's own MCP entries
+    (``mcp__<server>__agents`` and each declared extra tool), minus any that
+    ``disallowed_tools`` names: the available set narrows host tools and never
+    drops the owner's entries. A requested built-in that the host's settings
+    do not enable is returned for the parent's approval.
+    """
+    tools, denied = request.get('tools'), list(request.get('disallowed_tools') or ())
+    if tools is not None and not all(item[:1] in '+-' for item in tools):
+        tools = list(dict.fromkeys([*tools, *(name for name in owner_tools if name not in denied)]))
+    argv = (['--tools', ','.join(tools)] if tools is not None else []) + \
+           (['--exclude-tools', ','.join(denied)] if denied else [])
+    host = host_default_tools(agent_dir)
+    wanted = [item.lstrip('+') for item in tools or () if not item.startswith('-')]
+    beyond = [name for name in dict.fromkeys(wanted)
+              if name in PI_BUILTIN_TOOLS and name not in host and name not in denied]
+    return argv, beyond
+
+
 def child_path(sandbox_path: str) -> str:
     """Return the PATH a Pi child gets: the host Python's directory, then ``sandbox_path``."""
     return str(Path(sys.executable).parent) + os.pathsep + sandbox_path
@@ -59,8 +116,16 @@ class AckLost(RuntimeAdapterError):
     """Pi got a command and did not acknowledge it, so it may have acted on it."""
 
 
+# The MCP server name the child's extension registers agents under: the model
+# sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+MCP_SERVER = 'graftling'
+
+
 class PiExecution:
     """Keep native identity, input and queue-aware stopping on one owned pipe."""
+
+    # The independent child's MCP server name (GRAFTLING_MCP_SERVER for the extension).
+    mcp_server = MCP_SERVER
 
     def __init__(
         self,
@@ -121,6 +186,9 @@ class PiExecution:
         self.agent = None
         self.parent_notice = None
         self.agent_call = None
+        # The host's own tools served beside agents on this child's channel, by
+        # name (graftling.extra_tools.extra_tool_table); none by default.
+        self.extra_tools: dict = {}
         # Review plugin state, unused without ``request['review']``: the reserved
         # dialog title and the native dialogs still with the reviewer.
         self.review_title = 'agents-review:' + uuid.uuid4().hex if request.get('review') else None
@@ -378,6 +446,15 @@ class PiExecution:
             argv += ['--extension', str(Path(__file__).with_name('extension.mjs'))]
         if request.get('reasoning_effort'):
             argv += ['--thinking', request['reasoning_effort']]
+        # 551: the child's tool choice; a built-in beyond the host's settings waits for its parent's allow.
+        # The owner's own MCP entries exist only where the extension registers the child's server.
+        owned = ([f'mcp__{self.mcp_server}__agents', *(f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools)]
+                 if self.independent and address is not None else [])
+        tool_argv, beyond = tool_arguments(request, source, owned)
+        if beyond and not (self.independent and address is not None):
+            raise RuntimeAdapterError('authorization-required',
+                                      f'Pi tools {beyond} are beyond the host settings and no parent can allow them.')
+        argv += tool_argv
         spec = self.directory / 'pi-process.json'
         spec.write_text(json.dumps({'policy': str(policy_file), 'argv': argv}), encoding='utf-8')
         named = request.get('api_key_env')
@@ -405,6 +482,8 @@ class PiExecution:
             env.update(_git_identity(worktree))
         if address is not None:
             env.update(self.connection_environment(address))
+        if beyond:
+            env[CONFIRM_TOOLS_ENV] = json.dumps(beyond)
         if self.review_title is not None:
             env[REVIEW_ENV] = self.review_title
         # Pi's native find accepts an existing fd on PATH; do not download it or
@@ -436,11 +515,20 @@ class PiExecution:
             self.directory / 'mcp', self.agent_call,
             lambda pid: authenticate_process(self.proc, pid),
             files=Path(self.request['worktree_path']),
+            extra_tools=list(self.extra_tools.values()),
         )
 
     def connection_environment(self, address: str) -> dict:
-        """Name the existing connection for the extension's MCP client."""
-        return {'GRAFTLING_CONNECTION': address, 'GRAFTLING_PYTHON': sys.executable}
+        """Name the existing connection, its MCP server name and any extra tools' descriptors.
+
+        The extension registers the child's MCP server under ``mcp_server``
+        (``GRAFTLING_MCP_SERVER``), so its tools are ``mcp__<mcp_server>__*``.
+        """
+        from graftling.extra_tools import descriptor_environment
+
+        return {'GRAFTLING_CONNECTION': address, 'GRAFTLING_PYTHON': sys.executable,
+                **({'GRAFTLING_MCP_SERVER': self.mcp_server} if self.mcp_server != MCP_SERVER else {}),
+                **descriptor_environment(self.extra_tools)}
 
     def archive_collector(self, header: dict, native: dict):
         """Collect the native Session into the bound archive; without one, archive nothing."""
@@ -977,6 +1065,12 @@ def _validate(request: dict) -> None:
         values = request.get(field, [])
         if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values):
             raise invalid(field, 'a list of nonempty strings')
+    if request.get('tools') is not None and (not isinstance(request['tools'], list) or any(
+            not isinstance(v, str) or not v for v in request['tools'])):
+        raise invalid('tools', 'a list of nonempty strings when given')
+    if not isinstance(request.get('disallowed_tools', []), list) or any(
+            not isinstance(v, str) or not v for v in request.get('disallowed_tools', [])):
+        raise invalid('disallowed_tools', 'a list of nonempty strings')
     if not isinstance(request.get('allow_local_binding', False), bool):
         raise invalid('allow_local_binding', 'a boolean')
     if request['worktree_access'] == 'write' and not request.get('git_common_directory'):

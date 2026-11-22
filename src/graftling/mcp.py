@@ -319,15 +319,30 @@ def tool_documents() -> list[dict]:
              'inputSchema': INPUT_SCHEMA}]
 
 
+def child_tool_documents() -> list[dict]:
+    """Expose agents and any tools the owner declared for this child (graftling.extra_tools)."""
+    from graftling.extra_tools import environment_descriptors
+
+    return tool_documents() + environment_descriptors()
+
+
 def call(request_id: Any, params: Mapping) -> dict:
-    """Forward over the owning Runtime's authenticated channel; never fall back."""
-    if params.get('name') != 'agents':
-        return error_response(request_id, -32602, f"Unknown tool: {params.get('name')}")
+    """Forward over the owning Runtime's authenticated channel; never fall back.
+
+    An owner-declared extra tool goes over the same channel, tagged with its
+    name; the owner runs it and keeps its authorization.
+    """
+    from graftling.extra_tools import environment_descriptors, tool_request
+
+    name = params.get('name')
+    extra = name != 'agents' and name in [item['name'] for item in environment_descriptors()]
+    if name != 'agents' and not extra:
+        return error_response(request_id, -32602, f"Unknown tool: {name}")
     request = params.get('arguments', {})
     if not isinstance(request, dict):
         return error_response(request_id, -32602, 'Tool arguments must be an object.')
     try:
-        result = call_owner(request, metadata=params.get('_meta'))
+        result = call_owner(tool_request(name, request) if extra else request, metadata=params.get('_meta'))
         document, failed = result.document, result.failed
     except AgentsError as error:
         document = {'error': {'code': error.code, 'message': error.message}}
@@ -339,7 +354,7 @@ def call(request_id: Any, params: Mapping) -> dict:
 def main() -> None:
     """Run one stdio MCP entry over the owning Runtime's authenticated channel."""
     serve(sys.stdin, sys.stdout, lambda message: respond(
-        message, tool_documents, call, {'name': 'agents', 'version': __version__}))
+        message, child_tool_documents, call, {'name': 'agents', 'version': __version__}))
 
 
 if __name__ == '__main__':

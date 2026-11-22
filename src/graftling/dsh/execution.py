@@ -8,7 +8,7 @@ from pathlib import Path
 import threading
 import sys
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Iterator, Mapping
 from urllib.parse import urlsplit
 import uuid
 from contextlib import ExitStack
@@ -21,6 +21,7 @@ from .service import DshService, redact_native, secret_values
 from .errors import DshError
 from graftling.child_env import child_environment, consumer_environment
 from graftling.connection import CONNECTION_ENV
+from graftling.extra_tools import EXTRA_TOOLS_ENV, descriptor_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from .settings import _DEFAULT_KEY_ENV, AMBIENT_ENDPOINTS, credential_environment, resumes_by_address
@@ -169,6 +170,57 @@ def _deployment_agent_preset(install_root: Path, instructions: str) -> dict | No
     return None
 
 
+def _tool_rows(plugins: list) -> Iterator[dict]:
+    """Yield the agent preset's tool plugin rows (``tool-*``), including those inside plugin groups."""
+    for plugin in plugins:
+        if not isinstance(plugin, dict):
+            continue
+        if plugin.get('group') and isinstance(plugin.get('config'), list):
+            yield from _tool_rows(plugin['config'])
+        elif isinstance(plugin.get('id'), str) and plugin['id'].startswith('tool-'):
+            yield plugin
+
+
+def apply_tools(request: dict, tools: Mapping[str, Any]) -> None:
+    """Check a create's tool choice (551) against the installed agent preset and keep it in ``request``.
+
+    DSH chooses tools by agent-preset plugin row id (``tool-web``, ``tool-bash``
+    ...): one row can carry several model tools, so a single tool inside a row
+    cannot be chosen. An unknown id is ``unavailable``. A row the installed
+    (host) preset disables is beyond the host's settings and DSH has no
+    approval route that enables a plugin, so it is ``authorization-required``
+    and the child does not start.
+    """
+    from graftling.tool import AgentsError
+
+    chosen, denied = tools.get('tools'), list(tools.get('disallowed_tools') or ())
+    preset = _deployment_agent_preset(Path(request['package']).parent, '')
+    if preset is None:
+        raise AgentsError('unavailable', "The installed DSH agent preset cannot be read, so a child's tools "
+                                         'cannot be chosen.')
+    rows = {row['id']: row for row in _tool_rows(preset['config']['plugins'])}
+    # An `mcp__<server>__<tool>` deny is kept for bind_run, which stops offering that owner tool (551).
+    unknown = [name for name in dict.fromkeys([*(chosen or ()), *(d for d in denied if not d.startswith('mcp__'))])
+               if name not in rows]
+    if unknown:
+        raise AgentsError('unavailable', f"DSH chooses a child's tools by agent-preset plugin row, one row "
+                                         f"possibly carrying several tools; unknown {unknown}; rows: {sorted(rows)}.")
+    beyond = [name for name in chosen or () if rows[name].get('disabled') is True and name not in denied]
+    if beyond:
+        raise AgentsError('authorization-required', f'DSH rows {beyond} are disabled in the installed (host) '
+                                                    'preset; DSH has no approval route that enables a plugin, so '
+                                                    'the child was not started.')
+    request['tools'] = list(chosen) if chosen is not None else None
+    request['disallowed_tools'] = denied
+
+
+def _select_tool_rows(preset: dict, chosen: list[str] | None, denied: list[str]) -> None:
+    """Disable every tool row the child may not use: outside ``chosen`` (when given) or in ``denied``."""
+    for row in _tool_rows(preset['config']['plugins']):
+        if (chosen is not None and row['id'] not in chosen) or row['id'] in denied:
+            row['disabled'] = True
+
+
 class DshExecution:
     """Keep one Session bound until work and the pending inbox are quiescent."""
 
@@ -176,6 +228,8 @@ class DshExecution:
     service_type = DshService
     host_connection = None
     connection_env = 'GRAFTLING_CONNECTION'
+    # The host's own tools served beside agents (graftling.extra_tools), by name; bind_run sets them.
+    extra_tools: dict = {}
     # The MCP server name of the plugin row; review lets only its agents tool through.
     mcp_server = MCP_SERVER
     parent_notice = None
@@ -279,13 +333,17 @@ class DshExecution:
             mcp = self.request['mcp']
             patches.append({'insert': [{'id': 'agents-mcp', 'name': str(Path(__file__).with_name('plugin.mjs')),
                                         'config': {'mcpCommand': mcp['command'], 'mcpArgs': mcp.get('args', []),
-                                                   'mcpEnv': [self.connection_env],
+                                                   'mcpEnv': [self.connection_env,
+                                                              *([EXTRA_TOOLS_ENV] if self.extra_tools else [])],
                                                    'mcpServer': self.mcp_server}}]})
         if self.request.get('review'):
-            # Review lets through only the agents tool of the server registered above.
+            # Review lets through only the owner's own entries on the server registered above: its agents
+            # tool and every extra tool the owner declared (551; each keeps its own authorization).
             patches.append({'insert': [{'id': 'agents-review', 'name': str(Path(__file__).with_name('review.mjs')),
                                         'config': {'readyFile': str(self.review_ready),
-                                                   **({'mcpServer': self.mcp_server}
+                                                   **({'mcpServer': self.mcp_server,
+                                                       **({'ownerTools': sorted(self.extra_tools)}
+                                                          if self.extra_tools else {})}
                                                       if self.request.get('mcp') else {})}}]})
         if self.request.get('connection'):
             # Native selectModel otherwise saves the selection to the shared
@@ -294,6 +352,12 @@ class DshExecution:
         preset = _deployment_agent_preset(
             Path(self.request['package']).parent, self.request['instructions'],
         )
+        # 551: the child's tool choice disables tool rows of the installed preset; without one, all stay as installed.
+        if self.request.get('tools') is not None or self.request.get('disallowed_tools'):
+            if preset is None:
+                raise self.error_type('unavailable', "The installed DSH agent preset cannot be read, so a child's "
+                                                     'tools cannot be chosen.')
+            _select_tool_rows(preset, self.request.get('tools'), list(self.request.get('disallowed_tools') or ()))
         if preset is not None:
             patches.append(preset)
         (profile / 'cordis.patch.yml').write_text(_dump_profile_patches(patches), encoding='utf-8')
@@ -307,6 +371,9 @@ class DshExecution:
         })
         for ambient in AMBIENT_ENDPOINTS:
             environment.pop(ambient, None)
+        # The extra tools' descriptors, which the plugin row passes to its MCP server
+        # (mcpEnv above); nothing without extra tools.
+        environment.update(descriptor_environment(self.extra_tools))
         # After child_environment, which drops an inherited marker: this execution's
         # own, kept by DSH's scrubbedParentEnv for every tool it starts.
         environment[MEMBER_RUN_ENV] = self.member_marker

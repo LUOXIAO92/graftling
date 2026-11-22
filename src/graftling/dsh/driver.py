@@ -77,17 +77,24 @@ class DshDriver:
         self.lock = threading.Lock()
 
     def prepare(self, runtime: str, caller: Caller, *, selection: Mapping[str, Any] | None = None,
-                workspace: Path | None = None) -> dict:
+                workspace: Path | None = None, tools: Mapping[str, Any] | None = None) -> dict:
         """Validate explicit DSH configuration, independently of caller roles.
 
         ``selection`` is the create's resolved connection, model and effort.
         ``workspace`` replaces the host cwd, and with it the native sandbox's
-        workspace root; the permission mode stays as configured.
+        workspace root; the permission mode stays as configured. ``tools``
+        (551) chooses agent-preset tool rows (:func:`graftling.dsh.execution.apply_tools`);
+        omitted, the installed preset's tools stay.
         """
         if runtime != 'dsh':
             raise AgentsError('unsupported-runtime', 'This driver runs DSH only.')
         config = self.configuration if selection is None else selected(self.configuration, selection)
-        return prepare(config, self.cwd if workspace is None else within_workspace(workspace, self.cwd))
+        settings = prepare(config, self.cwd if workspace is None else within_workspace(workspace, self.cwd))
+        if tools is not None:
+            from .execution import apply_tools
+
+            apply_tools(settings, tools)
+        return settings
 
     def require_available(self, connection: Mapping[str, Any]) -> None:
         """Refuse a connection whose DSH is not installed, or whose named key is unset.

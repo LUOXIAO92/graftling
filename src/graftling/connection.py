@@ -18,9 +18,10 @@ import threading
 import time
 import traceback
 from contextlib import contextmanager
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Sequence
 
 from graftling.calls import pause
+from graftling.extra_tools import ExtraTool
 from graftling.tool import AgentsError, AgentsResult
 
 if os.name != 'nt':
@@ -378,6 +379,7 @@ def agents_connection(
     native_context: Callable[[], dict | None] | None = None,
     close_seconds: float | None = None,
     files: Path | None = None,
+    extra_tools: Sequence[ExtraTool] | None = None,
 ) -> Iterator[str]:
     """Serve one bound caller, optionally checking host-owned native Session facts.
 
@@ -387,8 +389,15 @@ def agents_connection(
     ``close_seconds`` is :func:`worker_connection`'s. ``files`` is the
     directory the caller may read an ``arguments_file`` from; by default the
     verified native ``cwd``, and without either an arguments file is refused.
+    ``extra_tools`` are the
+    host's own tools served beside ``agents`` on this same authenticated
+    channel (see :mod:`graftling.extra_tools`); each callback keeps its own
+    authorization.
     """
     from graftling.discovery import handle_request
+    from graftling.extra_tools import call_extra_tool, extra_tool_table, requested_tool
+
+    table = extra_tool_table(extra_tools)
 
     def operate(request: dict) -> dict:
         """Reuse shared discovery and the host's existing business callback."""
@@ -402,7 +411,9 @@ def agents_connection(
             readable = files if files is not None else Path(expected['cwd'])
         elif isinstance(request, dict) and 'native' in request:
             raise AgentsError('authority-denied', 'This channel has no matching native Session binding.')
-        result = handle_request(request, call, files=readable)
+        tool   = requested_tool(request)
+        result = (handle_request(request, call, files=readable) if tool is None
+                  else call_extra_tool(table, *tool))
         return {'document': result.document, 'failed': result.failed}
 
     directory.mkdir(parents=True, exist_ok=True)

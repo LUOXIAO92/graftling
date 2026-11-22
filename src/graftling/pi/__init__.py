@@ -13,9 +13,10 @@ __getattr__ = _lazy_names({
     'session_source': ('graftling.pi.session', 'session_source'),
     'verify_main': ('graftling.pi.session', 'verify_main'),
     'pi_destination': ('graftling.models', 'pi_destination'),
+    'apply_tools': ('graftling.pi.driver', 'apply_tools'),
 })
 
 __all__ = [
     'PiDriver', 'PiExecution', 'current_connection', 'session_record',
-    'session_source', 'verify_main', 'pi_destination',
+    'session_source', 'verify_main', 'pi_destination', 'apply_tools',
 ]
