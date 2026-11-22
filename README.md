@@ -41,7 +41,8 @@ another MCP client, every request fails with `authority-denied`, including
 `graftling` is not on PyPI and no version has been published. Build the wheel from
 a checkout, or use a wheel you were given, and install it alone in a dedicated
 environment with Python 3.12 or later. Its only dependencies are PyYAML and
-websockets.
+websockets. On DSH you can skip this: the plugin installed from this repository's
+GitHub address builds its own environment ([docs/install/dsh.md](docs/install/dsh.md)).
 
 ```sh
 AGENTS_VENV=/absolute/agents-venv
@@ -66,7 +67,7 @@ credentials. Then follow the note for the host you use:
 | Claude Code | [docs/install/claude-code.md](docs/install/claude-code.md) | The `graftling` plugin from this repository's marketplace (real only in print mode, `claude -p`), or plugin files generated into your project |
 | Codex | [docs/install/codex.md](docs/install/codex.md) | A command that runs a headless parent. No plugin |
 | Pi | [docs/install/pi.md](docs/install/pi.md) | `pi install` of the installed package directory, or `-e` for one invocation |
-| DSH | [docs/install/dsh.md](docs/install/dsh.md) | `dsh plugin add` of the installed package directory, or `--patch` for one invocation |
+| DSH | [docs/install/dsh.md](docs/install/dsh.md) | `dsh plugin add` or the Plugins page with `git+https://github.com/LUOXIAO92/graftling.git#<full commit>`, which needs no wheel: the plugin builds its own Python environment under the DSH home on first start. Or `dsh plugin add` of the installed package directory, or `--patch` for one invocation |
 
 ## Use the tool
 
