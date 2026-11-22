@@ -88,7 +88,7 @@ def test_non_python_package_files_do_not_run_graphtraj() -> None:
 
 def test_packaging_never_declares_or_requires_graphtraj() -> None:
     """pyproject: no build requirement, dependency, extra or script target names GraphTraj; nor pytest.ini."""
-    project = tomllib.loads((PACKAGE / 'pyproject.toml').read_text(encoding='utf-8'))
+    project = tomllib.loads((ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
     requirements = [*project.get('build-system', {}).get('requires', []),
                     *project['project'].get('dependencies', []),
                     *[item for extra in project['project'].get('optional-dependencies', {}).values() for item in extra]]
