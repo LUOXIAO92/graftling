@@ -12,6 +12,27 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+- A Claude Code child created without `tools` has Bash again (576). 0.7.0 passed no
+  `--tools`, and the child's `--restricted` then removed the tools that run commands
+  or code (Bash and the like) and WebFetch; `--tools default` does not bring them back.
+  Now `--tools` names the default built-in set of the child's own Claude Code, read at
+  run time by starting the same executable once without `--restricted`, with no
+  settings sources, MCP servers or credential, a closed base URL and an empty
+  graftling-owned config directory, stopped at its system init before any model call.
+  The set is cached in the data root's private state (`claude-default-tools/`); nothing
+  is hard-coded. If it cannot be read, the child does not start and the create fails
+  `RUNTIME_REQUEST_FAILED`, naming the cause and suggesting create's `tools`. The set is
+  the unrestricted default, so it differs from 0.7.0's: on Claude Code 2.1.330 it has
+  Bash, WebFetch, Monitor and Workflow and no Glob or Grep. `tool_check` adds
+  `default_tools_not_offered`. `--restricted`, the mandatory sandbox and the
+  runtime-home and private-state denies are unchanged.
+- Corrected (576): a Claude child does not read user, project or local settings files
+  (`--restricted`), as 0.7.0's notes said; managed settings and graftling's own
+  `--settings` apply. A user's own allow or deny rules reach a child only through
+  create's `tools` and `disallowed_tools`.
+
 ## 0.7.0 (incompatible)
 
 One change is incompatible by section 7: a Claude Code child no longer gets the fixed

@@ -1016,18 +1016,38 @@ entry the child's Runtime does not know is never silently ignored: Codex and
 DSH refuse the create with `unavailable`. Claude's built-in set depends on its
 version, so it is checked after start against the child's system-init tool
 list, and `status` reports `tool_check` with `tools_not_offered`,
-`disallowed_still_offered` and `disallowed_unconfirmed` (a missing deny entry
-that is neither a known built-in nor a tool of one of the child's MCP servers).
+`disallowed_still_offered`, `disallowed_unconfirmed` (a missing deny entry
+that is neither a known built-in nor a tool of one of the child's MCP servers)
+and, without `tools`, `default_tools_not_offered` (576).
 
-- Claude: no flag by default, so Claude Code offers its own default tools
-  under the same user, project and managed settings files the host reads;
-  their deny rules always win. `tools` -> `--tools`, `disallowed_tools` ->
-  `--disallowedTools`. A use the settings do not pre-allow still asks through
-  `can_use_tool`, which reaches the direct parent as a pending request; a
-  tool the settings deny stays off, visible as absent from the child's
-  system init tool list. The host process's own command-line flags (its own
-  `--tools`, `--disallowedTools`) are not observable and so not inherited.
-  `--restricted`, the mandatory sandbox and the runtime-home and
+- Claude: `--tools` is always passed (since 576). Without `tools` it names
+  the built-in set the child's own Claude Code offers by default, read at run
+  time: graftling starts the same executable, with the child's environment
+  and model, once without `--restricted`, with no settings sources
+  (`--setting-sources ""`), no MCP servers, no credential, a closed local
+  base URL and an empty graftling-owned `CLAUDE_CONFIG_DIR`, and stops it at
+  its system init, before any model call. Only built-in names are kept. The
+  set is cached per resolved executable, version, file, model, permission
+  mode and `CLAUDE_CODE_*` environment in the data root's private state
+  (`claude-default-tools/<key>.json`); nothing is hard-coded and there is no
+  fallback list. If the probe yields no set, the child does not start: the
+  create fails `RUNTIME_REQUEST_FAILED`, naming the cause and suggesting
+  create's `tools`. This is needed because the child runs under
+  `--restricted`, which keeps the tools that run commands or code (Bash and
+  the like) and WebFetch off unless `--tools` names them; `--tools default`
+  does not name them. `tools` -> `--tools`, `disallowed_tools` ->
+  `--disallowedTools`. Under `--restricted` the child reads no user, project
+  or local settings files; managed settings and graftling's own `--settings`
+  (sandbox, read-only grants, denies) apply. A user's own allow or deny rules
+  in `~/.claude` or the project's settings therefore do not reach the child;
+  pass them through create's `tools` and `disallowed_tools`. A use the
+  applied settings do not pre-allow still asks through `can_use_tool`, which
+  reaches the direct parent as a pending request; a tool they deny stays off,
+  visible as absent from the child's system init tool list. `tool_check`
+  also reports `default_tools_not_offered`, probed tools the child does not
+  have (other than disallowed ones). The host process's own command-line flags
+  (its own `--tools`, `--disallowedTools`) are not observable and so not
+  inherited. `--restricted`, the mandatory sandbox and the runtime-home and
   private-state denies are unchanged.
 - Codex: the captured host config is kept. Codex can express only
   `web_search` (config `web_search = "disabled"`) and MCP tools
@@ -2219,6 +2239,14 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 576 (unreleased): a Claude Code child created without `tools` gets `--tools` with
+  its Claude Code's probed default set, so it has Bash again (0.7.0 passed no flag, and
+  `--restricted` then removed Bash and WebFetch). This is a fix that makes behaviour
+  match 551's "Claude Code's own default tools", so it is classified compatible; the
+  set differs from 0.7.0's (for example 2.1.330's default has Bash, WebFetch and
+  Monitor and no Glob or Grep, while the restricted set had Glob and Grep). The
+  corrected statement that the child reads no user, project or local settings files
+  describes unchanged behaviour. `default_tools_not_offered` is a new result field.
 - 551 (0.7.0): a Claude Code child created without `tools` no longer gets the fixed
   `--tools Bash,Read,Write,Edit,Glob,Grep`, but Claude Code's own default tools under
   the host's settings files. A default with observable behaviour changes, so the change

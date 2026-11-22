@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import queue
+import select
+import shutil
 import signal
 import subprocess
 import sys
@@ -56,6 +58,145 @@ KNOWN_BUILTIN_TOOLS = frozenset({
     'Skill', 'ListMcpResourcesTool', 'ReadMcpResourceTool',
 })
 REVIEW_HOOK_MARGIN_SECONDS = 60
+
+# The default built-in tools of the child's own Claude Code, read at run time (576).
+# --restricted keeps the commands-and-code tools (Bash, ...) and WebFetch off
+# unless --tools names them, and `--tools default` does not name them, so a child
+# whose create names no tools gets `--tools <this set>`. Nothing is hard-coded.
+TOOL_PROBE_TIMEOUT_SECONDS = 60
+TOOL_PROBE_CREDENTIALS = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN')
+# The discard port: nothing listens there, so even a found credential reaches nothing.
+TOOL_PROBE_BASE_URL = 'http://127.0.0.1:9'
+_default_tools: dict[str, list[str]] = {}
+_default_tools_lock = threading.Lock()
+
+
+def tool_probe_argv(executable: str, model: str, permission_mode: str | None) -> list[str]:
+    """Return the probe's argv: unrestricted, no settings sources, no MCP, no Session file."""
+    argv = [executable, '--print', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
+            '--setting-sources', '', '--strict-mcp-config', '--mcp-config', json.dumps({'mcpServers': {}}),
+            '--no-session-persistence', '--model', model]
+    return argv + (['--permission-mode', permission_mode] if permission_mode is not None else [])
+
+
+def tool_probe_environment(environment: dict, config_dir: Path) -> dict:
+    """Return the child's environment without credentials, in a graftling-owned empty home."""
+    probe = {key: value for key, value in environment.items() if key not in TOOL_PROBE_CREDENTIALS}
+    probe.update(CLAUDE_CONFIG_DIR=str(config_dir), ANTHROPIC_BASE_URL=TOOL_PROBE_BASE_URL)
+    return probe
+
+
+def read_init_tools(argv: list[str], environment: dict, cwd: Path,
+                    timeout: float = TOOL_PROBE_TIMEOUT_SECONDS) -> tuple[list[str] | None, str]:
+    """Start ``argv``, send one message, return (system-init tools, cause); stop the group at init.
+
+    No model call is made: the init event precedes the request, the process is
+    stopped once it arrives, and the probe has no credential and a closed base URL.
+    """
+    try:
+        proc = subprocess.Popen(argv, cwd=cwd, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, start_new_session=True)
+    except OSError as error:
+        return None, f'could not start {argv[0]}: {type(error).__name__}'
+    deadline, buffer, err, init = time.monotonic() + timeout, b'', b'', None
+    try:
+        try:
+            proc.stdin.write(b'{"type": "user", "message": {"role": "user", "content": "."}}\n')
+            proc.stdin.flush()
+        except OSError:
+            pass
+        streams = [proc.stdout, proc.stderr]
+        while streams and init is None and time.monotonic() < deadline:
+            ready, _, _ = select.select(streams, [], [], min(0.5, max(0.0, deadline - time.monotonic())))
+            for stream in ready:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    streams.remove(stream)
+                elif stream is proc.stderr:
+                    err = (err + chunk)[-2000:]
+                else:
+                    buffer += chunk
+                    while init is None and b'\n' in buffer:
+                        line, buffer = buffer.split(b'\n', 1)
+                        try:
+                            event = json.loads(line)
+                        except ValueError:
+                            continue
+                        if isinstance(event, dict) and event.get('type') == 'system' and event.get('subtype') == 'init':
+                            init = event
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(proc.pid, sig)
+            except (ProcessLookupError, PermissionError):
+                pass
+            try:
+                proc.wait(5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            stream.close()
+    if init is None:
+        last = err.decode(errors='replace').strip().splitlines()[-1:] or ['no stderr']
+        cause = 'no system/init within %d s' % timeout if time.monotonic() >= deadline else 'no system/init'
+        return None, f'{cause} (exit {proc.returncode}; stderr: {redact(last[0][:300])})'
+    tools = init.get('tools')
+    if not isinstance(tools, list):
+        return None, 'system/init has no tools list'
+    return [name for name in tools if isinstance(name, str) and not name.startswith('mcp__')], 'ok'
+
+
+def tool_probe_key(executable: str, version: object, model: str, permission_mode: str | None,
+                   environment: dict) -> str:
+    """Cache key: the resolved executable, its version and file, and what the set may depend on."""
+    path = Path(executable).resolve()
+    stat = path.stat()
+    facts = [str(path), str(version), stat.st_mtime_ns, stat.st_size, model, permission_mode,
+             sorted((k, v) for k, v in environment.items() if k.startswith('CLAUDE_CODE_'))]
+    return hashlib.sha256(json.dumps(facts).encode()).hexdigest()[:32]
+
+
+def probe_default_tools(executable: str, version: object, model: str, permission_mode: str | None,
+                  environment: dict, state: Path) -> list[str]:
+    """Return the built-in tools Claude Code offers by default, probed once per key (576).
+
+    ``state`` is graftling's own private directory (never the user's ~/.claude);
+    the set is cached there as ``claude-default-tools/<key>.json``. A probe that
+    finds no set raises ``RUNTIME_REQUEST_FAILED``: there is no fixed fallback.
+    """
+    key = tool_probe_key(executable, version, model, permission_mode, environment)
+    directory = state / 'claude-default-tools'
+    cache = directory / f'{key}.json'
+    with _default_tools_lock:
+        if key in _default_tools:
+            return list(_default_tools[key])
+        try:
+            stored = json.loads(cache.read_text())
+            if isinstance(stored.get('tools'), list) and stored['tools']:
+                _default_tools[key] = list(stored['tools'])
+                return list(stored['tools'])
+        except (OSError, ValueError, AttributeError):
+            pass
+        directory.mkdir(parents=True, exist_ok=True)
+        scratch = Path(tempfile.mkdtemp(prefix='probe-', dir=directory))
+        try:
+            (scratch / 'home').mkdir()
+            (scratch / 'cwd').mkdir()
+            tools, cause = read_init_tools(tool_probe_argv(executable, model, permission_mode),
+                                           tool_probe_environment(environment, scratch / 'home'), scratch / 'cwd')
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        if not tools:
+            raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED', (
+                "Could not read Claude Code's default tools for a child whose create names no tools "
+                f"({cause if tools is None else 'the default set is empty'}). Name the child's tools in "
+                "create's tools, for example [\"Bash\", \"Read\", \"Edit\"]."))
+        write_text_durably(cache, json.dumps({
+            'executable': str(Path(executable).resolve()), 'version': str(version), 'model': model,
+            'permission_mode': permission_mode, 'tools': tools}, indent=1) + '\n')
+        _default_tools[key] = list(tools)
+        return list(tools)
 
 
 class ClaudeExecution:
@@ -492,20 +633,28 @@ class ClaudeExecution:
                     absorbed.add(source)
         return len(absorbed)
 
-    def tool_arguments(self) -> list[str]:
-        """Return the native tool flags: none keeps the host's own tool settings (551).
+    def tool_arguments(self, default: Sequence[str] | None = None) -> list[str]:
+        """Return the native tool flags (551, 576).
 
-        Without ``request['tools']`` Claude Code offers its own default tools
-        under the same user, project and managed settings files the host
-        reads, whose deny rules always win. ``tools`` names the available set
-        (``--tools``) and ``disallowed_tools`` removes tools
-        (``--disallowedTools``). Neither grants a use: a call the settings do
-        not pre-allow still asks through ``can_use_tool``, which goes to the
-        direct parent, and a tool the settings deny stays off.
+        The child runs under ``--restricted``, which keeps Claude Code's
+        commands-and-code tools (Bash and the like) and WebFetch off unless
+        ``--tools`` names them; ``--tools default`` does not name them. So
+        ``--tools`` is always passed: the create's ``tools`` when given,
+        otherwise ``default``, the set the child's own Claude Code offers
+        without ``--restricted`` (``probe_default_tools``, probed at run time; nothing
+        is hard-coded). ``disallowed_tools`` removes tools (``--disallowedTools``).
+
+        Neither grants a use. Under ``--restricted`` the child reads no user,
+        project or local settings files; managed settings and graftling's own
+        ``--settings`` (sandbox, read-only grants, denies) apply. A call those
+        do not pre-allow asks through ``can_use_tool``, which goes to the
+        direct parent, and a tool they deny stays off.
         """
-        request, argv = self.request, []
-        if request.get('tools') is not None:
-            argv += ['--tools', ','.join(request['tools'])]
+        request = self.request
+        chosen = request.get('tools')
+        if chosen is None and default is None:
+            raise ValueError('A child without tools needs the probed default set.')
+        argv = ['--tools', ','.join(default if chosen is None else chosen)]
         if request.get('disallowed_tools'):
             argv += ['--disallowedTools', ','.join(request['disallowed_tools'])]
         return argv
@@ -521,11 +670,14 @@ class ClaudeExecution:
         deny that did not remove the tool) and ``disallowed_unconfirmed`` (an
         absent deny entry that is neither a known built-in nor an MCP tool of a
         server the child has, so it may be a name Claude does not know).
-        Empty when nothing is to report or nothing was chosen.
+        Without the create's ``tools``, ``default_tools_not_offered`` names
+        probed default tools the child does not have (576), other than the
+        disallowed ones. Empty when nothing is to report.
         """
         request = self.request
         chosen, denied = request.get('tools'), request.get('disallowed_tools') or []
-        if chosen is None and not denied:
+        probed = getattr(self, 'default_tools', None) if chosen is None else None
+        if chosen is None and not denied and not probed:
             return {}
         present = set(offered) if isinstance(offered, list) else set()
         servers = {name.split('__')[1] for name in present if name.startswith('mcp__') and name.count('__') >= 2}
@@ -542,6 +694,8 @@ class ClaudeExecution:
             'disallowed_still_offered': [name for name in denied if base(name) in present],
             'disallowed_unconfirmed': [name for name in denied
                                        if base(name) not in present and not known(base(name))],
+            'default_tools_not_offered': [name for name in probed or ()
+                                          if name not in present and name not in map(base, denied)],
         }
         return {key: value for key, value in check.items() if value}
 
@@ -563,7 +717,7 @@ class ClaudeExecution:
                 # admits the declared read-only directories, still Edit-denied.
                 *[item for path in settings['permissions']['additionalDirectories'] for item in ('--add-dir', path)],
                 '--mcp-config', json.dumps(mcp), '--settings', json.dumps(settings),
-                *self.tool_arguments(), '--model', request['model'],
+                '--model', request['model'],
                 '--append-system-prompt', request['instructions'],
                 '--resume' if self.expected else '--session-id', self.native_id]
         if request['reasoning_effort'] is not None:
@@ -608,6 +762,16 @@ class ClaudeExecution:
             for key in ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'):
                 environment.pop(key, None)
             environment['ANTHROPIC_API_KEY'] = credential_environment(request['api_key_env'])[request['api_key_env']]
+        if request.get('tools') is None:
+            # The child's own Claude Code, in its own environment, without --restricted (576).
+            # Without graftling's channel and member marker: the probe has no MCP and is no member tool.
+            probe = {key: value for key, value in environment.items()
+                     if key not in (MEMBER_RUN_ENV, CONNECTION_ENV, self.connection_env)}
+            self.default_tools = probe_default_tools(request['executable'], request.get('version'), request['model'],
+                                               request.get('permission_mode'), probe,
+                                               self.directory.parent.parent)
+            self.diagnostics['default_tools'] = list(self.default_tools)
+        argv[argv.index('--model'):argv.index('--model')] = self.tool_arguments(getattr(self, 'default_tools', None))
         # Persist only nonsecret settings and exact native launch inputs.
         write_yaml_durably(self.directory / 'claude-settings.yml', settings)
         return argv, environment
