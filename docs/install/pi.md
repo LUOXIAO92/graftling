@@ -1,14 +1,14 @@
 # agents on Pi
 
 This makes a Pi Session the host of its child Agents, through a Pi extension. Back to
-the [README](../README.md).
+the [README](../../README.md).
 
 ## Prerequisites
 
 - Python 3.12 or later.
 - Pi, installed, with a model selected and logged in. There is no version floor in
   agents; the sources and real runs are Pi `1.4.0`.
-- A Pi child also needs [its sandbox tools](../README.md#what-a-pi-child-needs). A
+- A Pi child also needs [its sandbox tools](../../README.md#what-a-pi-child-needs). A
   Claude, Codex or DSH child of a Pi host does not.
 
 ## Install the wheel
@@ -20,7 +20,7 @@ the path of a wheel you were given:
 AGENTS_VENV=/absolute/agents-venv
 python3 -m venv "$AGENTS_VENV"
 WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" ./src/graftling
+"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
 "$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
 ```
 
@@ -57,7 +57,7 @@ Allowed keys: `root` (required, absolute), `pi`, `claude`, `codex` and `dsh`. An
 key stops the start.
 
 `config.yml` for connections and presets goes in `root`. See
-[Configuration](../README.md#configuration).
+[Configuration](../../README.md#configuration).
 
 ## Start it
 

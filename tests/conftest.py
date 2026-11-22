@@ -79,7 +79,7 @@ def _checkout_import_problem(cwd: Path, executable: str = sys.executable) -> Opt
     return (
         "Test subprocesses would not import this checkout: {0} from a neutral directory resolves {1}; "
         "expected graftling under {2}. Install it editable into the test venv: "
-        "{0} -m pip install -e {3}/src/graftling"
+        "{0} -m pip install -e {3}"
     ).format(executable, "; ".join(resolved), SOURCE, PROJECT_ROOT)
 
 
@@ -89,7 +89,7 @@ def _command_problem(executable: str = sys.executable) -> Optional[str]:
     missing = [name for name in ("agents", "agents-mcp") if not (scripts / name).exists()]
     if not missing:
         return None
-    return "The test interpreter's bin directory {0} lacks {1}; install this checkout: {2} -m pip install -e {3}/src/graftling".format(
+    return "The test interpreter's bin directory {0} lacks {1}; install this checkout: {2} -m pip install -e {3}".format(
         scripts, ", ".join(missing), executable, PROJECT_ROOT)
 
 

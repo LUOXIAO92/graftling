@@ -6,8 +6,9 @@ supply native execution. GraphTraj imports this package in one direction and
 never needs Tasks, Teams, Rounds, Worldline, budgets, reports or Worktrees
 to use it.
 
-The public interface and its version rules are in ``PUBLIC_API.md`` beside
-this file; anything it does not list is internal.
+The public interface and its version rules are in ``PUBLIC_API.md`` at the
+repository root (the wheel ships it beside this file); anything it does not
+list is internal.
 """
 
 # The only definition of the distribution version; packaging and every

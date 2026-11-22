@@ -22,11 +22,17 @@ agents-mcp = "graftling.mcp:main"
 [tool.setuptools]
 packages = ["graftling", "graftling.dsh", "graftling.claude", "graftling.pi", "graftling.codex",
             "graftling.sessions"]
-package-dir = {graftling = "."}
+package-dir = {"" = "src"}
 
 [tool.setuptools.dynamic]
 version = {attr = "graftling.__version__"}
 
+# Only files the installed package's users read. Two documents stay shipped because a
+# caller reads the installed copies: PUBLIC_API.md (GraphTraj's
+# tests/test_graphtraj_public_agents_api.py checks section 1.3) and the install guides
+# (GraphTraj's tests/test_codex_parent_uses_agents.py runs the commands of
+# install/<host>.md). src/graftling/PUBLIC_API.md and src/graftling/install are links to
+# the repository root's PUBLIC_API.md and docs/install, so each has one copy.
 [tool.setuptools.package-data]
-graftling = ["PUBLIC_API.md", "README.md", "CHANGELOG.md", "install/*.md", "dsh/*.mjs", "dsh/package.json", "dsh/dsh.patch.yml", "claude/*.mjs", "pi/*.mjs", "pi/package.json", "sessions/DSH-LICENSE",
-               "review_policy/*"]
+graftling = ["PUBLIC_API.md", "install/*.md", "dsh/*.mjs", "dsh/package.json", "dsh/dsh.patch.yml", "claude/*.mjs",
+             "pi/*.mjs", "pi/package.json", "sessions/DSH-LICENSE", "review_policy/*"]

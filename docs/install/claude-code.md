@@ -1,7 +1,7 @@
 # agents on Claude Code
 
 This makes a Claude Code Session the host of its child Agents. Back to the
-[README](../README.md).
+[README](../../README.md).
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ the path of a wheel you were given:
 AGENTS_VENV=/absolute/agents-venv
 python3 -m venv "$AGENTS_VENV"
 WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" ./src/graftling
+"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
 "$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
 ```
 
@@ -153,7 +153,7 @@ are all optional: `model` (default `claude-opus-5-5`), `reasoning_effort`,
 name of a variable, never its value).
 
 `config.yml` for connections and presets goes in the data root,
-`.agents-control/config.yml`. See [Configuration](../README.md#configuration).
+`.agents-control/config.yml`. See [Configuration](../../README.md#configuration).
 
 ## Start it
 
@@ -233,7 +233,7 @@ with `unsupported-runtime`. Each entry is checked when the host starts.
 requires `model` and `sandbox` (`read-only` or `workspace-write`) and needs DSH
 0.2.0-rc.2 or later.
 
-For Pi children, first install [what a Pi child needs](../README.md#what-a-pi-child-needs).
+For Pi children, first install [what a Pi child needs](../../README.md#what-a-pi-child-needs).
 Pi's entry requires `provider` and `model`, and `executable` defaults to `pi` on the
 host's PATH:
 

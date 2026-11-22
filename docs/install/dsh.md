@@ -1,7 +1,7 @@
 # agents on DSH
 
 This makes a DeepSeek Harness (DSH) main Session the host of its child Agents, through
-a DSH plugin. Back to the [README](../README.md).
+a DSH plugin. Back to the [README](../../README.md).
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ the path of a wheel you were given:
 AGENTS_VENV=/absolute/agents-venv
 python3 -m venv "$AGENTS_VENV"
 WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" ./src/graftling
+"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
 "$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
 ```
 
@@ -67,7 +67,7 @@ Allowed keys: `root` (required, absolute), `dsh`, `claude`, `codex` and `pi`. An
 key stops the start.
 
 `config.yml` for connections and presets goes in `root`. See
-[Configuration](../README.md#configuration).
+[Configuration](../../README.md#configuration).
 
 ## Start it
 
@@ -154,7 +154,7 @@ sections below set defaults for each:
   it a Codex `create` fails with `invalid-config`.
 - `pi`: the whole Pi child request, every field above but `api_key_env` is required, and
   `worktree_path` is the host's working directory. Without it a Pi `create` fails with
-  `unsupported-runtime`. It needs [what a Pi child needs](../README.md#what-a-pi-child-needs),
+  `unsupported-runtime`. It needs [what a Pi child needs](../../README.md#what-a-pi-child-needs),
   and the data root must lie outside the directory the Pi child works in.
 
 Set a model at `create` to choose another one for one child.

@@ -1,7 +1,7 @@
 # agents on Codex
 
 This runs a Codex Session as the host of its child Agents. Back to the
-[README](../README.md).
+[README](../../README.md).
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ the path of a wheel you were given:
 AGENTS_VENV=/absolute/agents-venv
 python3 -m venv "$AGENTS_VENV"
 WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" ./src/graftling
+"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
 "$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
 ```
 
@@ -68,7 +68,7 @@ options. A top-level `connection` may set `runtime_home`, `base_url` or `api_key
 unless your settings name another reviewer.
 
 `config.yml` for connections and presets goes in the `--directory` you choose. See
-[Configuration](../README.md#configuration).
+[Configuration](../../README.md#configuration).
 
 The host adds a short passage after your `developerInstructions`, for the parent only.
 It says that `agents` is how this host creates and controls children, and that Codex's
@@ -176,7 +176,7 @@ fails `create` with `unsupported-runtime`. All children run in
 `claude` takes the keys of the [Claude host's `settings`](claude-code.md#minimal-configuration)
 and needs Claude Code 2.1.299 or later. `dsh` requires `model` and `sandbox` and needs
 DSH 0.2.0-rc.2 or later. `pi` requires `provider` and `model`, and needs
-[what a Pi child needs](../README.md#what-a-pi-child-needs).
+[what a Pi child needs](../../README.md#what-a-pi-child-needs).
 
 **Pi children need `--directory` outside `worktree_path`.** A Pi child must not read
 the data root, and its sandbox cannot deny a path inside a readable one, so the host
