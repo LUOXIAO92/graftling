@@ -1,8 +1,10 @@
 /** Independent native context/display hooks and the installed official MCP client. */
-import { spawn } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installCommunication } from './communication.mjs';
 
 // The user's own DSH sets no package variable: resolve from its real entry file.
@@ -24,6 +26,44 @@ export const Config = z.object({ mcpCommand: z.string(), mcpArgs: z.array(String
   mcpEnv: z.array(String).default(['GRAFTLING_CONNECTION']), mcpServer: z.string().default(MCP_SERVER) });
 // How long a Session that starts no turn by itself waits before taking held notices.
 const READY_MS = 2000;
+// True when this file runs inside graftling's repository, as DSH installs it from the
+// repository root's package.json: the Python sources are here to build from.
+const SOURCES = existsSync(fileURLToPath(new URL('../../../pyproject.toml', import.meta.url)));
+// The pending or found Python built from SOURCES, for every Session of this DSH.
+let built;
+
+/** DSH's own home rule (dsh-home-paths resolveDshHome): a non-blank DSH_HOME, else ~/.dsh. */
+function dshHome(environment) {
+  const named = environment.DSH_HOME;
+  if (!named?.trim()) return join(homedir(), '.dsh');
+  return resolve(named === '~' || named.startsWith('~/') ? join(homedir(), named.slice(1)) : named);
+}
+
+/**
+ * The Python the host and the MCP server run: GRAFTLING_PYTHON unchanged when set;
+ * else, from graftling's repository, the environment plugin_python.py builds once
+ * under the DSH home (python3 on PATH runs it). A refusal keeps no result, so the
+ * next Session tries again after the fix.
+ */
+function pluginPython(environment) {
+  if (environment.GRAFTLING_PYTHON) return Promise.resolve(environment.GRAFTLING_PYTHON);
+  if (!SOURCES) {
+    return Promise.reject(new Error('The agents DSH host needs GRAFTLING_PYTHON, the Python that has graftling ' +
+      'installed (docs/install/dsh.md).'));
+  }
+  built ??= new Promise((found, refused) => execFile('python3',
+    ['-I', fileURLToPath(new URL('plugin_python.py', import.meta.url)), dshHome(environment)], { env: environment },
+    (error, stdout, stderr) => {
+      if (!error) return found(stdout.trim());
+      built = undefined;
+      refused(new Error(error.code === 'ENOENT'
+        ? 'graftling-dsh: there is no python3 on PATH; graftling needs Python 3.12 or later. Put one first on ' +
+          'PATH as python3 and start DSH again. Or set GRAFTLING_PYTHON to a Python that has graftling installed ' +
+          '(docs/install/dsh.md).'
+        : stderr.trim() || error.message));
+    }));
+  return built;
+}
 
 /** Preserve durable native source; fork ancestry alone is not delegation. */
 export function sessionEnvironment(agent) {
@@ -172,14 +212,15 @@ function applyHost(ctx) {
   ctx.on('agent/created', async ({ agent }) => {
     const id = agent.session.header?.id;
     if (sessionEnvironment(agent).DSH_AGENT_SOURCE !== 'main' || hosts.has(id)) return;
-    if (!environment.GRAFTLING_PYTHON) throw new Error('The agents DSH host needs GRAFTLING_PYTHON.');
-    const started = startAgentHost(agent, environment, notice =>
-      ctx.get('agentMessages').receive(noticeMessage(notice, id)));
+    let python;
+    const started = pluginPython(environment).then(found => startAgentHost(agent,
+      { ...environment, GRAFTLING_PYTHON: python = found }, notice =>
+        ctx.get('agentMessages').receive(noticeMessage(notice, id))));
     hosts.set(id, started);
     let host;
     try {
       host = await started;
-      await attachMcp(agent, MCP_SERVER, environment.GRAFTLING_PYTHON, ['-I', '-m', 'graftling.mcp'],
+      await attachMcp(agent, MCP_SERVER, python, ['-I', '-m', 'graftling.mcp'],
         { ...sessionEnvironment(agent), GRAFTLING_CONNECTION: host.connection });
       announceReady(agent, host);
     } catch (error) {
