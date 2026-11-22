@@ -204,6 +204,9 @@ class ClaudeExecution:
 
     # Optional (message, details) -> receipt replacing the Runner parent notice.
     parent_notice = None
+    # The probed default tool set and the probe's (environment, state), set during launch (576).
+    default_tools: list[str] | None = None
+    tool_probe: tuple[dict, Path] | None = None
     # Optional receiver of a non-empty tool_check (551), e.g. the Agent record.
     tool_report = None
     host_connection = None
@@ -633,31 +636,47 @@ class ClaudeExecution:
                     absorbed.add(source)
         return len(absorbed)
 
-    def tool_arguments(self, default: Sequence[str] | None = None) -> list[str]:
+    def tool_arguments(self) -> list[str]:
         """Return the native tool flags (551, 576).
 
         The child runs under ``--restricted``, which keeps Claude Code's
         commands-and-code tools (Bash and the like) and WebFetch off unless
         ``--tools`` names them; ``--tools default`` does not name them. So
         ``--tools`` is always passed: the create's ``tools`` when given,
-        otherwise ``default``, the set the child's own Claude Code offers
-        without ``--restricted`` (``probe_default_tools``, probed at run time; nothing
-        is hard-coded). ``disallowed_tools`` removes tools (``--disallowedTools``).
+        otherwise ``default_tool_set()``, the set the child's own Claude Code
+        offers without ``--restricted`` (probed at run time; nothing is
+        hard-coded). ``disallowed_tools`` removes tools (``--disallowedTools``).
+        A subclass that returns its own flags without calling this never probes.
 
         Neither grants a use. Under ``--restricted`` the child reads no user,
         project or local settings files; managed settings and graftling's own
-        ``--settings`` (sandbox, read-only grants, denies) apply. A call those
-        do not pre-allow asks through ``can_use_tool``, which goes to the
-        direct parent, and a tool they deny stays off.
+        ``--settings`` apply. A call those do not pre-allow asks through
+        ``can_use_tool``, which goes to the direct parent, and a tool they deny
+        stays off.
         """
         request = self.request
         chosen = request.get('tools')
-        if chosen is None and default is None:
-            raise ValueError('A child without tools needs the probed default set.')
-        argv = ['--tools', ','.join(default if chosen is None else chosen)]
+        argv = ['--tools', ','.join(self.default_tool_set() if chosen is None else chosen)]
         if request.get('disallowed_tools'):
             argv += ['--disallowedTools', ','.join(request['disallowed_tools'])]
         return argv
+
+    def default_tool_set(self) -> list[str]:
+        """Return the child's Claude Code default built-in set, probed once (576).
+
+        Uses the probe environment and state ``_prepare`` stored; records the
+        set as ``default_tools`` and in the diagnostics. Raises
+        ``RUNTIME_REQUEST_FAILED`` when the probe finds no set.
+        """
+        if self.default_tools is None:
+            if self.tool_probe is None:
+                raise ValueError('The default tool set is probed only during launch preparation.')
+            environment, state = self.tool_probe
+            request = self.request
+            self.default_tools = probe_default_tools(request['executable'], request.get('version'), request['model'],
+                                                     request.get('permission_mode'), environment, state)
+            self.diagnostics['default_tools'] = list(self.default_tools)
+        return list(self.default_tools)
 
     def tool_check(self, offered: object) -> dict:
         """Compare the create's tool entries with the child's system-init tools (551).
@@ -676,7 +695,7 @@ class ClaudeExecution:
         """
         request = self.request
         chosen, denied = request.get('tools'), request.get('disallowed_tools') or []
-        probed = getattr(self, 'default_tools', None) if chosen is None else None
+        probed = self.default_tools if chosen is None else None
         if chosen is None and not denied and not probed:
             return {}
         present = set(offered) if isinstance(offered, list) else set()
@@ -762,16 +781,12 @@ class ClaudeExecution:
             for key in ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'):
                 environment.pop(key, None)
             environment['ANTHROPIC_API_KEY'] = credential_environment(request['api_key_env'])[request['api_key_env']]
-        if request.get('tools') is None:
-            # The child's own Claude Code, in its own environment, without --restricted (576).
-            # Without graftling's channel and member marker: the probe has no MCP and is no member tool.
-            probe = {key: value for key, value in environment.items()
-                     if key not in (MEMBER_RUN_ENV, CONNECTION_ENV, self.connection_env)}
-            self.default_tools = probe_default_tools(request['executable'], request.get('version'), request['model'],
-                                               request.get('permission_mode'), probe,
-                                               self.directory.parent.parent)
-            self.diagnostics['default_tools'] = list(self.default_tools)
-        argv[argv.index('--model'):argv.index('--model')] = self.tool_arguments(getattr(self, 'default_tools', None))
+        # A probe, if tool_arguments asks for one, runs the child's own Claude Code in its own
+        # environment, without graftling's channel and member marker: it has no MCP and is no member tool.
+        self.tool_probe = ({key: value for key, value in environment.items()
+                            if key not in (MEMBER_RUN_ENV, CONNECTION_ENV, self.connection_env)},
+                           self.directory.parent.parent)
+        argv[argv.index('--model'):argv.index('--model')] = self.tool_arguments()
         # Persist only nonsecret settings and exact native launch inputs.
         write_yaml_durably(self.directory / 'claude-settings.yml', settings)
         return argv, environment

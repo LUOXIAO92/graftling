@@ -39,11 +39,14 @@ def test_selection_create_tools_replace_and_denies_add() -> None:
 
 def test_claude_inherits_host_tools_without_a_choice(tmp_path: Path) -> None:
     """Without a choice --tools names the probed host default (576): none is hard-coded."""
-    assert _claude(tmp_path).tool_arguments(['Bash', 'Read']) == ['--tools', 'Bash,Read']
+    execution = _claude(tmp_path)
+    execution.default_tools = ['Bash', 'Read']
+    assert execution.tool_arguments() == ['--tools', 'Bash,Read']
     assert _claude(tmp_path, tools=['Read', 'WebFetch'], disallowed_tools=['Bash']).tool_arguments() == [
         '--tools', 'Read,WebFetch', '--disallowedTools', 'Bash']
-    assert _claude(tmp_path, tools=None, disallowed_tools=['WebFetch']).tool_arguments(['WebFetch']) == [
-        '--tools', 'WebFetch', '--disallowedTools', 'WebFetch']
+    execution = _claude(tmp_path, tools=None, disallowed_tools=['WebFetch'])
+    execution.default_tools = ['WebFetch']
+    assert execution.tool_arguments() == ['--tools', 'WebFetch', '--disallowedTools', 'WebFetch']
 
 
 def test_codex_narrows_what_it_can_express() -> None:

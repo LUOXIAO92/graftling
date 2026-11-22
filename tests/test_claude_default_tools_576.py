@@ -55,15 +55,20 @@ def _fresh_memo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(module, '_default_tools', {})
 
 
+def _with_default(execution: ClaudeExecution, tools: list[str]) -> ClaudeExecution:
+    execution.default_tools = tools
+    return execution
+
+
 def test_omitted_tools_name_the_probed_set(tmp_path: Path) -> None:
     """--tools is always passed: the probed default without a choice, the create's set with one."""
-    assert _claude(tmp_path).tool_arguments(['Bash', 'Read']) == ['--tools', 'Bash,Read']
-    assert _claude(tmp_path, disallowed_tools=['Bash']).tool_arguments(['Bash', 'Read']) == [
+    assert _with_default(_claude(tmp_path), ['Bash', 'Read']).tool_arguments() == ['--tools', 'Bash,Read']
+    assert _with_default(_claude(tmp_path, disallowed_tools=['Bash']), ['Bash', 'Read']).tool_arguments() == [
         '--tools', 'Bash,Read', '--disallowedTools', 'Bash']
-    assert _claude(tmp_path, tools=['Read'], disallowed_tools=['WebFetch']).tool_arguments(['Bash']) == [
+    assert _claude(tmp_path, tools=['Read'], disallowed_tools=['WebFetch']).tool_arguments() == [
         '--tools', 'Read', '--disallowedTools', 'WebFetch']
     assert _claude(tmp_path, tools=[]).tool_arguments() == ['--tools', '']
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError):   # outside launch preparation there is nothing to probe with
         _claude(tmp_path).tool_arguments()
 
 
@@ -170,3 +175,47 @@ def test_tool_check_reports_probed_tools_the_child_lacks(tmp_path: Path) -> None
     assert execution.tool_check(['Bash', 'Read']) == {'default_tools_not_offered': ['Monitor']}
     execution.default_tools = ['Bash', 'Read']
     assert execution.tool_check(['Bash', 'Read', 'mcp__graftling__agents']) == {}
+
+
+class MemberShapedExecution(ClaudeExecution):
+    """Shaped like a consumer subclass (GraphTraj's): fixed member tools unless independent."""
+    MEMBER_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep'
+
+    def tool_arguments(self) -> list[str]:
+        return super().tool_arguments() if self.independent else ['--tools', self.MEMBER_TOOLS]
+
+
+def _member(tmp_path: Path, independent: bool, **request: object) -> MemberShapedExecution:
+    directory = tmp_path / 'state' / 'agent' / 'one'
+    directory.mkdir(parents=True, exist_ok=True)
+    execution = MemberShapedExecution(
+        {'worktree_path': str(tmp_path), 'runtime_home': str(tmp_path / 'home'), 'executable': str(_stub(tmp_path, INIT)),
+         'version': '2.1.330', 'model': 'claude-haiku-5-5', 'instructions': 'x', 'reasoning_effort': None,
+         'worktree_access': 'write', **request},
+        'prompt', directory, lambda *_: None, lambda *_: None, directory / 't.jsonl', None)
+    execution.independent = independent
+    return execution
+
+
+def test_a_subclass_with_fixed_member_tools_never_probes(tmp_path: Path) -> None:
+    """A zero-argument override that does not call super keeps its flags and starts no probe."""
+    execution = _member(tmp_path, independent=False)
+    argv, _ = execution._prepare(None)
+    assert argv[argv.index('--tools') + 1] == 'Bash,Read,Write,Edit,Glob,Grep'
+    assert _calls(tmp_path) == [] and execution.default_tools is None
+    assert 'default_tools' not in execution.diagnostics
+    assert execution.tool_check(['Bash', 'Read']) == {}
+
+
+def test_a_subclass_independent_child_gets_the_probed_set_or_its_choice(tmp_path: Path) -> None:
+    execution = _member(tmp_path, independent=True)
+    argv, _ = execution._prepare(None)
+    assert argv[argv.index('--tools') + 1] == 'Task,Bash,Read,WebFetch' and len(_calls(tmp_path)) == 1
+    assert execution.diagnostics['default_tools'] == ['Task', 'Bash', 'Read', 'WebFetch']
+    module._default_tools.clear()
+    other = tmp_path / 'chosen'
+    other.mkdir()
+    chosen = _member(other, independent=True, tools=['Read'])
+    argv, _ = chosen._prepare(None)
+    assert argv[argv.index('--tools') + 1] == 'Read'
+    assert _calls(other) == [] and chosen.default_tools is None

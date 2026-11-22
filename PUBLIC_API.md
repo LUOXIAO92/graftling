@@ -1030,7 +1030,10 @@ and, without `tools`, `default_tools_not_offered` (576).
   set is cached per resolved executable, version, file, model, permission
   mode and `CLAUDE_CODE_*` environment in the data root's private state
   (`claude-default-tools/<key>.json`); nothing is hard-coded and there is no
-  fallback list. If the probe yields no set, the child does not start: the
+  fallback list. `ClaudeExecution.tool_arguments()` (no parameters, as in 0.7.0)
+  takes the set from `ClaudeExecution.default_tool_set()`, which probes only when
+  called; a subclass whose `tool_arguments()` returns its own flags without calling
+  the base never probes. If the probe yields no set, the child does not start: the
   create fails `RUNTIME_REQUEST_FAILED`, naming the cause and suggesting
   create's `tools`. This is needed because the child runs under
   `--restricted`, which keeps the tools that run commands or code (Bash and
@@ -2239,14 +2242,15 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
-- 576 (unreleased): a Claude Code child created without `tools` gets `--tools` with
-  its Claude Code's probed default set, so it has Bash again (0.7.0 passed no flag, and
-  `--restricted` then removed Bash and WebFetch). This is a fix that makes behaviour
-  match 551's "Claude Code's own default tools", so it is classified compatible; the
-  set differs from 0.7.0's (for example 2.1.330's default has Bash, WebFetch and
-  Monitor and no Glob or Grep, while the restricted set had Glob and Grep). The
+- 576 (unreleased, not yet classified; the release decides): a Claude Code child
+  created without `tools` gets `--tools` with its Claude Code's probed default set, so
+  it has Bash again (0.7.0 passed no flag, and `--restricted` then removed Bash and
+  WebFetch). The set is the unrestricted default, an observable default change from
+  0.7.0: on 2.1.330 it adds Bash, WebFetch, CronCreate, Monitor and Workflow and drops
+  Glob and Grep. New: `ClaudeExecution.default_tool_set()`, `tool_check`'s
+  `default_tools_not_offered`. `tool_arguments()` keeps its 0.7.0 signature. The
   corrected statement that the child reads no user, project or local settings files
-  describes unchanged behaviour. `default_tools_not_offered` is a new result field.
+  describes unchanged behaviour.
 - 551 (0.7.0): a Claude Code child created without `tools` no longer gets the fixed
   `--tools Bash,Read,Write,Edit,Glob,Grep`, but Claude Code's own default tools under
   the host's settings files. A default with observable behaviour changes, so the change
