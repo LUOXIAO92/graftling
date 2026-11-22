@@ -111,7 +111,8 @@ state. It reads no other product's configuration.
 | --- | --- |
 | Claude Code | `root` in `.agents-control/claude-host.json`, by default `<project>/.agents-control` |
 | Codex | the `--directory` you pass |
-| Pi, DSH | `root` in the host's JSON configuration file |
+| Pi | `root` in the host's JSON configuration file |
+| DSH | `root` in the JSON file `GRAFTLING_DSH_CONFIG` names; without it `<project>/.agents-control`, the Session's working directory's, shared with Claude Code ([DSH install](docs/install/dsh.md#data-root-and-configuration)) |
 
 Reading is strict: an unknown or repeated field or a wrong type stops the read, and
 the message names the file and line. Each host also checks every declared connection

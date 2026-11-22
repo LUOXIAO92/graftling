@@ -1,9 +1,9 @@
 /** Independent native context/display hooks and the installed official MCP client. */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installCommunication } from './communication.mjs';
 
@@ -95,8 +95,8 @@ export function noticeMessage(notice, session) {
  */
 export function startAgentHost(agent, environment, onNotice) {
   return new Promise((resolve, reject) => {
-    const child = spawn(environment.GRAFTLING_PYTHON,
-      ['-I', '-m', 'graftling.dsh.host', '--config', environment.GRAFTLING_DSH_CONFIG], {
+    const config = environment.GRAFTLING_DSH_CONFIG ? ['--config', environment.GRAFTLING_DSH_CONFIG] : [];
+    const child = spawn(environment.GRAFTLING_PYTHON, ['-I', '-m', 'graftling.dsh.host', ...config], {
         cwd: agent.session.header.cwd, stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...environment, GRAFTLING_DSH_NODE: process.execPath, GRAFTLING_DSH_ENTRY: process.argv[1] },
       });
@@ -195,14 +195,28 @@ export function apply(ctx, config) {
 }
 
 /**
+ * Without GRAFTLING_DSH_CONFIG the host's data root is <Session cwd>/.agents-control,
+ * so the Session must record its project directory; refuse with the fix otherwise.
+ */
+function requireProjectDirectory(cwd) {
+  let directory = false;
+  try { directory = typeof cwd === 'string' && isAbsolute(cwd) && statSync(cwd).isDirectory(); } catch {}
+  if (!directory) {
+    throw new Error(`graftling-dsh: this DSH Session records no usable project directory (cwd: ${
+      JSON.stringify(cwd) ?? 'none'}), so the agents tool has no default data root <project>/.agents-control. ` +
+      'Set GRAFTLING_DSH_CONFIG to a host configuration naming its data root (docs/install/dsh.md).');
+  }
+}
+
+/**
  * The installed bundle's host row: each native main Session of this DSH owns
- * one ``graftling.dsh.host`` while it is live. Inert without
- * ``GRAFTLING_DSH_CONFIG``, and inside a DSH that is already an Agent.
+ * one ``graftling.dsh.host`` while it is live, on GRAFTLING_DSH_CONFIG's data
+ * root when set, else on the Session cwd's .agents-control. Inert inside a DSH
+ * that is already an Agent.
  */
 function applyHost(ctx) {
   const environment = process.env;
-  if (!environment.GRAFTLING_DSH_CONFIG || Object.hasOwn(environment, 'GRAFTLING_CONNECTION') ||
-      Object.hasOwn(environment, 'DSH_AGENT_PACKAGE')) return;
+  if (Object.hasOwn(environment, 'GRAFTLING_CONNECTION') || Object.hasOwn(environment, 'DSH_AGENT_PACKAGE')) return;
   const hosts = new Map();
   const close = async id => {
     const host = hosts.get(id);
@@ -212,6 +226,7 @@ function applyHost(ctx) {
   ctx.on('agent/created', async ({ agent }) => {
     const id = agent.session.header?.id;
     if (sessionEnvironment(agent).DSH_AGENT_SOURCE !== 'main' || hosts.has(id)) return;
+    if (!environment.GRAFTLING_DSH_CONFIG) requireProjectDirectory(agent.session.header.cwd);
     let python;
     const started = pluginPython(environment).then(found => startAgentHost(agent,
       { ...environment, GRAFTLING_PYTHON: python = found }, notice =>
