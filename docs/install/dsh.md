@@ -31,13 +31,16 @@ The repository's root `package.json` makes the whole repository the `graftling-d
 bundle. It has no install script, so pnpm installs it without asking for build
 approval.
 
-> Not yet walked on a real host: this install and the first start below. They ran in
-> tests with stand-in DSH packages.
+Nothing else is needed: the next Session has the `agents` tool, with its data in the
+project's `.agents-control` ([Data root](#data-root-and-configuration)).
+
+> Walked on a real host: `dsh plugin add` of the root URL pinned to a full commit, and the
+> first start below, with DSH 0.2.2-rc.5 and pnpm 12.21.0 in the `headless` profile. The
+> web Plugins-page install has not been walked.
 
 ### The Python environment
 
-Without `GRAFTLING_PYTHON`, the first Session start (with `GRAFTLING_DSH_CONFIG`, below)
-runs `python3` from `PATH`, which must be Python 3.12 or later. It builds
+Without `GRAFTLING_PYTHON`, the first Session start runs `python3` from `PATH`, which must be Python 3.12 or later. It builds
 `$DSH_HOME/graftling-python/<version>-<key>` (`~/.dsh/graftling-python/...` when
 `DSH_HOME` is not set): a venv with access to that Python's own packages, holding a
 copy of the plugin's graftling sources. Nothing is downloaded. Later starts reuse it,
@@ -116,38 +119,98 @@ EOF
 
 Then add `--patch /absolute/agents-host.patch.yml` to the `dsh` command below.
 
-## Minimal configuration
+## Data root and configuration
 
-`/absolute/dsh-host.json`:
+### Default: the project's `.agents-control`
+
+Without `GRAFTLING_DSH_CONFIG` (unset or empty), each main Session's host keeps its data in
+`<project>/.agents-control`, the Claude Code host's default for the same project. It is
+created when missing (only that directory: the project directory already exists). The
+host then has no per-Runtime settings; that is the same as a configuration of
+`{"root": "<project>/.agents-control"}`.
+
+`<project>` is the Session's working directory, as DSH records it when it creates the
+Session:
+
+- `headless`, and the TUI: the directory `dsh` was started in.
+- The web interface: the Workspace folder the Session belongs to; a Session outside any
+  Workspace gets the directory `dsh web` was started in.
+
+> Inference (source reading of DSH 0.2.2-rc.5): the list above. The TUI and the web
+> interface have not been run with this plugin.
+
+A Session that records no working directory, or one that is not an absolute path to an
+existing directory, gets no host and no `agents` tool. Its start fails with
+`graftling-dsh: this DSH Session records no usable project directory (...)`, which names
+`GRAFTLING_DSH_CONFIG` as the fix. A project directory where `.agents-control` cannot be
+created is refused the same way. A home directory is not special: a Session started in
+`~` keeps its data in `~/.agents-control`, as Claude Code started in `~` does.
+
+### Sharing `.agents-control` with Claude Code
+
+The DSH host and the [Claude Code host](claude-code.md) can serve the same project at the
+same time on one `.agents-control`:
+
+- Each main Session sees only the children it created (`status`, `wait`, notices); a
+  child of the other host is not found.
+- Records are locked per Agent and replaced atomically, the same way several DSH
+  Sessions already share one configured root.
+- The DSH host's endpoint is a new directory under `live/dsh-host/`; it never writes
+  Claude Code's `claude-host.json`, `host.log` or `live/channel.json`. Claude Code's
+  one-host-per-project check does not count a DSH host.
+- `config.yml` is read by both. A connection one host has no driver for, or cannot run on
+  this machine, stops that host's start (`unsupported-runtime` or `runtime-unavailable`,
+  naming the connection). The Claude Code host has only Claude children unless its
+  configuration adds others; the DSH host has DSH, Claude and Codex drivers by default,
+  Pi only with a `pi` section. Declare in a shared `config.yml` only connections both
+  hosts can run, or give one host its own root.
+- Archives (`save_normalized_sessions`) are per Session ID, so they do not collide.
+
+A Claude Code project whose `claude-host.json` names another `root` keeps its data there;
+the DSH host does not read that file. Point `GRAFTLING_DSH_CONFIG` at a configuration
+with the same `root` to share it.
+
+### Explicit configuration: `GRAFTLING_DSH_CONFIG`
+
+When `GRAFTLING_DSH_CONFIG` names a file, it is used instead, for every Session of that
+DSH, whatever its working directory. `/absolute/dsh-host.json`:
 
 ```json
 {"root": "/absolute/agents-data"}
 ```
 
 Allowed keys: `root` (required, absolute), `dsh`, `claude`, `codex` and `pi`. Any other
-key stops the start.
+key stops the start. Per-Runtime settings ([below](#children-on-other-runtimes)) need
+this file.
 
-`config.yml` for connections and presets goes in `root`. See
+`config.yml` for connections and presets goes in the data root. See
 [Configuration](../../README.md#configuration).
+
+### Turning it off
+
+Remove the plugin from the profile: `dsh plugin --profile <profile> remove graftling-dsh`.
+Other profiles keep it. The plugin also stays inactive inside a DSH that is itself an
+Agent (`GRAFTLING_CONNECTION` or `DSH_AGENT_PACKAGE` set). A switch on the web Plugins
+page has not been walked.
 
 ## Start it
 
 ```sh
-GRAFTLING_PYTHON="$AGENTS_VENV/bin/python" GRAFTLING_DSH_CONFIG=/absolute/dsh-host.json \
-  env -u DEEPSEEK_BASE_URL dsh --profile headless "Your task."
+env -u DEEPSEEK_BASE_URL dsh --profile headless "Your task."
 ```
 
-`GRAFTLING_PYTHON` names the Python that has `graftling`. Leave it out after the
-[GitHub install](#install-from-github-the-plugins-page-or-dsh-plugin-add). The plugin does
-nothing without `GRAFTLING_DSH_CONFIG`. The `env -u` concerns only this main Session's own
-endpoint, which DSH takes from that variable when its profile names none. DSH children
-ignore that variable.
+After a wheel install, add `GRAFTLING_PYTHON="$AGENTS_VENV/bin/python"`, the Python that
+has `graftling`; leave it out after the
+[GitHub install](#install-from-github-the-plugins-page-or-dsh-plugin-add). Add
+`GRAFTLING_DSH_CONFIG=/absolute/dsh-host.json` for an
+[explicit configuration](#explicit-configuration-graftling_dsh_config). The `env -u`
+concerns only this main Session's own endpoint, which DSH takes from that variable when
+its profile names none. DSH children ignore that variable.
 
-To continue a `headless` Session:
+To continue a `headless` Session, from the same directory:
 
 ```sh
-GRAFTLING_PYTHON="$AGENTS_VENV/bin/python" GRAFTLING_DSH_CONFIG=/absolute/dsh-host.json \
-  env -u DEEPSEEK_BASE_URL dsh --profile headless --session-id "<session id>" "Next task."
+env -u DEEPSEEK_BASE_URL dsh --profile headless --session-id "<session id>" "Next task."
 ```
 
 A refused start prints one `{"error": {"code", "message"}}` line, DSH's `agent/created`

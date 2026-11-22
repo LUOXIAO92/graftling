@@ -4,7 +4,8 @@ The plugin starts one host per native DSH main Session and supplies that
 Session's header on the owned stdio launch boundary. Model requests supply
 neither identity nor launch settings. The host configuration is Task-free:
 ``root`` plus optional per-Runtime settings (``dsh``, ``claude``, ``codex``,
-``pi``); see PUBLIC_API.md 1.7.
+``pi``); see PUBLIC_API.md 1.7. Without ``--config`` it is
+``{"root": "<Session cwd>/.agents-control"}``, the Claude Code host's default.
 
 Private pipe protocol with the plugin: stdin carries one ``{"header",
 "model"}`` line, then one ``{"ready": true}`` line when the Session can take
@@ -102,6 +103,23 @@ def read_configuration(document: object) -> tuple[Path, dict]:
         if value is not None and not isinstance(value, dict):
             raise ValueError(f'"{key}" must be an object of {key} settings.')
     return Path(root), settings
+
+
+def default_configuration(cwd: Path) -> tuple[Path, dict]:
+    """Without ``--config``: the project's own ``<cwd>/.agents-control``, no per-Runtime settings (570).
+
+    The Claude Code host's default data root for the same project, so both
+    hosts share it. The verified Session ``cwd`` exists; only the data root
+    itself is created.
+    """
+    root = cwd / '.agents-control'
+    try:
+        root.mkdir(exist_ok=True)
+    except OSError as error:
+        raise ValueError(f'Cannot create the default data root {root}: {error.strerror or error}. Set '
+                         'GRAFTLING_DSH_CONFIG to a host configuration naming another root (docs/install/dsh.md).'
+                         ) from None
+    return read_configuration({'root': str(root)})
 
 
 def runtime_drivers(cwd: Path, settings: Mapping[str, Any], parent_model: str | None) -> dict:
@@ -253,20 +271,22 @@ class Notices:
             slot[0].set()
 
 
-def start(config: Path, launch: Mapping[str, Any]) -> tuple[Path, dict, Notices, Callable, Callable, AgentControl, Caller]:
+def start(config: Path | None, launch: Mapping[str, Any]) -> tuple[Path, dict, Notices, Callable, Callable, AgentControl, Caller]:
     """Verify the native parent, Session and configuration; bind the DSH Main to its control.
 
     ``launch`` is the plugin's first pipe line: the native Session ``header``
-    and the parent's current ``model``. Returns the model-facing entry and the
-    plain bound ``call``: only what the model reads settles a held notice, not
-    this host's own shutdown.
+    and the parent's current ``model``. Without ``config`` the data root is
+    the verified Session cwd's ``.agents-control`` (:func:`default_configuration`).
+    Returns the model-facing entry and the plain bound ``call``: only what the
+    model reads settles a held notice, not this host's own shutdown.
     """
     if any(name in os.environ for name in ('GRAFTLING_CONNECTION', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE')):
         raise ValueError('An already-bound child must use its existing connection, not adopt Main.')
-    root, settings = read_configuration(json.loads(config.read_text(encoding='utf-8')))
+    configured = read_configuration(json.loads(config.read_text(encoding='utf-8'))) if config else None
     verify_native_parent(os.environ)
     cwd = Path.cwd()
     expected = native_main(launch.get('header'), cwd)
+    root, settings = configured or default_configuration(cwd)
     model = launch.get('model') if isinstance(launch.get('model'), str) and launch.get('model') else None
     notices = Notices(sys.stdout, expected['session'])
     control = AgentControl(root, runtime_drivers(cwd, settings, model),
@@ -294,7 +314,7 @@ def start(config: Path, launch: Mapping[str, Any]) -> tuple[Path, dict, Notices,
 def main() -> None:
     """Keep one control owner alive until the plugin closes its pipe."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', required=True, type=Path)
+    parser.add_argument('--config', type=Path, help='host configuration; default: <Session cwd>/.agents-control')
     options = parser.parse_args()
     try:
         launch = json.loads(sys.stdin.readline() or 'null')

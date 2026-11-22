@@ -871,8 +871,10 @@ The model reaches the Pi Session through the MCP server `graftling` (`agents` be
 ### 1.7 DSH host: the agents DSH plugin
 
 A DSH main Session becomes an agents host (the parent of its children) when
-its DSH loads the agents DSH plugin and the DSH process has
-`GRAFTLING_DSH_CONFIG` naming a host configuration file.
+its DSH loads the agents DSH plugin. Its data root is the one in the host
+configuration file `GRAFTLING_DSH_CONFIG` names; when that variable is unset
+or empty, it is `<Session cwd>/.agents-control`, the Claude Code host's
+default for the same project, with no per-Runtime settings.
 
 **Distribution.** The installed directory `graftling/dsh/` is a DSH plugin
 bundle named `graftling-dsh`: its `package.json` declares `"dsh": {"bundle":
@@ -896,9 +898,12 @@ Any profile works the same way (`web`, `tui`, `acp`, `sdk`). Without
 installing, a patch file with the row `{id: agents-host, name:
 <DSH_PACKAGE>/plugin.mjs}` under `insert`, passed with `dsh --profile <name>
 --patch <file>`, loads it for one invocation. `GRAFTLING_PYTHON` names the
-Python that has `graftling` installed. The row does nothing without
-`GRAFTLING_DSH_CONFIG`, and nothing inside a DSH that is itself an agents
-child (`GRAFTLING_CONNECTION` or `DSH_AGENT_PACKAGE` set). DSH child
+Python that has `graftling` installed. The row does nothing inside a DSH
+that is itself an agents child (`GRAFTLING_CONNECTION` or
+`DSH_AGENT_PACKAGE` set). Without `GRAFTLING_DSH_CONFIG`, a main Session
+whose header records no `cwd`, or one that is not an absolute path to an
+existing directory, gets no host: its `agent/created` handler fails with a
+message naming `GRAFTLING_DSH_CONFIG`. DSH child
 executions keep loading the same `plugin.mjs` with their own `mcpCommand`
 row; that path is unchanged. The plugin finds DSH's packages from
 `DSH_AGENT_PACKAGE`, then `GRAFTLING_DSH_PACKAGE`, then the real path of the
@@ -917,7 +922,8 @@ start:
 | `pi` | no | the whole Pi child request (`worktree_path` is the host's cwd); without it the host has no Pi driver and a Pi `create` fails with `unsupported-runtime` |
 
 **Start.** The plugin starts one host, `python -I -m graftling.dsh.host
---config <file>`, for each DSH main Session when DSH announces it
+[--config <file>]` (`--config` only when `GRAFTLING_DSH_CONFIG` is set; without
+it the host creates `<cwd>/.agents-control` when missing), for each DSH main Session when DSH announces it
 (`agent/created`, for new and resumed Sessions), in the Session's cwd. A
 native DSH subagent (header `origin: subagent` or `delegationDepth` above 0)
 gets no host and no `agents` tool. The host verifies that its parent process

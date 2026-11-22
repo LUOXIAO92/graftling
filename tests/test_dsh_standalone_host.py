@@ -304,7 +304,8 @@ def test_ask_parent_reaches_the_main_once_without_its_question(tmp_path: Path, f
 # does, so the host's kernel parent is this script run by the test's Python.
 FAKE_DSH = '''
 import json, os, subprocess, sys
-host = subprocess.Popen([sys.executable, '-m', 'graftling.dsh.host', '--config', os.environ['TEST_CONFIG']],
+config = ['--config', os.environ['TEST_CONFIG']] if 'TEST_CONFIG' in os.environ else []
+host = subprocess.Popen([sys.executable, '-m', 'graftling.dsh.host', *config],
                         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 host.stdin.write(os.environ['TEST_LAUNCH'] + '\\n')
 host.stdin.flush()
@@ -432,15 +433,20 @@ const ctx = {
     return { accepted: true, duplicate: false };
   } } : undefined,
 };
+// TEST_CWD: the main Session's recorded cwd as JSON (null: none recorded); default: this process's.
+const cwd = 'TEST_CWD' in process.env ? JSON.parse(process.env.TEST_CWD) : process.cwd();
 const agent = (id, extra = {}) => ({
-  session: { id, header: { version: 4, id, cwd: process.cwd(), isSeeded: false, ...extra } },
+  session: { id, header: { version: 4, id, ...(cwd === null ? {} : { cwd }), isSeeded: false, ...extra } },
   model: { current: () => ({ model: 'deepseek-parent' }) },
   ctx: { plugin: (_client, options) => { attached.push({ id, options }); return { await: async () => {} }; } },
 });
 plugin.apply(ctx, {});
 if (!handlers['agent/created']) { console.log(JSON.stringify({ inert: true })); process.exit(0); }
 await handlers['agent/created']({ agent: agent('native-sub', { origin: 'subagent' }) });
-await handlers['agent/created']({ agent: agent('dsh-main') });
+try { await handlers['agent/created']({ agent: agent('dsh-main') }); } catch (error) {
+  console.log(JSON.stringify({ refused: error.message, attached }));
+  process.exit(0);
+}
 while (received.length < 3) await new Promise(done => setTimeout(done, 20));
 await handlers['session/disposed']({ id: 'dsh-main' });
 console.log(JSON.stringify({ attached, received }));
@@ -520,8 +526,164 @@ def test_plugin_host_row_relays_each_notice_to_its_main_session(tmp_path: Path) 
     assert log['environment']['GRAFTLING_DSH_NODE'] and log['environment']['GRAFTLING_DSH_ENTRY']
 
 
-def test_plugin_host_row_is_inert_without_configuration_or_inside_an_agent(tmp_path: Path) -> None:
-    """No host starts without GRAFTLING_DSH_CONFIG, or in a DSH that already is an Agent."""
-    assert run_plugin(tmp_path / 'a')[0] == {'inert': True}
-    assert run_plugin(tmp_path / 'b', GRAFTLING_DSH_CONFIG='/abs/c.json',
-                      GRAFTLING_CONNECTION='/bound')[0] == {'inert': True}
+def test_plugin_host_row_is_inert_inside_an_agent(tmp_path: Path) -> None:
+    """No host starts in a DSH that already is an Agent, with or without GRAFTLING_DSH_CONFIG (570)."""
+    for name, environment in (('a', {'GRAFTLING_CONNECTION': '/bound'}),
+                              ('b', {'GRAFTLING_CONNECTION': '/bound', 'GRAFTLING_DSH_CONFIG': '/abs/c.json'}),
+                              ('c', {'DSH_AGENT_PACKAGE': str(tmp_path / 'c' / 'stub' / 'entry.js')}),
+                              ('d', {'GRAFTLING_CONNECTION': '', 'GRAFTLING_DSH_CONFIG': ''})):
+        assert run_plugin(tmp_path / name, **environment) == ({'inert': True}, None), name
+
+
+@pytest.mark.parametrize('config', [None, ''])
+def test_plugin_host_row_without_configuration_starts_the_default_host(tmp_path: Path, config: str | None) -> None:
+    """Unset or empty GRAFTLING_DSH_CONFIG: the host starts without --config, in the Session cwd (570)."""
+    shown, log = run_plugin(tmp_path, **({} if config is None else {'GRAFTLING_DSH_CONFIG': config}))
+    assert [item['id'] for item in shown['attached']] == ['dsh-main']
+    assert log['argv'] == ['-I', '-m', 'graftling.dsh.host']
+    assert log['launch']['header']['cwd'] == str(tmp_path)
+
+
+@pytest.mark.parametrize('cwd', [None, 'relative/project', '/nonexistent-570/project', 'file'])
+def test_plugin_without_configuration_refuses_a_session_without_a_project_directory(
+        tmp_path: Path, cwd: str | None) -> None:
+    """No usable header cwd: no host, no agents tool, one message naming GRAFTLING_DSH_CONFIG (570)."""
+    if cwd == 'file':
+        cwd = str(tmp_path / 'file')
+        Path(cwd).write_text('')
+    shown, log = run_plugin(tmp_path / 'default', TEST_CWD=json.dumps(cwd))
+    assert log is None and shown['attached'] == []
+    assert 'records no usable project directory' in shown['refused']
+    assert 'GRAFTLING_DSH_CONFIG' in shown['refused'] and 'docs/install/dsh.md' in shown['refused']
+    # An explicit configuration names its own root: the plugin does not judge the cwd (as before 570).
+    shown, _ = run_plugin(tmp_path / 'explicit', TEST_CWD=json.dumps(cwd), GRAFTLING_DSH_CONFIG='/abs/c.json')
+    assert 'records no usable project directory' not in shown.get('refused', '')
+
+
+def run_default_host(project: Path, launch: dict | None = None) -> dict:
+    """Start the host without --config below a fake native DSH, in ``project``."""
+    entry = fake_dsh(project.parent / 'fake')
+    env = {key: value for key, value in os.environ.items()
+           if key not in {'GRAFTLING_CONNECTION', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE', 'TEST_CONFIG'}}
+    env.update(GRAFTLING_DSH_NODE=sys.executable, GRAFTLING_DSH_ENTRY=str(entry), PYTHONPATH=str(SOURCE),
+               TEST_LAUNCH=json.dumps(launch or {'header': header(project)}))
+    result = subprocess.run([sys.executable, str(entry)], cwd=project, env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    return json.loads(result.stdout)
+
+
+def test_host_without_configuration_serves_the_project_data_root(tmp_path: Path) -> None:
+    """No --config: <Session cwd>/.agents-control is created and holds the host's live endpoint (570)."""
+    project = tmp_path / 'project'
+    project.mkdir()
+    outcome = run_default_host(project)
+    assert outcome['code'] == 0, outcome['stderr']
+    address = Path(json.loads(outcome['first'])['connection'])
+    assert address.parent == project.resolve() / '.agents-control' / 'live' / 'dsh-host'
+    assert outcome['calls'][0][0] == 0 and outcome['calls'][1][0] == 1
+    assert not (tmp_path / 'fake' / '.agents-control').exists()
+    # Another directory's header is still refused, and creates nothing there.
+    refused = run_default_host(project, {'header': header(tmp_path / 'elsewhere')})
+    assert refused['code'] == 1 and 'cwd does not match' in json.loads(refused['stderr'])['error']['message']
+
+
+def test_host_without_configuration_reports_an_unwritable_project(tmp_path: Path) -> None:
+    """A project directory where .agents-control cannot be made names GRAFTLING_DSH_CONFIG (570)."""
+    project = tmp_path / 'project'
+    project.mkdir()
+    project.chmod(0o555)
+    try:
+        outcome = run_default_host(project)
+    finally:
+        project.chmod(0o755)
+    if os.geteuid() == 0:
+        pytest.skip('root writes into a read-only directory')
+    error = json.loads(outcome['stderr'])['error']
+    assert outcome['code'] == 1 and error['code'] == 'invalid-config'
+    assert 'default data root' in error['message'] and 'GRAFTLING_DSH_CONFIG' in error['message']
+
+
+def test_default_configuration_is_the_project_root_without_runtime_settings(tmp_path: Path) -> None:
+    """The default equals {"root": "<cwd>/.agents-control"}; an existing root is kept as it is (570)."""
+    root, found = host.default_configuration(tmp_path)
+    assert (root, found) == (tmp_path / '.agents-control', settings()) and root.is_dir()
+    (root / 'config.yml').write_text('save_normalized_sessions: true\n')
+    assert host.default_configuration(tmp_path)[0] == root and (root / 'config.yml').exists()
+
+
+def test_default_host_records_land_in_the_project(tmp_path: Path, fakes: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """start(None, ...) binds the Main on <cwd>/.agents-control; its child's record is there (570)."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(host, 'verify_native_parent', lambda environment: None)
+    for name in ('GRAFTLING_CONNECTION', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE'):
+        monkeypatch.delenv(name, raising=False)
+    root, expected, notices, operate, call, control, caller = host.start(None, {'header': header(tmp_path)})
+    assert root == Path.cwd() / '.agents-control' and expected['cwd'] == str(Path.cwd())
+    created = operate({'action': 'create', 'runtime': 'dsh', 'instruction': 'hi'})
+    assert not created.failed, created.document
+    agent = created.document['result']['agent']
+    assert (root / 'control' / 'agents' / f'{agent}.json').is_file()
+    assert fakes['dsh'].arguments == (Path.cwd(), {'sandbox': 'read-only'})
+    notices.close()
+
+
+def test_default_root_is_shared_with_the_claude_code_host(
+        tmp_path: Path, fakes: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A DSH Main and a Claude Code Main on one <project>/.agents-control create concurrently (570).
+
+    Each sees only its own children, every record is intact, the Claude host's files
+    are untouched and its one-host-per-project check does not count the DSH host.
+    """
+    from graftling.claude import host as claude_host
+
+    project = tmp_path.resolve()
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(host, 'verify_native_parent', lambda environment: None)
+    for name in ('GRAFTLING_CONNECTION', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE'):
+        monkeypatch.delenv(name, raising=False)
+    # The Claude Code host's own files, as its plugin start leaves them (claude-host.json, host.log, live/).
+    claude_config = claude_host.plugin_configuration
+    monkeypatch.setattr(claude_host.shutil, 'which', lambda name: '/usr/local/bin/claude')
+    config = claude_config(project)
+    root = config.parent
+    (root / 'host.log').write_text('claude host log\n')
+    (root / 'live').mkdir()
+    (root / 'live' / 'channel.json').write_text(json.dumps({'address': str(root / 'live' / 'control-x')}))
+    before = {path: path.read_bytes() for path in (config, root / 'host.log', root / 'live' / 'channel.json')}
+
+    found, _, notices, operate, _, dsh_control, _ = host.start(None, {'header': header(project)})
+    assert found == root
+    claude_control = AgentControl(root, {'claude': Fake('claude')}, request_notices=True, hold_notices=True)
+    claude_call = bind(claude_control, Caller('claude-native', None, 'claude-session', 'claude'))
+    made: dict[str, list] = {'dsh': [], 'claude': []}
+
+    def create(name: str, call, runtime: str) -> None:
+        for _ in range(4):
+            result = call({'action': 'create', 'runtime': runtime, 'instruction': 'hi'})
+            assert not result.failed, result.document
+            made[name].append(result.document['result']['agent'])
+
+    threads = [threading.Thread(target=create, args=('dsh', operate, 'dsh')),
+               threading.Thread(target=create, args=('claude', claude_call, 'claude'))]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    assert len(made['dsh']) == len(made['claude']) == 4
+
+    def listed(call) -> set[str]:
+        return {agent['agent'] for agent in call({'action': 'status'}).document['result']['agents']}
+
+    assert listed(operate) == set(made['dsh']) and listed(claude_call) == set(made['claude'])
+    for agent in made['dsh'] + made['claude']:
+        record = json.loads((root / 'control' / 'agents' / f'{agent}.json').read_text())
+        assert record['agent'] == agent
+    assert len(list((root / 'control' / 'agents').glob('*.json'))) == 8
+    # A DSH child cannot be read through the Claude Main, nor the reverse.
+    assert claude_call({'action': 'status', 'agent': made['dsh'][0]}).failed
+    assert operate({'action': 'status', 'agent': made['claude'][0]}).failed
+    assert {path: path.read_bytes() for path in before} == before
+    claude_host.require_free_channel(root / 'live' / 'channel.json')   # the DSH host is not "another host"
+    assert claude_config(project) == config and json.loads(config.read_text())['root'] == str(root)
+    notices.close()
