@@ -166,7 +166,7 @@ def test_first_start_builds_under_the_dsh_home_and_later_starts_reuse_it(reposit
     home   = tmp_path / 'dsh-home'
     python = started(repository, home)
     assert python.parent.parent.parent == home / 'graftling-python'
-    assert python.parent.parent.name.startswith('0.6.3-')
+    assert python.parent.parent.name.startswith('0.7.0-')
     (python.parent.parent / 'kept').write_text('')
 
     assert started(repository, home) == python
@@ -194,7 +194,7 @@ def test_changed_sources_get_their_own_environment(repository: Path, tmp_path: P
     with (repository / 'src' / 'graftling' / 'notices.py').open('a') as stream:
         stream.write('\n# changed\n')
     second = started(repository, home)
-    assert second != first and second.parent.parent.name.startswith('0.6.3-')
+    assert second != first and second.parent.parent.name.startswith('0.7.0-')
     assert environments(home) == sorted([first.parent.parent.name, second.parent.parent.name])
     copied = next((second.parent.parent / 'lib').glob('python*/site-packages/graftling/notices.py'))
     assert copied.read_text().endswith('# changed\n')

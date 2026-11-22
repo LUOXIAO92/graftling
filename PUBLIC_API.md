@@ -2213,6 +2213,14 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 551 (0.7.0): a Claude Code child created without `tools` no longer gets the fixed
+  `--tools Bash,Read,Write,Edit,Glob,Grep`, but Claude Code's own default tools under
+  the host's settings files. A default with observable behaviour changes, so the change
+  is incompatible and raises the minor version: it is released as 0.7.0. Compatible in
+  the same release: `tools` and
+  `disallowed_tools` with their refusals (new arguments), `selection.tools`,
+  `tool_check`, `apply_tools`, `extra_tool_table` and the extra tools, `mcp_server` on
+  every Runtime's execution and Pi's `childServer`.
 - 513 (0.6.0): graftling's own MCP server is registered as `graftling` on Claude Code,
   Pi and DSH, so the model sees `mcp__graftling__agents` where it saw
   `mcp__agents__agents`; the review exemption, display and hook matchers follow the

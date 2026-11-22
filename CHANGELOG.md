@@ -12,6 +12,51 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## 0.7.0 (incompatible)
+
+One change is incompatible by section 7: a Claude Code child no longer gets the fixed
+tool set `--tools Bash,Read,Write,Edit,Glob,Grep` by default, but Claude Code's own
+default tools under the host's settings files (551). That changes a default with
+observable behaviour, so the minor version rises. Everything else adds public names,
+optional arguments, result fields or exports, or applies only to the new arguments.
+A GraphTraj that uses 551's names (`extra_tool_table`, `apply_tools`, a create's
+`tools` and `disallowed_tools`, the children's `mcp_server`) needs
+`graftling>=0.7.0,<0.8`; the 0.6 range `graftling>=0.6.3,<0.7` does not include 0.7.0.
+
+- A child's tools are no longer hard-coded (551). `create` and `config.yml` presets
+  accept optional `tools` (the native names the child may have) and `disallowed_tools`;
+  a create's `tools` replaces the preset's and the denies are united; the choice is
+  recorded as `selection.tools` and reaches the driver as `prepare(..., tools=)`. A
+  driver whose `prepare` lacks `tools` refuses such a create with `unavailable`.
+  Omitted, the child keeps its host's own tools: on Claude Code no `--tools` flag (the
+  incompatible change above; the settings' deny rules still win and an unallowed use
+  still asks the parent through `can_use_tool`), on Codex the captured config, on Pi and
+  DSH the host's tools. Narrowing needs no authorization; nothing grants a use beyond
+  the host's settings. Each Runtime package publishes `apply_tools`. An entry the
+  Runtime cannot express or does not know is refused with `unavailable` (Codex, DSH,
+  Pi when it provably does not know it) or, on Claude Code, checked after start and
+  reported by `status` as `tool_check` (`tools_not_offered`,
+  `disallowed_still_offered`, `disallowed_unconfirmed`). Enabling what the host
+  disables fails `authorization-required` where the Runtime offers no approval.
+- A host can serve its own MCP tools to an independent child beside `agents` (551):
+  `(descriptor, callback)` pairs through `configure_independent(extra_tools=)`,
+  `agents_connection(extra_tools=)`, `CodexManagedExecution(extra_tools=)`,
+  `CodexDriver(extra_tools=factory)`, `PiExecution.extra_tools` and DSH's
+  `bind_run(extra_tools=)`; the child's `graftling.mcp` lists them from
+  `GRAFTLING_EXTRA_TOOLS`. New public name `extra_tool_table`. The child calls them
+  without an approval ask, like `agents`, unless `disallowed_tools` names them.
+- Every Runtime's child declares `mcp_server` (default `graftling`), the name its MCP
+  server is registered under (551). Pi passes it to the child's extension as
+  `GRAFTLING_MCP_SERVER`; `pi/extension.mjs` exports `childServer`. Codex writes the
+  owner's entry under that name. Without a consumer's own name nothing changes.
+- graftling-dsh installs from the repository itself (569). A root `package.json`
+  (no install scripts) makes the repository the plugin bundle, so DSH's
+  `dsh plugin add` and its Plugins page take the GitHub address. Without
+  `GRAFTLING_PYTHON`, a plugin running from the repository builds its own Python
+  environment from its sources under the DSH home on first start (offline, once per
+  content and base Python); PyYAML and websockets come from the base Python or one
+  named pip command. A plugin installed from the package directory is unchanged.
+
 ## 0.6.3 (compatible)
 
 Every change below adds a public name, field, parameter or export, or changes only what a
