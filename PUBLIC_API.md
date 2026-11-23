@@ -1,7 +1,7 @@
 # Graftling public interface
 
-This is the stable interface of the `graftling` distribution (the `agents`
-tool) and the rules for its version number. Anything this document does not
+This is the stable interface of the `graftling` distribution (the `subagents`
+tool; `agents` before 0.9.0) and the rules for its version number. Anything this document does not
 list is internal: module layout, private names, the records under the data
 root, driver settings documents, log text and the wording of error messages
 may change in any release.
@@ -21,8 +21,8 @@ differ.
 
 ### 1.1 Commands
 
-**`agents '<request JSON>'`** sends one request and prints one JSON document
-on stdout.
+**`subagents '<request JSON>'`** sends one request and prints one JSON document
+on stdout. (The command was `agents` before 0.9.0.)
 
 - The request is the progressive envelope described in 1.2 (`discover`,
   `describe`, `execute`).
@@ -34,16 +34,17 @@ on stdout.
   installed host plugin (1.4) may claim the call. With neither, every request,
   including `discover`, fails with `authority-denied`.
 
-**`agents-mcp`** is a stdio MCP server (newline-delimited JSON-RPC 2.0).
+**`subagents-mcp`** (`agents-mcp` before 0.9.0) is a stdio MCP server
+(newline-delimited JSON-RPC 2.0).
 
 - Methods: `initialize`, `tools/list`, `tools/call`, `ping`. Other methods
   return JSON-RPC error `-32601`; unparseable input `-32700`; a non-object
   message `-32600`; an unknown tool or non-object arguments `-32602`.
-- `initialize` returns `serverInfo: {"name": "agents", "version":
+- `initialize` returns `serverInfo: {"name": "subagents", "version":
   <__version__>}` and echoes the client's `protocolVersion` (default
   `2025-06-18`).
-- `tools/list` returns exactly one tool, `agents`, whose input is the 1.2
-  envelope.
+- `tools/list` returns exactly one tool, `subagents` (`TOOL_NAME`), whose input
+  is the 1.2 envelope. A child's entry adds the owner's extra tools (1.3).
 - `tools/call` returns `content` (one text item with the JSON document),
   `structuredContent` (the same document) and `isError`.
 - It forwards over the same owner connection as the CLI and refuses the same
@@ -57,7 +58,7 @@ notes (`install/`) are public with their documented flags:
   `.agents-control/claude-host.json` keys (`root`, `cwd`, `claude`,
   `channel_file`, `settings`, and since 0.1.2 the optional `runtimes`) and
   the documented `settings` keys are public. Since 0.2.5, running `configuration`
-  on a configured project updates only `command` and `args` of the `agents` MCP
+  on a configured project updates only `command` and `args` of the `graftling` MCP
   server, the two `GRAFTLING_CLAUDE_HOST_*` variables, `cwd`, `claude` and the
   plugin files, and keeps everything else, `root` and `channel_file` included. If
   the configuration's recorded `cwd` differs from `--project`, a `root` or
@@ -79,7 +80,7 @@ notes (`install/`) are public with their documented flags:
   (the DSH codes in section 2), a `pi` entry as below, and whatever
   `AgentControl.require_connections()` refuses, each with its own code.
   The `context` operation is the plugin's private channel. The plugin this
-  `configuration` command writes associates and lists the `agents` tool only;
+  `configuration` command writes associates and lists the `subagents` tool only;
   a package that adds its own tool writes its plugin as in 1.4.
 - `python -m graftling.codex.host --settings <file> [--directory <dir>]
   [--output <file>] [--resume] <instruction>`. 0.8.0 (577): `--directory`
@@ -103,8 +104,8 @@ notes (`install/`) are public with their documented flags:
   `AgentControl.require_connections()` refuses. On a startup error it prints
   `{"error": {"code", "message"}}` and exits `1`.
 - Since 0.2.14 this host adds a fixed passage after the parent's
-  `developerInstructions`, on `thread/start` and `thread/resume`, naming the `agents`
-  tool as how it creates and controls children and Codex's own `spawn_agent` as for when
+  `developerInstructions`, on `thread/start` and `thread/resume`, naming the `subagents`
+  tool (`mcp__graftling__subagents`; `agents` before 0.9.0) as how it creates and controls children and Codex's own `spawn_agent` as for when
   the user names it. Children's settings are unchanged and no native tool is removed.
   Which tool the model chooses can only be observed in a real run. The output shows it:
   - `run_summary`: once a Session has started, `main` prints
@@ -196,7 +197,12 @@ notes (`install/`) are public with their documented flags:
   finds its own installation's Python (1.7). The install notes use
   `uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"`.
 
-### 1.2 The `agents` tool and its features
+### 1.2 The `subagents` tool and its features
+
+The tool is `subagents` (`TOOL_NAME`; `agents` before 0.9.0, with no alias). The
+model sees it as `mcp__<server>__subagents`: `mcp__graftling__subagents` for
+graftling's own server, and `mcp__plugin_graftling_subagents__subagents` under the
+Claude Code marketplace plugin (1.4).
 
 Every entry (MCP, CLI, host-registered function) takes the same envelope:
 
@@ -401,7 +407,7 @@ and code `invalid-input`. Since 555 every problem of one request is returned
 at once: the envelope's, the arguments file's and, when the feature is known, every
 argument violation. The error then also holds `errors`, a list of `{"path",
 "reason"}` (for example `{"path": "arguments.name", "reason": "expected string"}`),
-and `message` joins them with `; `. The `agents` function (`bind`,
+and `message` joins them with `; `. The `subagents` function (`bind`,
 `validate_request`) lists its problems the same way. An unmatched `anyOf` reports the
 problems of the one alternative whose `type` the value has, else one problem naming
 each alternative's. Before 388 they returned `{"error": "<text>"}`
@@ -464,7 +470,7 @@ Parts for building a host or a consumer on agents (since 0.2.2), also in
   without raising. A host adds its own feature-level problems with
   `ValidationErrors(found.errors + its_own)` and returns `{"code": "invalid-input",
   "message": str(error), "errors": error.errors}` in one response;
-- MCP server parts, the framing of `agents-mcp`: `ConcurrentServer`,
+- MCP server parts, the framing of `subagents-mcp`: `ConcurrentServer`,
   `ClientGone`, `mcp_serve`, `mcp_respond`, `mcp_result_response`,
   `mcp_error_response`, `mcp_tool_documents`;
 - notices (section 4): `END_EVENTS`, `needs_parent`, `notice_id`, and
@@ -562,10 +568,11 @@ directory against which `archive_collector` resolves relative attachment paths a
 whose `.codex` it keeps out of the archive, as `PiArchive(project=...)` (1.5). A
 consumer whose children work in a worktree of a larger project sets it to that project.
 
-**Host tools beside `agents` (551).** A host may serve its own MCP tools to an
-independent child next to `agents` as its extra tools: a sequence
+**Host tools beside `subagents` (551).** A host may serve its own MCP tools to an
+independent child next to `subagents` as its extra tools: a sequence
 of `(descriptor, callback)` pairs, where `descriptor` is an MCP tool document
-(`name`, `description`, `inputSchema`; any name except `agents`) and
+(`name`, `description`, `inputSchema`; any name except `subagents`, which is the
+only reserved name since 0.9.0) and
 `callback(arguments)` returns an `AgentsResult`. graftling only lists and routes
 these tools; each callback keeps its own authorization, and an `AgentsError` it
 raises becomes a failed result. They are accepted by
@@ -578,7 +585,7 @@ child. The owner lists them to the child's `python -m graftling.mcp` in
 `GRAFTLING_EXTRA_TOOLS` (JSON descriptors). Without extra tools nothing changes.
 `extra_tool_table(pairs)` (in `graftling.__all__`) returns the pairs by name, the
 form `PiExecution.extra_tools` holds, and raises `ValueError` for a malformed or
-repeated entry or one named `agents`.
+repeated entry or one named `subagents`.
 
 **A create's `tools` / `disallowed_tools` (551).** Each Runtime package publishes
 `apply_tools`, which a driver calls to put a create's tool choice into the
@@ -591,7 +598,7 @@ express or that goes beyond the host's settings without authorization (section 2
 **The child's server name (551).** `ClaudeExecution`, `CodexManagedExecution`,
 `DshExecution` and `PiExecution` declare `mcp_server` (default `graftling`): the
 name an independent child's MCP server is registered under, so the child sees
-`mcp__<mcp_server>__agents` and its extra tools likewise. A consumer subclass
+`mcp__<mcp_server>__subagents` and its extra tools likewise. A consumer subclass
 sets its own. Pi passes it to the child's extension as `GRAFTLING_MCP_SERVER`
 (only when it is not the default; `childServer(environment)` in
 `pi/extension.mjs` reads it, falling back to `graftling` for a malformed name).
@@ -628,7 +635,7 @@ every other `.mjs` file, is internal.
 
 ### 1.4 Host plugins: the `graftling.hosts` entry point
 
-A package can let the `agents` CLI reach its host when the calling process has
+A package can let the `subagents` CLI reach its host when the calling process has
 no owner connection. It registers an entry point in the group
 `graftling.hosts`. The entry point is a callable taking the current working
 directory (`pathlib.Path`) and returning either `None` (this host does not own
@@ -667,35 +674,41 @@ names through these attributes, all since 0.5.0:
   variable the DSH plugin row passes to its MCP server (the row setting `mcpEnv`).
 - `registerAgents(pi, {server, displayServers})` in `graftling/pi/extension.mjs`: see
   the server name below. `displayServers` (default `[]` since 0.6.0, `['agents']`
-  before) names further MCP servers whose `agents` results the Pi display renders.
+  before) names further MCP servers whose `subagents` results the Pi display renders.
 
 **The MCP server name (since 0.6.0).** Every Runtime names the tool the model sees
-`mcp__<server>__agents`. graftling registers its own server as `graftling` on
-Claude Code, Codex, Pi and DSH (before 0.6.0: `agents`, except Codex). A package that
-serves the agents tool under its own server name tells graftling that name in the
+`mcp__<server>__subagents` (`mcp__<server>__agents` before 0.9.0). graftling registers
+its own server as `graftling` on Claude Code, Codex, Pi and DSH (before 0.6.0:
+`agents`, except Codex). A package that serves the subagents tool under its own server name tells graftling that name in the
 same place it is registered, so that the review exemption, the display and the hook
 matchers follow it:
 
 - Python execution classes: the attribute `mcp_server` (default `graftling`) on
   `ClaudeExecution`, `CodexManagedExecution` and `DshExecution`. `ClaudeExecution`
   registers its in-process MCP server under it for an independent child, matches its
-  `PostToolUse` display hook to `mcp__<mcp_server>__agents` and exempts that tool from
+  `PostToolUse` display hook to `mcp__<mcp_server>__subagents` and exempts that tool from
   review; a consumer that supplies its own MCP configuration sets it to the name that
   configuration uses. `DshExecution` passes it to the plugin row (row setting
   `mcpServer`, default `graftling`) and to the review row.
 - Pi: `registerAgents(pi, {server})` (default `MCP_SERVER`, `graftling`) registers the
   server under `server`; the display renders it and `displayServers`.
   `registerReview(pi, environment, server)` (default `graftling`) exempts only
-  `mcp__<server>__agents`. The extension's default export uses `graftling` for both.
+  `mcp__<server>__subagents`. The extension's default export uses `graftling` for both.
 - Claude Code host: `claude_host_plugin(..., server='graftling')`, below.
 - The Claude display hook `graftling.claude.display.display_response(event, seen,
-  server='graftling')` draws only `mcp__<server>__agents` results.
+  server='graftling')` draws only `mcp__<server>__subagents` results.
 
-The review exemption covers only that one server's `agents` tool: a tool named
-`agents` on any other MCP server is reviewed like every other tool (section 6).
+The review exemption covers only that one server's `subagents` tool: a tool named
+`subagents` on any other MCP server, and a tool named `agents` on any server, is
+reviewed like every other tool (section 6).
 
-**A tool beside `agents` in a Claude Code host (since 0.2.2).** A package whose
-own Claude Code host serves another tool on the MCP server that serves `agents` (so
+**The Claude Code marketplace plugin.** Its MCP server key is `subagents` (`agents`
+before 0.9.0), so Claude Code calls its tool `mcp__plugin_graftling_subagents__subagents`
+and `/mcp` shows the server `plugin:graftling:subagents`. The plugin's name stays
+`graftling`.
+
+**A tool beside `subagents` in a Claude Code host (since 0.2.2).** A package whose
+own Claude Code host serves another tool on the MCP server that serves `subagents` (so
 Claude Code calls it as `mcp__<server>__<tool>`) declares that tool in two places.
 There are no other extension points; GraphTraj declares its `tasks` tool this
 way.
@@ -707,7 +720,10 @@ way.
   (`.claude/skills/<name>`), `tools` the added tool names and `server` (since 0.6.0)
   the project's `.mcp.json` key of the server; the module handles only
   `mcp__<server>__<tool>` calls. A tool or server name that is not letters, digits,
-  `_` or `-`, the tool name `agents`, or a repeated name raises `ValueError`.
+  `_` or `-`, the tool name `subagents`, or a repeated name raises `ValueError`.
+  The module's line `const TOOL = "subagents";` must equal `TOOL_NAME`, and each line
+  the function rewrites must be there exactly once; otherwise it raises
+  `RuntimeError` instead of writing an unchanged copy (since 0.9.0).
 - `write_adoption(material)` (since 0.2.5) writes such a mapping of absolute path
   to text or JSON value. Text replaces the file. A JSON value merges into an
   existing file recursively over objects: a list or scalar replaces the existing
@@ -734,12 +750,12 @@ way.
   `cwd`. A native cwd outside `cwd` fails with `authority-denied`, and the message
   names both directories.
 
-A declared tool gets the behaviour of `agents`, except the display: each native
+A declared tool gets the behaviour of `subagents`, except the display: each native
 call has its own association, overlapping calls each end only their own, one
 notice push loop is shared and rechecked after the last running call, queued
 notices arrive with its results, and `/agents-context` lists it. No exchange
 between Agents is rendered for it. A host that declares nothing, such as the
-independent Claude Code host, associates and lists `agents` only.
+independent Claude Code host, associates and lists `subagents` only.
 
 ### 1.5 Data root and normalized Session archive
 
@@ -821,9 +837,9 @@ extension tests this after the two cases above and before anything else, with
 or without the flag and the variable: `PI_SUBAGENT_CHILD=1`,
 `PI_SUBAGENT_DEPTH` greater than 0, or no persistent Session file
 (`ctx.sessionManager.getSessionFile()` empty, as for `pi --no-session`, which
-Pi's bundled subagent example runs). Such a Session gets no `agents` tool, no
+Pi's bundled subagent example runs). Such a Session gets no `subagents` tool, no
 host process and no data root, and no error is reported. Accepted side
-effect: a user's own `pi --no-session` Session gets no `agents` tool either.
+effect: a user's own `pi --no-session` Session gets no `subagents` tool either.
 
 **Distribution.** The installed directory `graftling/pi/` is a Pi package:
 its `package.json` declares `"pi": {"extensions": ["./extension.mjs"]}` and
@@ -845,7 +861,7 @@ under `-I` from the extension's own installation. The candidates are the
 interpreters of the environment whose site-packages holds the extension, then
 `python3` and `python` on `PATH`. If none does, the start stops with a message
 naming `GRAFTLING_PYTHON`. Pi 1.4.0 shows such a refusal as an extension
-error, and the Session goes on without the `agents` tool.
+error, and the Session goes on without the `subagents` tool.
 
 A Pi child uses the `GRAFTLING_PYTHON` its owner sets. Pi child
 executions load the same file themselves, so a Pi child of any host needs no
@@ -917,7 +933,7 @@ calls `AgentControl.require_connections()` (section 2), so a `config.yml`
 connection this machine cannot run stops the start rather than a later
 turn; `create` checks the selected connection again. A refused start prints
 one line `{"error": {"code", "message"}}` on stderr and exits `1`; Pi shows it
-as the extension's error and the Session has no `agents` tool.
+as the extension's error and the Session has no `subagents` tool.
 
 **Routing.** The host registers the `pi`, `claude`, `codex` and `dsh`
 drivers in one `AgentControl` with `request_notices=True` and
@@ -997,7 +1013,7 @@ start:
 it the host uses `GRAFTLING_DATA_ROOT`, else creates `<cwd>/.agents-control` when missing), for each DSH main Session when DSH announces it
 (`agent/created`, for new and resumed Sessions), in the Session's cwd. A
 native DSH subagent (header `origin: subagent` or `delegationDepth` above 0)
-gets no host and no `agents` tool. The host verifies that its parent process
+gets no host and no `subagents` tool. The host verifies that its parent process
 is the DSH Node process that loaded the plugin (kernel executable and entry
 file, inside the `@deepseek-ai/dsh` package) and binds the Session the plugin
 supplied as root caller. Only that Session's MCP server `graftling` (`agents` before 0.6.0) may call it:
@@ -1006,7 +1022,7 @@ The host then calls
 `AgentControl.require_connections()` (section 2). A refused start prints one
 line `{"error": {"code", "message"}}` on stderr and exits `1`; the plugin's
 `agent/created` handler fails with that text and the Session has no
-`agents` tool.
+`subagents` tool.
 
 **Routing.** The host registers the `dsh`, `claude` and `codex` drivers (and
 `pi` when configured) in one `AgentControl` with `request_notices=True` and
@@ -1692,11 +1708,11 @@ What the parent sees today:
   id is `<execution>:request:<request>`. It enables `request_notices`, for
   children of every Runtime it runs. `text` is `notice_text()` of the event
   (below). The host plugin pushes `text` into the Main Session; otherwise the
-  notice is attached as `main_notices` to the next `agents` result.
+  notice is attached as `main_notices` to the next `subagents` result.
   On Claude Code 2.1.314 or later the plugin draws a pushed notice as who sent
   it and what happened (bold sender, the event in words, such as `needs a
   permission reply`), the content as Markdown and the facts line dim; Claude
-  still reads the whole `text`. It draws each `agents` exchange the Main makes
+  still reads the whole `text`. It draws each `subagents` exchange the Main makes
   (`create`, `send`, `resume`, the child's reply and notices on a result) as one
   transcript row Claude does not read: `agents → <child name>` or `<child
   name> · <event>`, then the content as Markdown. Where Claude Code draws no
@@ -1867,7 +1883,7 @@ What the parent sees today:
   | Idle during maintenance (for example compaction) or right after a cancel | The wake is latched and the turn starts when that activity ends | `dsh-agent-loop/lib/index.js:565-566`, `:619-621` |
   | `headless`, after the parent is idle with no native DSH subagents | The runner flushes and exits. agents children are not native subagents, so it does not wait for them; the host then stops with DSH (next row) | `dsh-headless/lib/index.js:369-373`, `:377-383` |
   | Host or DSH process stopped (Session disposed, DSH exited) | No host runs. At the stop the plugin closes the host pipe; the host stops pushing, interrupts its active children (descendants first), waits up to 10 seconds in total for all of them and holds their ends, readable through `status`. A blocked call costs only that Agent and the host ends within 20 seconds of the pipe closing, as for the Pi host above. An Agent it cannot confirm stopped is reported as for the Pi host above (`stop-unconfirmed` on stderr, non-zero exit, the same `status` in the next host); the plugin writes that text to the DSH logger | `dsh/plugin.mjs`, `graftling/shutdown.py` |
-  | On resume (`dsh --profile headless --session-id <id> "<task>"`, or reopening the Session in a long-lived profile) | DSH registers and announces the Session again and a new host binds the same Session. The plugin tells the host to begin when the Session's first turn begins, or two seconds after its `agents` tool attaches in a Session that starts no turn by itself: a relay message wakes an idle Session, and the `headless` runner applies its permission settings and hands over its task only after the announcement. The host then delivers each held notice once through the relay. A refused notice is tried again, at most six passes five seconds apart in that host's lifetime, and then stays held for a later host. Earlier children are listed by `status` and continue with `resume` | `dsh-agent/lib/index.js:655`, `:710`; `dsh-headless/lib/index.js:263`, `:344`, `:361` |
+  | On resume (`dsh --profile headless --session-id <id> "<task>"`, or reopening the Session in a long-lived profile) | DSH registers and announces the Session again and a new host binds the same Session. The plugin tells the host to begin when the Session's first turn begins, or two seconds after its `subagents` tool attaches in a Session that starts no turn by itself: a relay message wakes an idle Session, and the `headless` runner applies its permission settings and hands over its task only after the announcement. The host then delivers each held notice once through the relay. A refused notice is tried again, at most six passes five seconds apart in that host's lifetime, and then stays held for a later host. Earlier children are listed by `status` and continue with `resume` | `dsh-agent/lib/index.js:655`, `:710`; `dsh-headless/lib/index.js:263`, `:344`, `:361` |
 
   Cases without immediate delivery: (1) a running parent receives a notice
   only after its running turn ends, in a turn of its own; a parent that needs
@@ -2067,7 +2083,7 @@ request.
 
 **Claude review plugin (386).** A Claude child whose connection names a reviewer
 (section 3) has every tool call judged in a `PreToolUse` hook on its own control
-pipe, except the bound `mcp__<mcp_server>__agents` tool (`mcp__graftling__agents`
+pipe, except the bound `mcp__<mcp_server>__subagents` tool (`mcp__graftling__subagents`
 unless a consumer sets `ClaudeExecution.mcp_server`, 1.4): it is the child's channel to
 its parent, limited by agents' authority checks, and must work when the reviewer
 is down. Read-only tools are reviewed too. The hook's timeout outlasts the
@@ -2275,11 +2291,12 @@ no retry. The native side waits with no timeout of its own: Pi's dialog
   connection naming no key, with no `base_url`, is refused with `invalid-config` when Pi
   offers the model with the reviewer's variable and not without it. Any other answer, or a
   listing that fails, is no refusal, and a login in the connection's home counts as its own.
-- The bound agents tool, `mcp__<server>__agents` for the server the child actually
+- The bound subagents tool, `mcp__<server>__subagents` for the server the child actually
   registered (`graftling`, or a consumer's `mcp_server` or `server`, 1.4), is not
   reviewed and is the only tool that is not: it is the child's channel to its parent,
   limited by agents' authority checks, and must work when the reviewer is down. A
-  tool named `agents` on any other MCP server is reviewed. On DSH a child without the
+  tool named `subagents` on any other MCP server, and a tool named `agents` on any
+  server, is reviewed. On DSH a child without the
   agents plugin row exempts nothing.
 - Before the first prompt the owner establishes that the hook is installed, else
   the execution ends `failed` with `RUNTIME_REQUEST_FAILED` and no model work. Every
@@ -2303,7 +2320,7 @@ extensions (`resource-loader.js`, `mergePaths`) and runs `tool_call` handlers in
 order, in place on one `input` (`docs/extensions.md`), so an extension in the
 connection's home can change a call's input after it was reviewed; that home is the
 user's own trust decision. A `mcp.json` server named `graftling` in that home overrides
-the bound one (`docs/mcp.md`), and its `agents` tool would have the exempt name.
+the bound one (`docs/mcp.md`), and its `subagents` tool would have the exempt name.
 
 *DSH.* The `agents-review` row (`dsh/review.mjs`) is a `tools/pre-execute` listener
 that calls DSH's own decision first. A native deny stays denied and a native ask
@@ -2360,6 +2377,23 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 0.9.0 is incompatible and raises the minor version (591): the MCP tool `agents` is
+  renamed `subagents`, with no alias for the old name. `TOOL_NAME` (a public Python
+  name) changes value; `tools/list` and `serverInfo.name` say `subagents`; the model sees
+  `mcp__<server>__subagents` (`mcp__graftling__subagents`). The commands `agents` and
+  `agents-mcp` (entry points) are renamed `subagents` and `subagents-mcp`. The Claude
+  Code marketplace plugin's server key `agents` is renamed `subagents`, so its tool is
+  `mcp__plugin_graftling_subagents__subagents`. The review exemption, display, hook
+  matchers, Pi's `--tools` owner entry and the Claude child's startup check follow the
+  new name; a tool named `agents` is now reviewed like any other. The reserved
+  extra-tool name is `subagents` only. `claude_host_plugin` raises `RuntimeError` for a
+  template whose tool line differs from `TOOL_NAME`. Allow rules, `--allowedTools` and a
+  create's `tools` / `disallowed_tools` that name the old tool must be changed: a
+  `disallowed_tools` entry naming the old tool no longer denies anything. Unchanged:
+  the `tasks` tool, the data root (`.agents-control`, `control/agents`), result keys
+  such as `{"agents": [...]}`, DSH's `agents` plugin id and service, and the
+  `/agents-context` command. A GraphTraj that serves the renamed tool needs
+  `graftling>=0.9.0,<0.10`.
 - 0.8.0 is incompatible and raises the minor version, for three changes: 581
   removes a released install route (an entry point), 576 changes an observable
   default, and 585 removes the `agents` tool from a user's own `pi --no-session`

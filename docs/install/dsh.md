@@ -36,7 +36,7 @@ Any profile works the same way: `headless`, `web`, `tui`, `acp` or `sdk`. DSH ru
 which links the profile's `node_modules/graftling-dsh` to `$DSH_PACKAGE` (it saves
 `"graftling-dsh": "link:<that directory>"`); nothing is copied.
 
-Nothing else is needed: the next Session has the `agents` tool, with its data in the
+Nothing else is needed: the next Session has the `subagents` tool, with its data in the
 project's `.agents-control` ([Data root](#data-root-and-configuration)).
 
 > Walked on a real host (569): `dsh plugin add` of an installed `graftling/dsh`
@@ -45,7 +45,7 @@ project's `.agents-control` ([Data root](#data-root-and-configuration)).
 
 ### Which Python the plugin runs
 
-The plugin runs the host and the `agents` MCP server with the Python of the installation
+The plugin runs the host and the `subagents` MCP server with the Python of the installation
 it belongs to. Nothing is built or downloaded, and nothing is written under the DSH home.
 
 | Case | What happens |
@@ -208,9 +208,9 @@ not been run with a refused start.
 
 ## See that it worked
 
-- The model can call the `agents` tool, through the MCP server `graftling`: it sees
-  `mcp__graftling__agents`.
-- Ask it to use the `agents` tool, not DSH's own subagents, to create a Claude child that
+- The model can call the `subagents` tool, through the MCP server `graftling`: it sees
+  `mcp__graftling__subagents`.
+- Ask it to use the `subagents` tool, not DSH's own subagents, to create a Claude child that
   answers one word, and to `wait` for it before ending the task.
 - A notice appears in the Session as `<agent> · completed` over the answer as Markdown; DSH's
   native card under it holds the model's text `[Graftling notice from <agent> · completed ·
@@ -318,12 +318,12 @@ The data root is unchanged, so held notices and children's records stay.
 - An Agent the host cannot confirm stopped is named in a `stop-unconfirmed` line on
   stderr, the host exits non-zero, and the plugin writes that text to the DSH logger.
   The Session does not show it; read the state through `status` on the next host.
-- `agents` calls run one at a time on this host.
+- `subagents` calls run one at a time on this host.
 - The DSH driver runs the `deepseek-official` provider only.
 - `DEEPSEEK_BASE_URL` and `DEEPSEEK_SEARCH_BASE_URL` do not route a DSH child. Declare
   `base_url` on the connection or the DSH settings. With `DEEPSEEK_API_KEY` as that
   connection's key at another origin, web search goes to the same endpoint and DSH's
   Search and Fetch API provider is off. To keep official search beside a gateway, name
   the gateway's key in another variable.
-- A native DSH subagent gets no host and no `agents` tool.
+- A native DSH subagent gets no host and no `subagents` tool.
 </content>

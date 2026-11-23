@@ -23,7 +23,7 @@ AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 
 There is no Codex plugin and nothing to install into Codex. The host is a command of
 the one installation, `"$AGENTS_PYTHON" -m graftling.codex.host`. It starts its own Codex service and
-one parent Session. That Session sees the `agents` tool because the host registers it
+one parent Session. That Session sees the `subagents` tool (`mcp__graftling__subagents`) because the host registers it
 for that Session.
 
 So it **cannot** attach to a Codex you already have open, in the terminal or an app.
@@ -74,7 +74,7 @@ unless your settings name another reviewer.
 [Configuration](../../README.md#configuration).
 
 The host adds a short passage after your `developerInstructions`, for the parent only.
-It says that `agents` is how this host creates and controls children, and that Codex's
+It says that `subagents` is how this host creates and controls children, and that Codex's
 own `spawn_agent` is for when the user names it. Your text comes first and is what
 children get. No native tool is removed.
 
@@ -85,7 +85,7 @@ export GRAFTLING_DATA_ROOT=/absolute/agents-data   # or omit for /absolute/work/
 "$AGENTS_PYTHON" -m graftling.codex.host \
   --settings native-settings.json \
   --output /absolute/agents-data/last-run.json \
-  'Use only the MCP tool agents, not spawn_agent. Make these tool calls one at a time, in this order. Where an argument says <agent from 1>, use the "agent" field returned by call 1.
+  'Use only the MCP tool subagents, not spawn_agent. Make these tool calls one at a time, in this order. Where an argument says <agent from 1>, use the "agent" field returned by call 1.
 1. {"action": "execute", "feature": "create", "arguments": {"runtime": "codex", "instruction": "Do not use any tool. Reply with exactly: PONG"}}
 2. {"action": "execute", "feature": "wait", "arguments": {"agent": "<agent from 1>", "timeout_seconds": 240}}
 A notice from agents may arrive at any time and changes nothing. Then reply with the answer of the child, and stop.'
@@ -113,7 +113,7 @@ If the parent itself needs a native approval, the request prints to stderr as
 
 - `--output`'s `operations` lists a `create` and a `wait` for the child, and stderr's last
   line is `{"run_summary": {"agents_calls": 2, "native_subagents": 0}}`. These two show
-  the parent used `agents`. Its last message does not.
+  the parent used `subagents`. Its last message does not.
 - stderr starts with `{"parent_session": ..., "source": "thread/start"}`.
 - stderr shows each exchange, as `┌ <parent session> → <agent>` for the instruction
   and `┌ <agent> → <parent session>` for the child's reply.
@@ -121,10 +121,10 @@ If the parent itself needs a native approval, the request prints to stderr as
 - `--output`'s `deliveries` lists each notice sent, and `stop_unconfirmed` is an empty
   list.
 
-**`operations: []` means the parent made no `agents` call in that run, whatever its last
+**`operations: []` means the parent made no `subagents` call in that run, whatever its last
 message says.** `run_summary` then has `agents_calls: 0` and a note saying so. Any child
-the parent reports creating in that run is not an `agents` child: it is not in `status`,
-and `agents` did not approve or record it.
+the parent reports creating in that run is not a `subagents` child: it is not in `status`,
+and graftling did not approve or record it.
 
 A `{"native_subagent": ...}` line on stderr, with an entry in `--output`'s
 `native_subagents`, means the parent started Codex's own subagent. This is not a failure
@@ -134,7 +134,7 @@ in Codex 0.164.0's protocol schema that no real run here has shown yet, so a run
 it can still have used `spawn_agent`. Trust `operations`, not the absence of this line.
 
 Which tool the model chooses can only be observed in a real run. The instruction above
-and the host's passage make `agents` the plain choice, and tests check that those literal
+and the host's passage make `subagents` the plain choice, and tests check that those literal
 calls work, but neither forces the choice.
 
 `deliveries` shows that a notice was submitted, not that the model read it. A notice
@@ -203,7 +203,7 @@ continue the parent; its children stay listed by `status`.
 - Under `auto_review`, Codex decides its children's approvals itself. Only a refusal
   or a reviewer failure reaches the parent, which can `accept` one retry or `decline`.
   The retry goes through auto review again. The accept path is shown by tests only.
-- `agents` calls run one at a time on this host.
+- `subagents` calls run one at a time on this host.
 - A stop agents cannot confirm is reported on stderr as `{"error": {"code":
   "stop-unconfirmed", ...}}` and in `stop_unconfirmed` in `--output`, and the host
   exits non-zero. The parent cannot see it, because its run has ended. A run that

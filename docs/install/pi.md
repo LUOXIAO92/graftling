@@ -82,7 +82,7 @@ host). For Pi children:
   (agent-sandbox, srt, node, rg).
 
 A Session whose working directory is not an absolute, existing directory gets no
-`agents` tool when neither is given. A data root that cannot be created stops the
+`subagents` tool when neither is given. A data root that cannot be created stops the
 start too. The messages name `GRAFTLING_DATA_ROOT` and `--agents-config`.
 
 Inside a DSH-managed context (`DSH_SESSION_ID` or `DSH_AGENT_SOURCE` set), the
@@ -95,12 +95,12 @@ as before; the inherited `GRAFTLING_DATA_ROOT` starts no host there.
 (set by `pi-subagent`), or the Session has no persistent Session file (`pi
 --no-session`, which Pi's bundled subagent example runs), the extension starts no
 host, creates no data root and reports no error, with or without `--agents-config` and
-`GRAFTLING_DATA_ROOT`. Only the Main Session that started the subagent has the `agents`
+`GRAFTLING_DATA_ROOT`. Only the Main Session that started the subagent has the `subagents`
 tool. Before 585 such a child started a second host, and Pi's bundled example showed
 `Extension error ...: The Pi native Session association is unavailable.` in the
 subagent's result.
 
-This includes your own `pi --no-session`: that Session gets no `agents` tool. Start
+This includes your own `pi --no-session`: that Session gets no `subagents` tool. Start
 `pi` with a Session file (the default) to use agents.
 
 `--agents-config <file>` selects an explicit configuration instead, which works
@@ -146,7 +146,7 @@ naming `GRAFTLING_PYTHON`.
 
 A refused start shows as Pi's `Extension error (<path>/extension.mjs): <message>`. A
 host refusal adds one `{"error": {"code", "message"}}` line. In Pi 1.4.0 the Session
-still starts and runs its prompt, without the `agents` tool. Before 572 this guide
+still starts and runs its prompt, without the `subagents` tool. Before 572 this guide
 said the Session start fails; in a real run it did not.
 
 **Turning it off.** The package is the switch:
@@ -171,9 +171,9 @@ No variable turns the default off. In the 572 sandbox, a start after
 
 ## See that it worked
 
-- The model can call the `agents` tool, through the MCP server `graftling`: it sees
-  `mcp__graftling__agents`.
-- Ask it to use the `agents` tool to create a Claude child that answers one word. A message
+- The model can call the `subagents` tool, through the MCP server `graftling`: it sees
+  `mcp__graftling__subagents`.
+- Ask it to use the `subagents` tool to create a Claude child that answers one word. A message
   appears in the Pi Session titled `[agents notice from <agent> · completed · execution <execution>]`.
 - `status` then shows `last_result.notification: delivered`, with the child's answer
   still in `last_message`.
@@ -255,7 +255,7 @@ Set a model at `create` to choose another one for one child.
   `stop-unconfirmed` line on stderr, the host exits non-zero, and the extension's
   shutdown handler rejects with that text.
 - Held notices belong to their Session: a new or forked Session does not get them.
-- `agents` calls run one at a time on this host.
+- `subagents` calls run one at a time on this host.
 - A connection without `base_url` support on Pi: declare the endpoint as a provider in
   Pi's own `models.json` in that connection's home.
 - An extension in a connection's home can change a call's input after review, and a

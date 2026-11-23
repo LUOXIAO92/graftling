@@ -3,12 +3,13 @@
 **Runtime-Agnostic Hierarchical Multi-Agent Orchestration**
 
 Graftling lets the main Agent of Claude Code, Codex, Pi or DeepSeek Harness (DSH)
-start and control child Agents through one tool, `agents`. A child can run on any of those
+start and control child Agents through one tool, `subagents`. A child can run on any of those
 four Runtimes and keeps its own native Session there. It needs no project, Task or
 Git repository.
 
-The distribution is called `graftling`. It installs two commands, `agents` and
-`agents-mcp`, and the Python package `graftling`.
+The distribution is called `graftling`. It installs two commands, `subagents` and
+`subagents-mcp`, and the Python package `graftling`. Before 0.9.0 the tool and the
+commands were named `agents` and `agents-mcp`; see [Moving to 0.9.0](#moving-to-090).
 
 - [`PUBLIC_API.md`](PUBLIC_API.md): the stable interface and the version rules.
 - [`CHANGELOG.md`](CHANGELOG.md): what changed in each version.
@@ -27,14 +28,15 @@ Licensed under the [Apache License, Version 2.0](LICENSE).
 ## How it works
 
 Your main Agent runs inside a **host**: Claude Code, Codex, Pi or DSH with agents
-attached. The host owns the children and answers the `agents` tool. Children report
+attached. The host owns the children and answers the `subagents` tool. Children report
 back to the parent that created them.
 
-The `agents` command and the `agents-mcp` server only forward a request to the host
+The `subagents` command and the `subagents-mcp` server only forward a request to the host
 that owns the calling process. Run from a plain shell, or registered by hand in
 another MCP client, every request fails with `authority-denied`, including
 `discover`. So attaching a host is the first step, and each host registers the
-`agents` tool for you.
+`subagents` tool for you. The model sees it as `mcp__graftling__subagents`, or as
+`mcp__plugin_graftling_subagents__subagents` under the Claude Code marketplace plugin.
 
 ## Install
 
@@ -44,12 +46,12 @@ It is not on PyPI. Pin a tag or a commit:
 ```sh
 uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
-"$(uv tool dir --bin)/agents" --help
+"$(uv tool dir --bin)/subagents" --help
 ```
 
 uv gets a Python 3.12 or later when it needs one, installs graftling with its only
 dependencies, PyYAML and websockets, in its own environment under `uv tool dir`, and
-puts the `agents` and `agents-mcp` commands on its tool bin directory
+puts the `subagents` and `subagents-mcp` commands on its tool bin directory
 (`uv tool dir --bin`). This one installation serves every host: each host's MCP
 server and hook plugin come from it, as the table says. `$AGENTS_PYTHON` is that
 installation's Python; the host notes use it for every `python -m graftling...`
@@ -80,7 +82,7 @@ Coming from 0.7.0's DSH install from this repository's GitHub address, see
 
 ## Use the tool
 
-Ask your main Agent to use the `agents` tool. It takes three actions: `discover`
+Ask your main Agent to use the `subagents` tool. It takes three actions: `discover`
 lists the features, `describe` gives one feature's input, and `execute` runs it.
 
 ```json
@@ -117,7 +119,7 @@ both modes as `permission_mode` for the latest execution only. A wider or unknow
 [`PUBLIC_API.md`](PUBLIC_API.md) 1.2.
 
 Inside a host, a process the host started can also call the same request as
-`agents '{"action":"discover"}'`, which prints one JSON document.
+`subagents '{"action":"discover"}'`, which prints one JSON document.
 
 ## Configuration
 
@@ -423,6 +425,30 @@ instead of `mcp__agents__agents`. The tool keeps its name. After upgrading:
   still read that name, and DSH's browser shows those calls in its native Tool card like
   any other. Resuming such a Session: see
   [`CHANGELOG.md`](CHANGELOG.md) 0.6.0.
+
+## Moving to 0.9.0
+
+The MCP tool `agents` is now named `subagents`, and the commands `agents` and
+`agents-mcp` are now `subagents` and `subagents-mcp`. There is no alias: the old names
+are gone. The model sees `mcp__graftling__subagents` instead of `mcp__graftling__agents`.
+After upgrading:
+
+- Claude Code host: run `configuration --write` again, so the project's hook plugin
+  matches the new tool, and restart Claude Code; `/agents-context` then shows
+  `MCP subagents registered`. The marketplace plugin's server is now `subagents`, so its
+  tool is `mcp__plugin_graftling_subagents__subagents` (was
+  `mcp__plugin_graftling_agents__agents`).
+- Pi and DSH: reinstall the packages from the new installation; nothing else changes.
+- Change everything that names the old tool or commands: Claude Code allow rules
+  (`permissions.allow`) and `--allowedTools` values, scripts that call `agents` or
+  `agents-mcp`, and a create's `tools` or `disallowed_tools` entries. A
+  `disallowed_tools` entry naming `mcp__<server>__agents` no longer denies anything.
+- Review exempts only the `subagents` tool of the server the child registered. A tool
+  named `agents` is reviewed like any other.
+- Unchanged: the `tasks` tool, the data root (`.agents-control`), result fields such as
+  `"agents"` in `status`, the `/agents-context` command and DSH's `agents` plugin id.
+- Sessions created before keep their earlier calls under the old name; they are drawn
+  as ordinary tool calls.
 
 ## Known limits
 

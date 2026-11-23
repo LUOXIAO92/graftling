@@ -12,6 +12,54 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased (incompatible; to be released as 0.9.0)
+
+The MCP tool `agents` is renamed `subagents`, a rename section 7 lists as
+incompatible, so the minor version rises. There is no alias: the old names are
+neither served nor listed. A GraphTraj that serves the renamed tool needs
+`graftling>=0.9.0,<0.10`.
+
+### Changed
+
+- The MCP tool is `subagents` (591). `TOOL_NAME` is `"subagents"`; `tools/list`
+  returns `subagents` and `serverInfo.name` is `subagents`. The model sees
+  `mcp__graftling__subagents` (generally `mcp__<server>__subagents`) on Claude Code,
+  Codex, Pi and DSH. The review exemption, the display, the Claude hook and its
+  `PostToolUse` matcher, the Claude child's startup check, Pi's `--tools` owner entry
+  and the Codex parent's guidance all use the new name; the tool's description now
+  says that a host's own native subagents (Codex `spawn_agent`, Claude's Task tool)
+  are not this tool. A tool named `agents` is now reviewed like any other.
+- The commands `agents` and `agents-mcp` are now `subagents` and `subagents-mcp` (591).
+- The Claude Code marketplace plugin's MCP server key is `subagents` (591): its tool
+  is `mcp__plugin_graftling_subagents__subagents` and `/mcp` shows
+  `plugin:graftling:subagents`. The plugin is still named `graftling`.
+- The reserved extra-tool name is `subagents` only; `agents` may now name an extra
+  tool (591).
+- The tool name has one source: `TOOL_NAME` in Python, and one `TOOL` constant in each
+  of `claude/host_context.mjs`, `pi/extension.mjs` and `dsh/review.mjs`, which tests
+  compare with it. `claude_host_plugin` and the marketplace copy derive the hook's tool
+  line from `TOOL_NAME` and raise `RuntimeError` when a line they rewrite is missing,
+  instead of writing an unchanged copy (591).
+
+### Migration
+
+- Claude Code host: run `configuration --write` again and restart Claude Code, so the
+  project's hook plugin handles `mcp__graftling__subagents`; `/agents-context` then
+  shows `MCP subagents registered`. Marketplace plugin users update the plugin.
+- Pi and DSH: reinstall the packages from the upgraded installation.
+- Change every place that names the old tool or commands: Claude Code allow rules
+  (`permissions.allow` in a settings file, such as `mcp__graftling__agents`),
+  `--allowedTools` values, scripts calling `agents` or `agents-mcp`, and a create's
+  `tools` and `disallowed_tools` entries (a child's own allow or deny list). A
+  `disallowed_tools` entry naming `mcp__<server>__agents` names no tool any more, so
+  it **silently stops denying**; replace it with `mcp__<server>__subagents`.
+- Unchanged: the `tasks` tool, the data root (`.agents-control`, `control/agents`),
+  result fields such as `{"agents": [...]}` from `status`, DSH's `agents` plugin id and
+  service, the DSH patch rows `agents-mcp` and `agents-review`, the notice
+  `source: "agents"`, and the `/agents-context` command.
+- Sessions and archives created before keep their earlier calls under the old name;
+  they are drawn as ordinary tool calls, not as exchanges.
+
 ## 0.8.0 (incompatible)
 
 Three changes are incompatible by section 7, so the minor version rises. 581 removes

@@ -74,7 +74,8 @@ marketplace: add the one inside your installation.
    `.agents-control/`.
 
 3. Start Claude Code in the project, as in [Start it](#start-it). The plugin's MCP server
-   is `agents`; Claude Code calls its tool `mcp__plugin_graftling_agents__agents`.
+   is `subagents`; Claude Code calls its tool `mcp__plugin_graftling_subagents__subagents`
+   (before 0.9.0: server `agents`, tool `mcp__plugin_graftling_agents__agents`).
 
 On its first start the host writes `.agents-control/claude-host.json`, the same file
 `configuration --write` writes: `cwd` is the directory Claude Code started in, `claude`
@@ -95,7 +96,7 @@ own `claude-host.json`. Children inherit the variable; a child holds
 `GRAFTLING_CONNECTION` to its owner, so its plugin server refuses before writing anything.
 
 If the plugin cannot find a Python that imports `graftling`, it says what to install and
-set, in three places: `/mcp` shows the server `plugin:graftling:agents` failed, with the
+set, in three places: `/mcp` shows the server `plugin:graftling:subagents` failed, with the
 message in its error output; `.agents-control/host.log` ends with a line starting
 `graftling plugin: the agents host did not start`; `/agents-context` prints the same
 advice instead of `graftling <version> at <python>`.
@@ -188,10 +189,10 @@ not load this project's `.mcp.json`.
 
 ## See that it worked
 
-- In the Session, `/agents-context` prints the current Session, `MCP agents
+- In the Session, `/agents-context` prints the current Session, `MCP subagents
   registered` and the state of notice push, without a model turn. `/mcp` lists `graftling`,
-  and the model calls the tool `mcp__graftling__agents`.
-- Ask the model to use the `agents` tool, not Claude Code's own subagents, to create a Claude
+  and the model calls the tool `mcp__graftling__subagents`.
+- Ask the model to use the `subagents` tool, not Claude Code's own Task subagents, to create a Claude
   child that answers one word, then to `wait` for it.
   The result shows `state: standby` and `last_result.outcome: completed`.
 - On Claude Code 2.1.314 or later, the transcript shows each message the model sends as a
@@ -206,7 +207,7 @@ not load this project's `.mcp.json`.
   child, a DSH watcher line says the child's process group was stopped, or could not
   be, up to about 15 seconds later.
 
-If every `agents` call returns `host-unavailable`, the host refused to start.
+If every `subagents` call returns `host-unavailable`, the host refused to start.
 `.agents-control/host.log` holds the reason as one JSON line; search for `did not
 start`. Fix the cause and start Claude Code again.
 
@@ -292,8 +293,8 @@ and any existing `control/`, `native/` and `sessions/` there. `channel_file` and
 ## Limits
 
 - Push needs prompt submission. In print mode (`claude -p`) a notice arrives only as
-  `main_notices` on the next `agents` result.
-- The host serves `agents` calls concurrently, so a long `wait` does not block a call
+  `main_notices` on the next `subagents` result.
+- The host serves `subagents` calls concurrently, so a long `wait` does not block a call
   Claude Code sends while it runs. Within one turn Claude Code itself runs the calls
   one at a time until it moves a long one to the background (up to 120 seconds, seen
   on 2.1.314); print mode showed no overlap. A call you cancel gets no response.

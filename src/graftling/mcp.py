@@ -313,9 +313,9 @@ def serve_concurrent(input_stream: TextIO, output_stream: TextIO,
 def tool_documents() -> list[dict]:
     """Expose only the lightweight ``TOOL_NAME`` entry."""
     return [{'name': TOOL_NAME,
-             'description': "Create and control child Agents. These children are in agents' hierarchy, approvals "
-                            "and records; a host's own subagents are not. Discover, describe, or execute an "
-                            'Agent feature.',
+             'description': "Create and control child Agents. These children are in this tool's hierarchy, "
+                            "approvals and records; a host's own native subagents (such as Codex spawn_agent or "
+                            "Claude's Task tool) are not. Discover, describe, or execute an Agent feature.",
              'inputSchema': INPUT_SCHEMA}]
 
 
