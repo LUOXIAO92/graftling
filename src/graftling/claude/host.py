@@ -437,7 +437,7 @@ HOST_CONFIG = Path('.agents-control') / 'claude-host.json'
 
 
 def project_material(project: Path) -> Path | None:
-    """Return the project's ``.mcp.json`` when configuration --write material starts an subagents host there.
+    """Return the project's ``.mcp.json`` when configuration --write material starts a subagents host there.
 
     The entry is ``graftling``, or ``agents`` as written before 0.6.0.
     """

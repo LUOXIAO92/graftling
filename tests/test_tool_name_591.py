@@ -99,6 +99,42 @@ def test_no_production_line_shows_an_old_label() -> None:
     assert found == []
 
 
+HEADER = '[subagents · child-1 → parent-1]\nthe body'
+
+
+def test_a_relayed_message_has_the_exact_header() -> None:
+    """A child's end or notice reaches its parent's turn as ``[subagents · <child> → <parent>]``."""
+    from types import SimpleNamespace
+    import threading
+
+    from graftling.claude.binding import bind_run
+    from graftling.codex.driver import _receive_children
+
+    receivers, sent = [], []
+    run = SimpleNamespace(call=lambda request: None, archive=None, extra_fields=None, agent='parent-1',
+                          settings={'completion_message': {'agent': 'child-1', 'body': 'the body'}},
+                          events=SimpleNamespace(receive_children=receivers.append,
+                                                 continue_from_child=lambda event, archive: False))
+    event = {'parent': 'parent-1', 'session': 'child-session', 'agent': 'child-1', 'body': 'the body'}
+    claude = SimpleNamespace(configure_independent=lambda **options: None, lock=threading.Lock(), accepting=True,
+                             stopping=threading.Event(), done=threading.Event(), session='s', execution_id='e',
+                             operate=sent.append)
+    bind_run(claude, run)
+    assert claude.prompt == HEADER
+    assert receivers[-1](event) and sent[-1]['instruction'] == HEADER
+    _receive_children(SimpleNamespace(session='s', execution_id='e', operate=sent.append), run)
+    assert receivers[-1](event) and sent[-1]['instruction'] == HEADER
+
+
+def test_every_relayed_message_header_has_its_spaces() -> None:
+    """Each producer (Claude, Codex, Pi) writes ``[subagents · {child} → {parent}]``, spaced like the frames."""
+    sources = [(path, line) for path in production_files() if path.suffix == '.py'
+               for line in path.read_text(encoding='utf-8').splitlines() if '[subagents ·' in line]
+    assert len(sources) == 5
+    for path, line in sources:
+        assert re.search(r'\[subagents · \{[^}]+\} → \{run\.agent\}\]', line), (path, line)
+
+
 def test_the_label_guard_sees_each_old_label() -> None:
     """The label pattern catches each label 0.8.0 showed, and not the names that stay."""
     for line in ("f'┌ agents · {sender} → {recipient}'", "['agents → ']", "'agents host stopped'",
