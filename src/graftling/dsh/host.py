@@ -5,7 +5,8 @@ Session's header on the owned stdio launch boundary. Model requests supply
 neither identity nor launch settings. The host configuration is Task-free:
 ``root`` plus optional per-Runtime settings (``dsh``, ``claude``, ``codex``,
 ``pi``); see PUBLIC_API.md 1.7. Without ``--config`` it is
-``{"root": "<Session cwd>/.agents-control"}``, the Claude Code host's default.
+``{"root": "$GRAFTLING_DATA_ROOT"}`` when that is set, else
+``{"root": "<Session cwd>/.agents-control"}``, the other hosts' default.
 
 Private pipe protocol with the plugin: stdin carries one ``{"header",
 "model"}`` line, then one ``{"ready": true}`` line when the Session can take
@@ -25,6 +26,7 @@ import time
 from typing import Any, Callable, Mapping, TextIO
 
 from graftling import AgentControl, AgentsError, AgentsResult, Caller, bind
+from graftling.config import default_data_root
 from graftling.connection import agents_connection
 from graftling.notices import notice_id, notice_text
 from graftling.process import process_ancestors, process_arguments, process_executable
@@ -106,19 +108,14 @@ def read_configuration(document: object) -> tuple[Path, dict]:
 
 
 def default_configuration(cwd: Path) -> tuple[Path, dict]:
-    """Without ``--config``: the project's own ``<cwd>/.agents-control``, no per-Runtime settings (570).
+    """Without ``--config``: GRAFTLING_DATA_ROOT, else ``<cwd>/.agents-control`` (570, 577).
 
-    The Claude Code host's default data root for the same project, so both
-    hosts share it. The verified Session ``cwd`` exists; only the data root
-    itself is created.
+    No per-Runtime settings. The other hosts' default for the same project,
+    so they share it. The verified Session ``cwd`` exists; only the data root
+    itself is created (:func:`graftling.config.default_data_root`).
     """
-    root = cwd / '.agents-control'
-    try:
-        root.mkdir(exist_ok=True)
-    except OSError as error:
-        raise ValueError(f'Cannot create the default data root {root}: {error.strerror or error}. Set '
-                         'GRAFTLING_DSH_CONFIG to a host configuration naming another root (docs/install/dsh.md).'
-                         ) from None
+    root = default_data_root(cwd, 'set GRAFTLING_DSH_CONFIG to a host configuration naming another root '
+                                  '(docs/install/dsh.md)')
     return read_configuration({'root': str(root)})
 
 
@@ -276,7 +273,8 @@ def start(config: Path | None, launch: Mapping[str, Any]) -> tuple[Path, dict, N
 
     ``launch`` is the plugin's first pipe line: the native Session ``header``
     and the parent's current ``model``. Without ``config`` the data root is
-    the verified Session cwd's ``.agents-control`` (:func:`default_configuration`).
+    GRAFTLING_DATA_ROOT, else the verified Session cwd's ``.agents-control``
+    (:func:`default_configuration`).
     Returns the model-facing entry and the plain bound ``call``: only what the
     model reads settles a held notice, not this host's own shutdown.
     """
@@ -314,7 +312,7 @@ def start(config: Path | None, launch: Mapping[str, Any]) -> tuple[Path, dict, N
 def main() -> None:
     """Keep one control owner alive until the plugin closes its pipe."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', type=Path, help='host configuration; default: <Session cwd>/.agents-control')
+    parser.add_argument('--config', type=Path, help='host configuration; default: GRAFTLING_DATA_ROOT, else <Session cwd>/.agents-control')
     options = parser.parse_args()
     try:
         launch = json.loads(sys.stdin.readline() or 'null')

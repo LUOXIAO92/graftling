@@ -168,8 +168,10 @@ async function projectMaterial($) {
 async function context($, document) {
   let command;
   if (PLUGIN) {
+    // GRAFTLING_DATA_ROOT holds the plugin host's configuration when set (577).
+    const dataRoot = await $.env.get('GRAFTLING_DATA_ROOT');
     command = [await pluginPython($), '-m', 'graftling.claude.host', 'context',
-      '--project-from', await $.session.cwd()];
+      '--project-from', await $.session.cwd(), ...(dataRoot ? ['--data-root', dataRoot] : [])];
   } else {
     const python = await $.env.get('GRAFTLING_CLAUDE_HOST_PYTHON');
     const config = await $.env.get('GRAFTLING_CLAUDE_HOST_CONFIG');

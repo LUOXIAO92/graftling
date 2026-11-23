@@ -195,8 +195,9 @@ export function apply(ctx, config) {
 }
 
 /**
- * Without GRAFTLING_DSH_CONFIG the host's data root is <Session cwd>/.agents-control,
- * so the Session must record its project directory; refuse with the fix otherwise.
+ * Without GRAFTLING_DSH_CONFIG or GRAFTLING_DATA_ROOT the host's data root is
+ * <Session cwd>/.agents-control, so the Session must record its project
+ * directory; refuse with the fix otherwise.
  */
 function requireProjectDirectory(cwd) {
   let directory = false;
@@ -204,15 +205,17 @@ function requireProjectDirectory(cwd) {
   if (!directory) {
     throw new Error(`graftling-dsh: this DSH Session records no usable project directory (cwd: ${
       JSON.stringify(cwd) ?? 'none'}), so the agents tool has no default data root <project>/.agents-control. ` +
-      'Set GRAFTLING_DSH_CONFIG to a host configuration naming its data root (docs/install/dsh.md).');
+      'Set GRAFTLING_DATA_ROOT to an absolute data root directory, or GRAFTLING_DSH_CONFIG to a host ' +
+      'configuration naming its data root (docs/install/dsh.md).');
   }
 }
 
 /**
  * The installed bundle's host row: each native main Session of this DSH owns
  * one ``graftling.dsh.host`` while it is live, on GRAFTLING_DSH_CONFIG's data
- * root when set, else on the Session cwd's .agents-control. Inert inside a DSH
- * that is already an Agent.
+ * root when set, else on GRAFTLING_DATA_ROOT, else on the Session cwd's
+ * .agents-control. Inert inside a DSH that is already an Agent, whatever
+ * those variables say.
  */
 function applyHost(ctx) {
   const environment = process.env;
@@ -226,7 +229,9 @@ function applyHost(ctx) {
   ctx.on('agent/created', async ({ agent }) => {
     const id = agent.session.header?.id;
     if (sessionEnvironment(agent).DSH_AGENT_SOURCE !== 'main' || hosts.has(id)) return;
-    if (!environment.GRAFTLING_DSH_CONFIG) requireProjectDirectory(agent.session.header.cwd);
+    if (!environment.GRAFTLING_DSH_CONFIG && !environment.GRAFTLING_DATA_ROOT) {
+      requireProjectDirectory(agent.session.header.cwd);
+    }
     let python;
     const started = pluginPython(environment).then(found => startAgentHost(agent,
       { ...environment, GRAFTLING_PYTHON: python = found }, notice =>

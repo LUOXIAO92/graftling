@@ -1,7 +1,10 @@
 """Run an independent Codex host with authenticated agents CLI and MCP.
 
 Usage: python -m graftling.codex.host --settings native-settings.json
-       --directory /absolute/control-root 'Instruction for the parent Agent'
+       [--directory /absolute/control-root] 'Instruction for the parent Agent'
+Without --directory the data root is GRAFTLING_DATA_ROOT when set, else
+<Session cwd>/.agents-control, where the Session cwd is the settings'
+adapter_request.session_parameters.cwd (577).
 Repeat with --resume to continue the exact retained parent Session. The settings
 file contains the existing Run.settings keys: adapter_request (arguments,
 worktree_path, session_parameters), optional evidence, and optional connection
@@ -11,7 +14,7 @@ named environment variable. Settings are launch configuration, never identity.
 An optional ``runtimes`` object adds children on other Runtimes: Runtime name
 to that driver's settings (``claude``: the Claude host's ``settings`` keys;
 ``dsh``: DshDriver settings such as executable, model, sandbox, api_key_env;
-``pi``: the Pi child settings of PUBLIC_API.md 1.1, which need --directory outside
+``pi``: the Pi child settings of PUBLIC_API.md 1.1, which need a data root outside
 the worktree; all run in adapter_request's worktree_path). Without an entry, a
 create for that Runtime fails with ``unsupported-runtime``.
 
@@ -32,6 +35,7 @@ import time
 import yaml
 
 from graftling import AgentControl, AgentsError, Caller, bind
+from graftling.config import data_root_override, default_data_root
 from graftling.notices import notice_id
 from graftling.runtime import RuntimeAdapterError
 from graftling.shutdown import exit_if_owned_unconfirmed, stop_owned
@@ -346,11 +350,42 @@ def _close(host: CodexHost | None) -> None:
     exit_if_owned_unconfirmed(host.stop_unconfirmed)
 
 
+def data_directory(directory: Path | None, settings: object) -> Path:
+    """Return the host's data root: ``--directory``, else GRAFTLING_DATA_ROOT, else ``<Session cwd>/.agents-control``.
+
+    The Session cwd is the settings' ``adapter_request.session_parameters.cwd``,
+    which must be an existing absolute directory; only the default
+    ``.agents-control`` itself is created (577).
+
+    Raises
+    ------
+    ValueError
+        No usable Session cwd or data root; the message names --directory
+        and GRAFTLING_DATA_ROOT.
+    """
+    if directory is not None:
+        return directory.resolve()
+    override = data_root_override()
+    if override is not None:
+        return override
+
+    # Each level may be missing or of another type in a hand-written file.
+    cwd = settings
+    for key in ('adapter_request', 'session_parameters', 'cwd'):
+        cwd = cwd.get(key) if isinstance(cwd, dict) else None
+    if not isinstance(cwd, str) or not Path(cwd).is_absolute() or not Path(cwd).is_dir():
+        raise ValueError(f'The settings name no usable Session cwd (adapter_request.session_parameters.cwd: '
+                         f'{cwd!r}) for the default data root <cwd>/.agents-control. Pass --directory '
+                         '<absolute directory> or set GRAFTLING_DATA_ROOT.')
+    return default_data_root(Path(cwd), 'pass --directory <absolute directory>')
+
+
 def main() -> None:
     """Start the packaged native host; request arguments never supply an identity."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--settings', required=True, type=Path, help='Host-selected Run.settings JSON.')
-    parser.add_argument('--directory', required=True, type=Path, help='Independent control and native state root.')
+    parser.add_argument('--directory', type=Path, help='Independent control and native state root; default: '
+                                                       'GRAFTLING_DATA_ROOT, else <Session cwd>/.agents-control.')
     parser.add_argument('--output', type=Path, help='Retain the native result and operation evidence as JSON.')
     parser.add_argument('--resume', action='store_true', help='Continue the retained parent native Session.')
     parser.add_argument('instruction', help='Instruction for the actual parent Agent.')
@@ -358,7 +393,8 @@ def main() -> None:
     host = None
     try:
         settings = json.loads(arguments.settings.read_text())
-        host = CodexHost(settings, arguments.directory.resolve(), arguments.instruction, arguments.resume)
+        directory = data_directory(arguments.directory, settings)
+        host = CodexHost(settings, directory, arguments.instruction, arguments.resume)
         result = host.run()
     except (AgentsError, RuntimeAdapterError, OSError, ValueError, KeyError) as error:
         result = {'error': {'code': getattr(error, 'code', 'invalid-input'), 'message': str(error)}}

@@ -53,31 +53,46 @@ pi -e "$PI_PACKAGE/extension.mjs"
 
 ## Data root and configuration
 
-With no flag, the data root is `<project>/.agents-control`. It is created when
+With no flag and no `GRAFTLING_DATA_ROOT`, the data root is
+`<project>/.agents-control`. It is created when
 missing. The project is the Session's working directory (`ctx.cwd`). In Pi 1.4.0
 that is the directory `pi` starts in, because Pi has no option to set it. This is
-the Claude Code host's default, and the DSH plugin's, so the hosts share one data
+the default of the Claude Code, Codex and DSH hosts too, so the hosts share one data
 root and each Main sees only its own children.
 
-**Pi children need more.** A Pi child is refused on this default root, because
+`GRAFTLING_DATA_ROOT`, an absolute directory, replaces `<project>/.agents-control`.
+It is the one variable that chooses the data root of every host, and the preferred
+way to choose it:
+
+```sh
+export GRAFTLING_DATA_ROOT=/absolute/agents-data
+```
+
+It is created when missing; a relative value, or one that cannot be created, stops
+the start with a message naming the variable. It chooses only the directory:
+per-Runtime settings still need `--agents-config`, which wins when both are given.
+
+**Pi children need more.** A Pi child is refused on the default root, because
 the root lies inside the project the child may read (`Pi cannot deny reading
 <project>/.agents-control inside the readable <project>`). Claude, Codex and DSH
-children work on it. For Pi children:
+children are not refused for this reason (only a DSH child has been shown on a real
+host). For Pi children:
 
-- give a data root outside the project with `--agents-config`;
+- give a data root outside the project with `GRAFTLING_DATA_ROOT` or `--agents-config`;
 - install [what a Pi child needs](../../README.md#what-a-pi-child-needs)
   (agent-sandbox, srt, node, rg).
 
 A Session whose working directory is not an absolute, existing directory gets no
-`agents` tool. A data root that cannot be created stops the start too. In both
-cases the message names `--agents-config`.
+`agents` tool when neither is given. A data root that cannot be created stops the
+start too. The messages name `GRAFTLING_DATA_ROOT` and `--agents-config`.
 
 Inside a DSH-managed context (`DSH_SESSION_ID` or `DSH_AGENT_SOURCE` set), the
-extension stays inert without the flag. In a Pi child of an agents host
-(`GRAFTLING_CONNECTION` set), it uses the owner's connection, as before.
+extension stays inert without the flag, whatever `GRAFTLING_DATA_ROOT` says. In a Pi
+child of an agents host (`GRAFTLING_CONNECTION` set), it uses the owner's connection,
+as before; the inherited `GRAFTLING_DATA_ROOT` starts no host there.
 
 `--agents-config <file>` selects an explicit configuration instead, which works
-as before.
+as before; it is kept from earlier releases.
 
 ### Minimal explicit configuration
 
@@ -97,6 +112,7 @@ key stops the start.
 
 ```sh
 pi                                          # data root <project>/.agents-control
+GRAFTLING_DATA_ROOT=/absolute/agents-data pi   # another directory
 pi --agents-config /absolute/pi-host.json   # an explicit configuration
 ```
 

@@ -14,6 +14,17 @@ The numbers in parentheses are the project's Task numbers.
 
 ## Unreleased (compatible)
 
+- One variable, `GRAFTLING_DATA_ROOT`, chooses the data root of every host
+  (Claude Code plugin, Codex, Pi, DSH) in place of `<project>/.agents-control`.
+  It must be absolute and is created when missing. A host's own setting still
+  wins and is unchanged: configuration `--write` material and `serve --config`,
+  Codex `--directory`, Pi `--agents-config`, `GRAFTLING_DSH_CONFIG`. The Codex
+  host's `--directory` is now optional: without it and the variable, the data
+  root is `<Session cwd>/.agents-control`, as for the other hosts. Children
+  inherit the variable; a child holding `GRAFTLING_CONNECTION` starts no host,
+  and the Claude Code plugin's server in such a child now refuses before
+  writing `claude-host.json` (577).
+
 - A Claude child requested by a catalog alias such as `haiku` no longer fails at
   start with `RUNTIME_REQUEST_FAILED` when Claude reports the full id its catalog
   resolves the alias to (`resolvedModel`, `claude-haiku-5-5`). `model` keeps the

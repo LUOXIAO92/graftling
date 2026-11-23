@@ -111,12 +111,29 @@ Inside a host, a process the host started can also call the same request as
 agents reads one optional file, `config.yml`, in its data root, and native login
 state. It reads no other product's configuration.
 
-| Host | Data root |
+Every host's data root is `<project>/.agents-control` by default, where the
+project is the Session's working directory, so the hosts of one project share it.
+To choose another directory for every host, set one variable before starting the
+host:
+
+```sh
+export GRAFTLING_DATA_ROOT=/abs/agents-data   # absolute; created when missing
+```
+
+This is the preferred way to choose the directory. A host's own setting, kept from
+earlier releases, still wins when given:
+
+| Host | Data root, first that applies |
 | --- | --- |
-| Claude Code | `root` in `.agents-control/claude-host.json`, by default `<project>/.agents-control` |
-| Codex | the `--directory` you pass |
-| Pi | `root` in the JSON file `--agents-config` names; without it `<project>/.agents-control`, the Session's working directory's, shared with Claude Code ([Pi install](docs/install/pi.md#data-root-and-configuration)) |
-| DSH | `root` in the JSON file `GRAFTLING_DSH_CONFIG` names; without it `<project>/.agents-control`, the Session's working directory's, shared with Claude Code ([DSH install](docs/install/dsh.md#data-root-and-configuration)) |
+| Claude Code | `root` in configuration `--write`'s `<project>/.agents-control/claude-host.json` (its `GRAFTLING_CLAUDE_HOST_CONFIG`); with the plugin, `GRAFTLING_DATA_ROOT` (which then also holds `claude-host.json`); else `<project>/.agents-control` ([Claude Code install](docs/install/claude-code.md)) |
+| Codex | `--directory`; `GRAFTLING_DATA_ROOT`; else `<Session cwd>/.agents-control` ([Codex install](docs/install/codex.md)) |
+| Pi | `root` in the JSON file `--agents-config` names; `GRAFTLING_DATA_ROOT`; else `<project>/.agents-control` ([Pi install](docs/install/pi.md#data-root-and-configuration)) |
+| DSH | `root` in the JSON file `GRAFTLING_DSH_CONFIG` names; `GRAFTLING_DATA_ROOT`; else `<project>/.agents-control` ([DSH install](docs/install/dsh.md#data-root-and-configuration)) |
+
+`GRAFTLING_DATA_ROOT` only chooses the directory; per-Runtime child settings stay
+in the host's own file (`--agents-config`, `GRAFTLING_DSH_CONFIG`, Codex
+`--settings`). It is an ordinary variable, so children inherit it; a child holds
+`GRAFTLING_CONNECTION` to its owner and starts no host of its own.
 
 Reading is strict: an unknown or repeated field or a wrong type stops the read, and
 the message names the file and line. Each host also checks every declared connection
