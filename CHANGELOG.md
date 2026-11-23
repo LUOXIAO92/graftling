@@ -16,6 +16,18 @@ The numbers in parentheses are the project's Task numbers.
 
 ### Fixed
 
+- A Claude child no longer fails with `RUNTIME_REQUEST_FAILED` "Claude did not confirm
+  the requested permission mode." when Claude reports a narrower mode than requested
+  (578). On the real host, `claude-haiku-4-5-20251001` children requested `auto` and
+  were reported as `default`. 0.7.0 failed them, although the turn had already started
+  and, when it was short, finished its work while the input closed; a longer turn was
+  killed after 5 s. Now a narrower mode (`default`, `manual`, `plan` or `dontAsk` for
+  `auto`; `plan` or `dontAsk` for `default`) lets the run complete. Both modes are
+  kept: the `permissions` record and outcome add `narrower: true`, the diagnostics add
+  the warning `permission_mode_narrower`, and `status` adds `permission_mode`. A wider,
+  not comparable (`acceptEdits` against `auto`) or unknown mode still fails. The turn
+  is now interrupted at that system init instead of running on while the input closes.
+  See `PUBLIC_API.md` 4.1.
 - A Claude child requested by a catalog alias such as `haiku` no longer fails at
   start with `RUNTIME_REQUEST_FAILED` when Claude reports the full id its catalog
   resolves the alias to (`resolvedModel`, `claude-haiku-5-5`). `model` keeps the

@@ -1960,6 +1960,31 @@ for the direct parent as above.
 | Pi | Pi has no approval of its own; extension dialogs (`extension_ui_request`) are the requests | None. With a connection's `review` (section 6): the agents extension's `tool_call` hook, enabled by the owner for that execution; a reviewed Pi with no agents connection is refused with `ROLE_CONFIG_UNSUPPORTED` |
 | DSH | The `permission` profile patch, approval `ask`, for the chosen sandbox mode | The `sandbox-policy` and `permission` patches; `dsh/approval-request` is the request. With a connection's `review` (section 6): also the `agents-review` plugin row |
 
+**Claude's reported permission mode (578).** Claude Code reports the mode it
+actually runs under in its system init (`permissionMode`), after the
+instruction was already sent. It can differ from the requested
+`permission_mode`; on the real host, a `claude-haiku-4-5-20251001` child
+asked for `auto` was reported as `default`. agents never treats a different
+mode as the requested one:
+
+- A mode narrower than the request, where Claude only asks or refuses more,
+  lets the run go on and complete: `default` (or `manual`), `plan` or
+  `dontAsk` for a requested `auto`, and `plan` or `dontAsk` for a requested
+  `default`. Its prompts reach the parent as usual. `status` adds
+  `permission_mode: {"requested", "observed", "narrower": true}`. The
+  child's diagnostics carry the warning `permission_mode_narrower` and
+  `permission_mode`. The Session's `permissions` record and the outcome's
+  `permissions` show `matches_request: false` and `narrower: true`.
+- Any other mode fails the run with `RUNTIME_REQUEST_FAILED` "Claude did not
+  confirm the requested permission mode.": a wider one (`auto`,
+  `acceptEdits` or `bypassPermissions` for a requested `default`;
+  `bypassPermissions` for `auto`), one that cannot be compared (`acceptEdits`
+  against `auto`), or an unknown or missing one. That init is the first point
+  where the mode is known. agents interrupts the running turn there and then
+  stops the process, so the turn does not continue while the input closes.
+  The `permissions` record keeps both modes, with `narrower: false` for a
+  known mode.
+
 **Codex auto review relay.** Under `auto_review`, Codex decides approvals
 itself and reports the outcome only as an `item/autoApprovalReview/completed`
 notification (Codex 0.164 app-server). agents turns an outcome of `denied`
@@ -2280,6 +2305,14 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 578 (unreleased, not yet classified; the release decides): a Claude child whose
+  system init reports a narrower permission mode than requested (`default` for `auto`,
+  say) now completes instead of failing with `RUNTIME_REQUEST_FAILED`. A previously
+  failing run succeeding is an observable change. New: `status`'s `permission_mode`,
+  the `permissions` key `narrower`, the diagnostics warning `permission_mode_narrower`,
+  the process fact `permission_mode`, `ClaudeExecution.permission_report`. A wider, not
+  comparable or unknown mode still fails, and the turn is now interrupted at that init
+  (section 4.1).
 - 576 (unreleased, not yet classified; the release decides): a Claude Code child
   created without `tools` gets `--tools` with its Claude Code's probed default set, so
   it has Bash again (0.7.0 passed no flag, and `--restricted` then removed Bash and

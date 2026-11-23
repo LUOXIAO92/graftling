@@ -100,7 +100,11 @@ model, the observed model and the reason. A Claude alias such as `haiku` is the
 one stated exception: Claude may start it as the full id its own model catalog
 names for it, such as `claude-haiku-5-5`. `model` keeps the alias, and `status`
 shows the full id as `resolved_model`. You can also request that full id
-directly ([`PUBLIC_API.md`](PUBLIC_API.md) section 2, rule 5). Every other code is in
+directly ([`PUBLIC_API.md`](PUBLIC_API.md) section 2, rule 5). A Claude child may also
+run under another permission mode than its `permission_mode`. A narrower one, such as
+`default` for `auto`, where Claude asks more, lets it complete, and `status` shows
+both modes as `permission_mode`. A wider or unknown one fails it with
+`RUNTIME_REQUEST_FAILED` ([`PUBLIC_API.md`](PUBLIC_API.md) 4.1). Every other code is in
 [`PUBLIC_API.md`](PUBLIC_API.md) 1.2.
 
 Inside a host, a process the host started can also call the same request as

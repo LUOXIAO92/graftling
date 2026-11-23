@@ -395,9 +395,12 @@ class ExecutionEvents:
         the native Runtime did not apply as asked (551); ``status`` shows it.
         ``resolved_model`` is the full model a Runtime started for a requested
         catalog alias (574); ``status`` shows it beside ``model``.
+        ``permission_mode`` records a narrower permission mode the Runtime
+        reported than requested, which the run went on under (578); ``status``
+        shows it.
         """
         allowed = {"worker_pid", "runtime_pid", "owned_at", "runtime_exit", "tool_marker",
-                   "tool_descendants", "tool_check", "resolved_model"}
+                   "tool_descendants", "tool_check", "resolved_model", "permission_mode"}
         if set(facts) - allowed:
             raise ValueError("unknown process fact")
         self._apply(lambda record, current: current["process"].update(facts))
@@ -2356,6 +2359,11 @@ class AgentControl:
                     if execution.get("process", {}).get("resolved_model")]
         if resolved:
             document["resolved_model"] = resolved[-1]
+        # The latest execution's narrower permission mode than requested (578).
+        modes = [execution["process"]["permission_mode"] for execution in record["executions"]
+                 if execution.get("process", {}).get("permission_mode")]
+        if modes:
+            document["permission_mode"] = deepcopy(modes[-1])
         if current is not None:
             document["execution"] = current["id"]
             if current.get("stop_requested_at") is not None:

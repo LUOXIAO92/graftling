@@ -140,6 +140,8 @@ class ClaudeDriver:
         turn.tool_report = lambda check: run.events.process(tool_check=check)
         # The full model Claude started for a requested catalog alias (574).
         turn.model_report = lambda model: run.events.process(resolved_model=model)
+        # A narrower permission mode than requested, which the child runs under (578).
+        turn.permission_report = lambda mode: run.events.process(permission_mode=mode)
         if self.configure is not None:
             self.configure(turn, run)
         with self.lock:

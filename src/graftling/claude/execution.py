@@ -43,6 +43,10 @@ from .diagnostics import (
 
 # Claude Code's limit for a UserPromptSubmit hook callback reply.
 PROMPT_HOOK_LIMIT_SECONDS = 30
+# Reported modes narrower than the requested one (578): Claude asks (default/manual),
+# only plans (plan) or refuses what it would ask (dontAsk). A child goes on under them.
+NARROWER_MODES = {'auto': frozenset({'default', 'manual', 'plan', 'dontAsk'}),
+                  'default': frozenset({'plan', 'dontAsk'})}
 # The MCP server name graftling registers its agents tool under: the model
 # sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
 MCP_SERVER = 'graftling'
@@ -220,6 +224,8 @@ class ClaudeExecution:
     tool_report = None
     # Optional receiver of the full model Claude started for a catalog alias (574).
     model_report = None
+    # Optional receiver of a narrower permission mode Claude reported than requested (578).
+    permission_report = None
     resolved_model = None
     host_connection = None
     # The variable naming the owner channel when a consumer, not ``bind``, owns it.
@@ -1292,10 +1298,29 @@ class ClaudeExecution:
                             observed['native_init'] = event
                             observed['permissions'] = self.permission_evidence()
                             write_yaml_durably(self.directory / 'session.yml', observed)
-                        requested_mode = self.request.get('permission_mode')
-                        if requested_mode is not None and self.permission_evidence()['matches_request'] is not True:
-                            raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
-                                                      'Claude did not confirm the requested permission mode.')
+                        evidence = self.permission_evidence()
+                        if self.request.get('permission_mode') is not None and evidence['matches_request'] is not True:
+                            if not evidence.get('narrower'):
+                                # Wider, not comparable or unknown. The prompt already runs (sent at
+                                # initialize, before this first init), so interrupt it now instead of
+                                # letting the turn go on while the input closes (578).
+                                with self.lock:
+                                    try:
+                                        self._control('interrupt')
+                                    except RuntimeAdapterError:
+                                        pass
+                                raise RuntimeAdapterError('RUNTIME_REQUEST_FAILED',
+                                                          'Claude did not confirm the requested permission mode.')
+                            # Narrower: Claude only asks or refuses more; the run goes on, mismatch shown (578).
+                            with self.lock:
+                                warning = {'source': 'system_init', 'category': 'permission_mode_narrower'}
+                                if warning not in self.diagnostics['warnings']:
+                                    self.diagnostics['warnings'].append(warning)
+                                self.diagnostics['permission_mode'] = evidence
+                                self._save_diagnostics()
+                            if self.permission_report is not None:
+                                self.permission_report({'requested': evidence['requested'],
+                                                        'observed': evidence['observed'], 'narrower': True})
                     elif kind == 'system' and event.get('subtype') == 'session_state_changed':
                         self.native_state = event.get('state')
                     elif kind == 'result':
@@ -1485,7 +1510,7 @@ class ClaudeExecution:
         if observed not in ('default', 'manual', 'auto', 'acceptEdits', 'plan', 'dontAsk', 'bypassPermissions'):
             observed = 'unknown'
         requested = self.request.get('permission_mode')
-        return {
+        evidence = {
             'requested': requested,
             'source': self.request.get('permission_mode_source', 'unknown'),
             'observed': observed,
@@ -1493,6 +1518,12 @@ class ClaudeExecution:
             'matches_request': (None if requested is None or observed == 'unknown' else
                                 requested == ('default' if observed == 'manual' else observed)),
         }
+        if evidence['matches_request'] is False:
+            # Whether Claude only asks or refuses more than requested (578): plan and dontAsk
+            # under either request, default (manual) under auto. Everything else is wider or
+            # not comparable (acceptEdits against auto).
+            evidence['narrower'] = observed in NARROWER_MODES.get(requested, ())
+        return evidence
 
     def _close(self) -> None:
         """Reap the owned process group, including tools; never equate ACK with exit."""
