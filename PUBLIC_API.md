@@ -82,7 +82,7 @@ notes (`install/`) are public with their documented flags:
   `configuration` command writes associates and lists the `agents` tool only;
   a package that adds its own tool writes its plugin as in 1.4.
 - `python -m graftling.codex.host --settings <file> [--directory <dir>]
-  [--output <file>] [--resume] <instruction>`. Unreleased (577): `--directory`
+  [--output <file>] [--resume] <instruction>`. 0.8.0 (577): `--directory`
   is optional; without it the data root is `GRAFTLING_DATA_ROOT`, else
   `<Session cwd>/.agents-control` (`adapter_request.session_parameters.cwd`,
   which must be an existing absolute directory; only `.agents-control` itself
@@ -171,7 +171,7 @@ notes (`install/`) are public with their documented flags:
 - The DSH host: the `GRAFTLING_DSH_CONFIG` variable naming that file and its
   keys (1.7). The agents DSH plugin starts `python -I -m graftling.dsh.host
   --config <file>` itself; its pipe protocol with the plugin is private.
-- Unreleased (577): the `GRAFTLING_DATA_ROOT` variable, an absolute directory,
+- 0.8.0 (577): the `GRAFTLING_DATA_ROOT` variable, an absolute directory,
   is the data root of every host that has no setting of its own, in place of
   `<project>/.agents-control`; it is created when missing (with its parents),
   and a relative or uncreatable value is refused naming the variable. Per host,
@@ -189,7 +189,7 @@ notes (`install/`) are public with their documented flags:
   marketplace plugin's `serve --project` then refuses before writing a
   configuration. The plugin module passes the value it reads to the private
   `context` operation as `--data-root`.
-- Unreleased (581): one installation serves every host. The Claude Code
+- 0.8.0 (581): one installation serves every host. The Claude Code
   marketplace `graftling` ships inside the installed package: the package
   directory holds `.claude-plugin/marketplace.json`, whose plugin is its
   `claude-plugin/`; the repository root is no marketplace. The DSH plugin
@@ -816,7 +816,7 @@ extension stays inert in a DSH-managed context (`DSH_SESSION_ID` or
 `DSH_AGENT_SOURCE`), whatever the variable says. A Pi child
 (`GRAFTLING_CONNECTION`) is unchanged and starts no host.
 
-Unreleased (585): a Pi subagent child is not Main and starts no host. The
+0.8.0 (585): a Pi subagent child is not Main and starts no host. The
 extension tests this after the two cases above and before anything else, with
 or without the flag and the variable: `PI_SUBAGENT_CHILD=1`,
 `PI_SUBAGENT_DEPTH` greater than 0, or no persistent Session file
@@ -2360,15 +2360,46 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
-- 578 (unreleased, not yet classified; the release decides): a Claude child whose
+- 0.8.0 is incompatible and raises the minor version, for three changes: 581
+  removes a released install route (an entry point), 576 changes an observable
+  default, and 585 removes the `agents` tool from a user's own `pi --no-session`
+  Session. A GraphTraj that relies on 576 needs `graftling>=0.8.0,<0.9`.
+- 581 (0.8.0, incompatible): one installation serves every host. 0.7.0's install of
+  graftling-dsh from the repository's GitHub address (the repository-root
+  `package.json` and `dsh/plugin_python.py`) and the repository-root Claude
+  marketplace (`.claude-plugin/marketplace.json`) are removed: a released entry point
+  is removed. The marketplace now ships inside the installed package.
+- 585 (0.8.0, incompatible): a Pi subagent child (`PI_SUBAGENT_CHILD=1`,
+  `PI_SUBAGENT_DEPTH` above 0, or a Session without a persistent Session file) starts
+  no host. A fix toward section 2, but a user's own `pi --no-session` Session, which
+  had the `agents` tool in 0.7.0, no longer has it: a default with observable
+  behaviour changes.
+- 578 (0.8.0, compatible): a Claude child whose
   system init reports a narrower permission mode than requested (`default` for `auto`,
   say) now completes instead of failing with `RUNTIME_REQUEST_FAILED`. A previously
-  failing run succeeding is an observable change. New: `status`'s `permission_mode`,
+  failing run succeeding is an observable change, but a fix that makes behaviour match
+  section 4.1, so compatible. New: `status`'s `permission_mode`,
   the `permissions` key `narrower`, the diagnostics warning `permission_mode_narrower`,
   the process fact `permission_mode`, `ClaudeExecution.permission_report`. A wider, not
   comparable or unknown mode still fails, and the turn is now interrupted at that init
   (section 4.1).
-- 576 (unreleased, not yet classified; the release decides): a Claude Code child
+- 577 (0.8.0, compatible): the optional variable `GRAFTLING_DATA_ROOT` chooses the
+  data root of every host without a setting of its own; Codex's `--directory` becomes
+  optional. A new optional variable and an optional argument; a host's own setting
+  still wins.
+- 574 (0.8.0, compatible): a Claude child requested by a catalog alias, or by the full
+  id a catalog entry resolves to, is accepted where it failed; new result field
+  `resolved_model`. Accepts more than before.
+- 572 (0.8.0, compatible): the Pi extension without `--agents-config` uses
+  `<Session cwd>/.agents-control`, and without `GRAFTLING_PYTHON` the first Python of
+  its own installation, then `python3`/`python` on `PATH`, that imports graftling
+  (graftling-dsh does the same since 581). Both started only with the setting before;
+  a given flag or variable is unchanged. Starts where it was refused before.
+- 570 (0.8.0, compatible): the DSH plugin's data root without `GRAFTLING_DSH_CONFIG`
+  is `<Session cwd>/.agents-control`, where the row did nothing before; a set variable
+  is unchanged. A main Session without a usable `cwd` still gets no host, now with a
+  message naming the variable.
+- 576 (0.8.0, incompatible): a Claude Code child
   created without `tools` gets `--tools` with its Claude Code's probed default set, so
   it has Bash again (0.7.0 passed no flag, and `--restricted` then removed Bash and
   WebFetch). The set is the unrestricted default, an observable default change from

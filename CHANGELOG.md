@@ -12,7 +12,18 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.8.0 (incompatible)
+
+Three changes are incompatible by section 7, so the minor version rises. 581 removes
+0.7.0's released install route: graftling-dsh from the repository's GitHub address
+(the root `package.json` and `dsh/plugin_python.py`) and the repository-root Claude
+marketplace (see Removed). 576 changes a default with observable behaviour: a Claude
+Code child created without `tools` gets Claude Code's probed default tool set instead
+of 0.7.0's restricted one (see Changed). 585 leaves a user's own `pi --no-session`
+Session without the `agents` tool (see Fixed). Everything else adds optional
+variables, arguments or result fields, accepts more than before, or fixes behaviour
+toward `PUBLIC_API.md`. A GraphTraj that relies on 576's default tools needs
+`graftling>=0.8.0,<0.9`; the 0.7 range `graftling>=0.7.0,<0.8` does not include 0.8.0.
 
 ### Added
 
@@ -26,6 +37,17 @@ The numbers in parentheses are the project's Task numbers.
   inherit the variable; a child holding `GRAFTLING_CONNECTION` starts no host,
   and the Claude Code plugin's server in such a child now refuses before
   writing `claude-host.json` (577).
+- graftling-dsh works without `GRAFTLING_DSH_CONFIG` (570): a DSH main Session's
+  data root is then `<Session cwd>/.agents-control`, the Claude Code host's default
+  for the same project; the host starts without `--config` and creates it when
+  missing. A Session without a usable `cwd` gets no host and its `agent/created`
+  handler names the variable. A set variable is unchanged.
+- Pi works once installed (572): without `--agents-config` the extension's data root
+  is `<Session cwd>/.agents-control`, created when missing; without
+  `GRAFTLING_PYTHON` it uses the first Python of its own installation, then `python3`
+  or `python` on `PATH`, that imports graftling, and otherwise stops naming
+  `GRAFTLING_PYTHON`. In a DSH-managed context without the flag it stays inert. A Pi
+  child (`GRAFTLING_CONNECTION`) is unchanged.
 
 ### Changed
 
@@ -43,6 +65,15 @@ The numbers in parentheses are the project's Task numbers.
   (`graftling/.claude-plugin/marketplace.json`, plugin `graftling/claude-plugin/`,
   now in the wheel), so the marketplace plugin is added from the installation.
   Its missing-Python message names the `uv tool install` command.
+- An observable default change (576): a Claude child created without `tools` now has
+  Claude Code's unrestricted default built-in set (without a login) instead of 0.7.0's
+  restricted one. On Claude Code 2.1.330 the probed set adds Bash, WebFetch, CronCreate,
+  Monitor and Workflow and drops Glob and Grep, which the restricted set had. Under the
+  user's login on the real host the child had Bash but not WebFetch, which account-level
+  availability withheld (see Fixed).
+- `tool_check` reports `default_tools_not_offered`: probed default tools a child
+  without `tools` does not have, other than disallowed ones, such as tools the
+  login's account-level availability withholds (576).
 
 ### Removed
 
@@ -109,18 +140,6 @@ The numbers in parentheses are the project's Task numbers.
   settings files (`--restricted`), unlike what 0.7.0's notes said; managed settings and
   graftling's own `--settings` apply. A user's own allow or deny rules reach a child
   only through create's `tools` and `disallowed_tools`.
-
-### Changed
-
-- An observable default change (576): a Claude child created without `tools` now has
-  Claude Code's unrestricted default built-in set (without a login) instead of 0.7.0's
-  restricted one. On Claude Code 2.1.330 the probed set adds Bash, WebFetch, CronCreate,
-  Monitor and Workflow and drops Glob and Grep, which the restricted set had. Under the
-  user's login on the real host the child had Bash but not WebFetch, which account-level
-  availability withheld (see Fixed).
-- `tool_check` reports `default_tools_not_offered`: probed default tools a child
-  without `tools` does not have, other than disallowed ones, such as tools the
-  login's account-level availability withholds (576).
 
 ## 0.7.0 (incompatible)
 
