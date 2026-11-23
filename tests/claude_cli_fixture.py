@@ -42,6 +42,13 @@ def emit(value: dict) -> None:
 if '--version' in sys.argv:
     print('2.1.299 (Claude Code)')
     raise SystemExit
+if '--no-session-persistence' in sys.argv and '--restricted' not in sys.argv:
+    # graftling's default-tools probe (576): one init, then wait to be stopped.
+    sys.stdin.readline()
+    print(json.dumps({'type': 'system', 'subtype': 'init', 'tools': os.environ.get(
+        'CLAUDE_FIXTURE_DEFAULT_TOOLS', 'Bash,Read,Edit,Write').split(',')}), flush=True)
+    time.sleep(30)
+    raise SystemExit
 if os.environ.get('CLAUDE_FIXTURE_FAIL'):
     print('controlled startup failure', file=sys.stderr)
     raise SystemExit(17)

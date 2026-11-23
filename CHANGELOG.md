@@ -12,7 +12,9 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased (compatible)
+## Unreleased
+
+### Fixed
 
 - A Claude child requested by a catalog alias such as `haiku` no longer fails at
   start with `RUNTIME_REQUEST_FAILED` when Claude reports the full id its catalog
@@ -21,6 +23,41 @@ The numbers in parentheses are the project's Task numbers.
   A full id that a catalog entry resolves to, such as `claude-haiku-5-5`, is now a
   candidate of the native Claude login instead of `invalid-model`. Claude entries
   from `discover_models` carry `resolved_model` (574).
+- A Claude Code child created without `tools` has Bash again (576). 0.7.0 passed no
+  `--tools`, and the child's `--restricted` then removed the tools that run commands
+  or code (Bash and the like) and WebFetch; `--tools default` does not bring them back.
+  Now `ClaudeExecution.tool_arguments()` passes `--tools` with
+  `ClaudeExecution.default_tool_set()`: the default built-in set of the child's own
+  Claude Code, read at run time by starting the same executable once without
+  `--restricted`, with no settings sources, MCP servers or credential, a closed base URL
+  and an empty graftling-owned config directory, stopped at its system init before any
+  model call. That is Claude Code's default set without a login: account-level
+  availability under the user's login can remove tools from it (on the real host
+  WebFetch was absent from every logged-in session and present only in the no-login
+  probe). Such tools are still passed in `--tools`, Claude Code does not offer them,
+  and the child reports them in `tool_check`'s `default_tools_not_offered`. The set
+  is cached in the data root's private state
+  (`claude-default-tools/`); nothing is hard-coded. If it cannot be read, the child does
+  not start and the create fails `RUNTIME_REQUEST_FAILED`, naming the cause and
+  suggesting create's `tools`. A subclass whose `tool_arguments()` returns its own flags
+  without calling the base never probes. `--restricted`, the mandatory sandbox and the
+  runtime-home and private-state denies are unchanged.
+- Corrected documentation (576): a Claude child does not read user, project or local
+  settings files (`--restricted`), unlike what 0.7.0's notes said; managed settings and
+  graftling's own `--settings` apply. A user's own allow or deny rules reach a child
+  only through create's `tools` and `disallowed_tools`.
+
+### Changed
+
+- An observable default change (576): a Claude child created without `tools` now has
+  Claude Code's unrestricted default built-in set (without a login) instead of 0.7.0's
+  restricted one. On Claude Code 2.1.330 the probed set adds Bash, WebFetch, CronCreate,
+  Monitor and Workflow and drops Glob and Grep, which the restricted set had. Under the
+  user's login on the real host the child had Bash but not WebFetch, which account-level
+  availability withheld (see Fixed).
+- `tool_check` reports `default_tools_not_offered`: probed default tools a child
+  without `tools` does not have, other than disallowed ones, such as tools the
+  login's account-level availability withholds (576).
 
 ## 0.7.0 (incompatible)
 
