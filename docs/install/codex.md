@@ -5,27 +5,24 @@ This runs a Codex Session as the host of its child Agents. Back to the
 
 ## Prerequisites
 
-- Python 3.12 or later.
+- [uv](https://docs.astral.sh/uv/). It provides Python 3.12 or later.
 - Codex, installed and logged in. There is no version floor in agents; the real runs
   used `codex-cli` 0.164.0, and some behaviour below is stated for that version.
 
-## Install the wheel
+## Install graftling
 
-In a checkout of the repository, or skip the `pip wheel` line and give `pip install`
-the path of a wheel you were given:
+Once, with uv, as in the [README](../../README.md#install). Every host uses this one
+installation:
 
 ```sh
-AGENTS_VENV=/absolute/agents-venv
-python3 -m venv "$AGENTS_VENV"
-WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
-"$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
+uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
 
 ## Distribution
 
-There is no Codex plugin and nothing to install into Codex. The host is a command in
-this wheel, `python -m graftling.codex.host`. It starts its own Codex service and
+There is no Codex plugin and nothing to install into Codex. The host is a command of
+the one installation, `"$AGENTS_PYTHON" -m graftling.codex.host`. It starts its own Codex service and
 one parent Session. That Session sees the `agents` tool because the host registers it
 for that Session.
 
@@ -85,7 +82,7 @@ children get. No native tool is removed.
 
 ```sh
 export GRAFTLING_DATA_ROOT=/absolute/agents-data   # or omit for /absolute/work/.agents-control
-"$AGENTS_VENV/bin/python" -m graftling.codex.host \
+"$AGENTS_PYTHON" -m graftling.codex.host \
   --settings native-settings.json \
   --output /absolute/agents-data/last-run.json \
   'Use only the MCP tool agents, not spawn_agent. Make these tool calls one at a time, in this order. Where an argument says <agent from 1>, use the "agent" field returned by call 1.
@@ -109,7 +106,7 @@ A refused start prints `{"error": {"code", "message"}}` and exits `1`.
 If the parent itself needs a native approval, the request prints to stderr as
 `{"native_request": ...}` and the host reads one JSON response from stdin.
 
-> Not yet walked on a real host from a wheel-only install: these steps run as written
+> Not yet walked on a real host from a uv-only install: these steps run as written
 > in a clean environment. The same host ran on real Codex 0.164.0 in earlier checks.
 
 ## See that it worked
@@ -195,7 +192,7 @@ readable one, so the host refuses that layout at start with `invalid-config`.
 
 ## Upgrade
 
-Install the new wheel into the same environment, as above. Nothing else is generated,
+Install the new version with uv, as in the [README](../../README.md#install). Nothing else is generated,
 so there is nothing to regenerate. Use `--resume` with the same data root to
 continue the parent; its children stay listed by `status`.
 

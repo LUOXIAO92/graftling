@@ -1,9 +1,8 @@
 /** Independent native context/display hooks and the installed official MCP client. */
 import { execFile, spawn } from 'node:child_process';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { installCommunication } from './communication.mjs';
 
@@ -26,43 +25,51 @@ export const Config = z.object({ mcpCommand: z.string(), mcpArgs: z.array(String
   mcpEnv: z.array(String).default(['GRAFTLING_CONNECTION']), mcpServer: z.string().default(MCP_SERVER) });
 // How long a Session that starts no turn by itself waits before taking held notices.
 const READY_MS = 2000;
-// True when this file runs inside graftling's repository, as DSH installs it from the
-// repository root's package.json: the Python sources are here to build from.
-const SOURCES = existsSync(fileURLToPath(new URL('../../../pyproject.toml', import.meta.url)));
-// The pending or found Python built from SOURCES, for every Session of this DSH.
-let built;
+// The Python found for this file's graftling installation, for every Session of this DSH.
+let found;
 
-/** DSH's own home rule (dsh-home-paths resolveDshHome): a non-blank DSH_HOME, else ~/.dsh. */
-function dshHome(environment) {
-  const named = environment.DSH_HOME;
-  if (!named?.trim()) return join(homedir(), '.dsh');
-  return resolve(named === '~' || named.startsWith('~/') ? join(homedir(), named.slice(1)) : named);
+/** Whether ``candidate`` imports graftling from ``expected`` (its __init__.py), with -I. */
+function importsHere(candidate, expected, environment) {
+  return new Promise(done => execFile(candidate,
+    ['-I', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
+    { env: environment, timeout: 20000 }, (error, stdout) => done(!error && stdout.trim() === expected)));
 }
 
 /**
- * The Python the host and the MCP server run: GRAFTLING_PYTHON unchanged when set;
- * else, from graftling's repository, the environment plugin_python.py builds once
- * under the DSH home (python3 on PATH runs it). A refusal keeps no result, so the
- * next Session tries again after the fix.
+ * The Python the host and the MCP server run (581): GRAFTLING_PYTHON unchanged when
+ * set. Otherwise the interpreters of the installation this file belongs to: DSH's
+ * `dsh plugin add <installed graftling/dsh>` links the profile's package to it, so
+ * this file's real path is <prefix>/lib/pythonX.Y/site-packages/graftling/dsh/ and
+ * <prefix>/bin/ holds its Python; then python3 and python on PATH (an editable
+ * install). A candidate counts only when it imports graftling from this same
+ * directory, so the plugin and the Python package are always one installation.
+ * Nothing is built or written. A refusal keeps no result, so the next Session tries
+ * again after the fix.
  */
-function pluginPython(environment) {
+function graftlingPython(environment) {
   if (environment.GRAFTLING_PYTHON) return Promise.resolve(environment.GRAFTLING_PYTHON);
-  if (!SOURCES) {
-    return Promise.reject(new Error('The agents DSH host needs GRAFTLING_PYTHON, the Python that has graftling ' +
-      'installed (docs/install/dsh.md).'));
-  }
-  built ??= new Promise((found, refused) => execFile('python3',
-    ['-I', fileURLToPath(new URL('plugin_python.py', import.meta.url)), dshHome(environment)], { env: environment },
-    (error, stdout, stderr) => {
-      if (!error) return found(stdout.trim());
-      built = undefined;
-      refused(new Error(error.code === 'ENOENT'
-        ? 'graftling-dsh: there is no python3 on PATH; graftling needs Python 3.12 or later. Put one first on ' +
-          'PATH as python3 and start DSH again. Or set GRAFTLING_PYTHON to a Python that has graftling installed ' +
-          '(docs/install/dsh.md).'
-        : stderr.trim() || error.message));
-    }));
-  return built;
+  found ??= (async () => {
+    const directory = dirname(realpathSync(fileURLToPath(import.meta.url)));
+    const pkg = dirname(directory);
+    const site = dirname(pkg);
+    const candidates = [];
+    if (basename(site) === 'site-packages') {
+      const lib = dirname(site);
+      const prefix = dirname(dirname(lib));
+      candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+    }
+    candidates.push('python3', 'python');
+    for (const candidate of candidates) {
+      if (await importsHere(candidate, join(pkg, '__init__.py'), environment)) return candidate;
+    }
+    let version = '<version>';
+    try { version = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).version; } catch {}
+    throw new Error(`graftling-dsh: no Python that imports this graftling (${pkg}) was found; tried ${
+      candidates.join(', ')}. Install graftling once with uv: uv tool install ` +
+      `"git+https://github.com/LUOXIAO92/graftling.git@v${version}", then add graftling-dsh from that install ` +
+      '(docs/install/dsh.md). Or set GRAFTLING_PYTHON to the Python graftling is installed in.');
+  })();
+  return found.catch(error => { found = undefined; throw error; });
 }
 
 /** Preserve durable native source; fork ancestry alone is not delegation. */
@@ -233,7 +240,7 @@ function applyHost(ctx) {
       requireProjectDirectory(agent.session.header.cwd);
     }
     let python;
-    const started = pluginPython(environment).then(found => startAgentHost(agent,
+    const started = graftlingPython(environment).then(found => startAgentHost(agent,
       { ...environment, GRAFTLING_PYTHON: python = found }, notice =>
         ctx.get('agentMessages').receive(noticeMessage(notice, id))));
     hosts.set(id, started);
