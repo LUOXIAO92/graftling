@@ -25,7 +25,7 @@ def session_context(turn: DshExecution) -> dict | None:
 def bind_run(turn: DshExecution, run: Run, extra_tools: Sequence[ExtraTool] | None = None) -> None:
     """Use the existing core identity; no preparation or second controller.
 
-    ``extra_tools`` are the host's own tools served beside ``agents`` on the
+    ``extra_tools`` are the host's own tools served beside ``subagents`` on the
     same channel (:mod:`graftling.extra_tools`); each keeps its own authorization.
     """
     if run.call is None:

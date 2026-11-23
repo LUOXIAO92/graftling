@@ -1,6 +1,6 @@
 """Task-free Agent control: identity records, executions and actions.
 
-:class:`AgentControl` is the ``agents`` :class:`~graftling.Backend`. It owns
+:class:`AgentControl` is the ``subagents`` :class:`~graftling.Backend`. It owns
 one data root chosen by the caller and keeps, per Agent, a JSON record::
 
     <root>/control/agents/<agent>.json   identity, Session and executions
@@ -646,7 +646,7 @@ def _running(record: Mapping[str, Any]) -> dict | None:
 
 
 class AgentControl:
-    """The Task-free ``agents`` backend over one tool data root.
+    """The Task-free ``subagents`` backend over one tool data root.
 
     Parameters
     ----------
@@ -716,7 +716,7 @@ class AgentControl:
     # -- Backend --------------------------------------------------------
 
     def operate(self, action: str, arguments: Mapping[str, Any], binding: Binding) -> Outcome:
-        """Perform one validated ``agents`` action for the bound caller."""
+        """Perform one validated ``subagents`` action for the bound caller."""
         if action == "create":
             return self.create(arguments["runtime"], arguments["instruction"],
                                binding, name=arguments.get("name"),

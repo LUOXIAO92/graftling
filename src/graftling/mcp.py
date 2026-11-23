@@ -14,7 +14,7 @@ from graftling import __version__
 from graftling.calls import Call, CallCancelled, current_call, running_call
 from graftling.connection import call_owner
 from graftling.discovery import INPUT_SCHEMA
-from graftling.tool import AgentsError
+from graftling.tool import TOOL_NAME, AgentsError
 
 PROTOCOL_VERSION = '2025-06-18'
 
@@ -311,8 +311,8 @@ def serve_concurrent(input_stream: TextIO, output_stream: TextIO,
 
 
 def tool_documents() -> list[dict]:
-    """Expose only the lightweight agents entry."""
-    return [{'name': 'agents',
+    """Expose only the lightweight ``TOOL_NAME`` entry."""
+    return [{'name': TOOL_NAME,
              'description': "Create and control child Agents. These children are in agents' hierarchy, approvals "
                             "and records; a host's own subagents are not. Discover, describe, or execute an "
                             'Agent feature.',
@@ -320,7 +320,7 @@ def tool_documents() -> list[dict]:
 
 
 def child_tool_documents() -> list[dict]:
-    """Expose agents and any tools the owner declared for this child (graftling.extra_tools)."""
+    """Expose ``TOOL_NAME`` and any tools the owner declared for this child (graftling.extra_tools)."""
     from graftling.extra_tools import environment_descriptors
 
     return tool_documents() + environment_descriptors()
@@ -335,8 +335,8 @@ def call(request_id: Any, params: Mapping) -> dict:
     from graftling.extra_tools import environment_descriptors, tool_request
 
     name = params.get('name')
-    extra = name != 'agents' and name in [item['name'] for item in environment_descriptors()]
-    if name != 'agents' and not extra:
+    extra = name != TOOL_NAME and name in [item['name'] for item in environment_descriptors()]
+    if name != TOOL_NAME and not extra:
         return error_response(request_id, -32602, f"Unknown tool: {name}")
     request = params.get('arguments', {})
     if not isinstance(request, dict):
@@ -354,7 +354,7 @@ def call(request_id: Any, params: Mapping) -> dict:
 def main() -> None:
     """Run one stdio MCP entry over the owning Runtime's authenticated channel."""
     serve(sys.stdin, sys.stdout, lambda message: respond(
-        message, child_tool_documents, call, {'name': 'agents', 'version': __version__}))
+        message, child_tool_documents, call, {'name': TOOL_NAME, 'version': __version__}))
 
 
 if __name__ == '__main__':

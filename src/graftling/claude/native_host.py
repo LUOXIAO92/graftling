@@ -8,6 +8,7 @@ import time
 from typing import Callable, Iterable
 from uuid import UUID
 from graftling import AgentsError, AgentsResult
+from graftling.tool import TOOL_NAME
 
 class NativeCalls:
     """Consume each current native association exactly once, never a startup ID.
@@ -25,7 +26,7 @@ class NativeCalls:
     the same native Session executes; a preparation from another Session drops
     it, so it never crosses Sessions.
 
-    ``tools`` names the MCP tools served beside ``agents``; the host's plugin
+    ``tools`` names the MCP tools served beside ``TOOL_NAME``; the host's plugin
     must declare the same names (``claude_host_plugin``). No other tool is
     associated.
     """
@@ -36,7 +37,7 @@ class NativeCalls:
     ) -> None:
         """Bind the backend factory, permitted native cwd, the notice queue's project and added tools."""
         self.make_call = make_call
-        self.tools = frozenset({'agents', *tools})
+        self.tools = frozenset({TOOL_NAME, *tools})
         self.cwd = cwd.resolve()
         self.runner = runner
         self.prepared: list[dict] = []
@@ -108,7 +109,7 @@ class NativeCalls:
         """The consumer supplies its own pending-notice queue."""
         raise AgentsError('invalid-input', 'No notice receiver is configured.')
 
-    def call(self, request: dict, tool: str = 'agents') -> AgentsResult:
+    def call(self, request: dict, tool: str = TOOL_NAME) -> AgentsResult:
         """Consume the association matching this MCP request; others stay untouched.
 
         Queued associations were prepared earlier than the prepared ones, so

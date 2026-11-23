@@ -4,7 +4,8 @@ Run ``python -m graftling.cli '<discovery/describe/execute JSON>'`` inside
 an already bound host. The CLI never adopts an identity from its arguments or
 creates a second control backend. Without its own owner connection, an
 installed host package (entry point group ``graftling.hosts``) may claim the
-call with the same dispatch its MCP ``agents`` entry uses.
+call with the same dispatch its MCP ``subagents`` entry uses. The installed
+command is ``subagents`` (the MCP entry's is ``subagents-mcp``).
 """
 from __future__ import annotations
 

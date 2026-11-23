@@ -26,10 +26,12 @@ def display_response(
     ``seen`` belongs to the owning execution, so repeated native hook callbacks
     and repeated observations of its same child result do not draw twice. A
     command-hook caller relies on Claude's native per-tool hook invocation.
-    ``server`` is the MCP server the Session registered agents under; only
-    its ``mcp__<server>__agents`` calls are drawn.
+    ``server`` is the MCP server the Session registered ``TOOL_NAME`` under;
+    only its ``mcp__<server>__subagents`` calls are drawn.
     """
-    if event.get('hook_event_name') != 'PostToolUse' or event.get('tool_name') != f'mcp__{server}__agents':
+    from graftling.tool import TOOL_NAME
+
+    if event.get('hook_event_name') != 'PostToolUse' or event.get('tool_name') != f'mcp__{server}__{TOOL_NAME}':
         return {}
     request = event.get('tool_input')
     response = event.get('tool_response')

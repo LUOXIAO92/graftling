@@ -15,8 +15,8 @@ const { TypertRemoteService, Remote } = await import(pathToFileURL(require.resol
 const { createUserMessage } = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-llm')));
 export const name = 'agents';
 export const inject = ['tools', 'sessionQuery', 'agents'];
-// The MCP server name graftling registers its agents tool under: the model sees
-// mcp__<this>__agents.
+// The MCP server name graftling registers its subagents tool under: the model sees
+// mcp__<this>__subagents. The plugin id above is DSH's own agents service, not the tool.
 export const MCP_SERVER = 'graftling';
 // Without mcpCommand this is the host row: the installed bundle's own entry.
 // mcpEnv: the owner channel variable the MCP server inherits from this DSH.

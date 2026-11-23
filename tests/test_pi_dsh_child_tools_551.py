@@ -86,7 +86,7 @@ def test_pi_refuses_provably_unknown_entries(tmp_path: Path) -> None:
         assert refused.value.code == 'unavailable'
         assert ([*(tools['tools'] or ()), *tools['disallowed_tools']][-1]) in refused.value.message
     known = dict(request)
-    pi_apply_tools(known, {'tools': ['read', '+grep', 'mcp__graphtraj__tasks'], 'disallowed_tools': ['mcp__graphtraj__agents']},
+    pi_apply_tools(known, {'tools': ['read', '+grep', 'mcp__graphtraj__tasks'], 'disallowed_tools': ['mcp__graphtraj__subagents']},
                    own_server='graphtraj')
     assert 'unverified_tools' not in known
 

@@ -345,7 +345,7 @@ const host = {
  clock: {setTimeout: () => {}}, ui: {log: () => {}},
 };
 await handlers.get('session.start')(host, {}, async () => 'started');
-await handlers.get('tool.check:mcp__plugin_graftling_agents__agents')(host, {input: {action: 'discover'}},
+await handlers.get('tool.check:mcp__plugin_graftling_subagents__subagents')(host, {input: {action: 'discover'}},
   async () => ({decision: 'allow'}));
 console.log(JSON.stringify(runs[0]));
 '''

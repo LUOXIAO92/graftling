@@ -1,4 +1,4 @@
-"""The ``agents`` tool's own ``config.yml`` in its data root.
+"""The ``subagents`` tool's own ``config.yml`` in its data root.
 
 The data root is chosen by the caller: any directory for standalone use, or
 ``<project>/.graphtraj/swarm`` under GraphTraj. Nothing here reads another

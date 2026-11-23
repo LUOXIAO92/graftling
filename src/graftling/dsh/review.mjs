@@ -11,18 +11,20 @@ import { writeFileSync } from 'node:fs';
 
 export const name = 'agents-review';
 export const MARKER = 'agents-review';
+// graftling's own MCP tool: graftling.tool.TOOL_NAME, which a test compares with this.
+export const TOOL = 'subagents';
 
 /**
  * ``config.mcpServer`` names the server the agents plugin row registered. Its
- * agents tool is the child's channel to its parent, limited by agents'
+ * TOOL is the child's channel to its parent, limited by graftling's
  * authority checks, and must work when the reviewer is down, so it alone is not
- * reviewed. A tool named agents on any other MCP server is reviewed; without
+ * reviewed. A tool named TOOL on any other MCP server is reviewed; without
  * ``mcpServer`` every tool is.
  */
 export function apply(ctx, config) {
-  // ``config.ownerTools`` (551): the extra tools the owner declared on that server (e.g. tasks); like agents
+  // ``config.ownerTools`` (551): the extra tools the owner declared on that server (e.g. tasks); like TOOL
   // they are the owner's own entries with their own authorization, so they are not reviewed either.
-  const exempt = new Set(config.mcpServer ? ['agents', ...(Array.isArray(config.ownerTools) ? config.ownerTools : [])]
+  const exempt = new Set(config.mcpServer ? [TOOL, ...(Array.isArray(config.ownerTools) ? config.ownerTools : [])]
     .filter(name => typeof name === 'string' && name).map(name => `mcp__${config.mcpServer}__${name}`) : []);
   ctx.on('tools/pre-execute', async (exec, next) => {
     const decision = await next();

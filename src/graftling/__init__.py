@@ -1,4 +1,4 @@
-"""Independent ``agents`` tool for cross-Runtime child Agents.
+"""Independent ``subagents`` tool for cross-Runtime child Agents.
 
 The package depends on no GraphTraj module. :class:`AgentControl` is the
 Task-free control backend over a caller-chosen data root; Runtime drivers

@@ -14,7 +14,7 @@ def event(action: str, text: str, execution: str = 'execution', server: str = 'g
     request = {'action': action, 'agent': 'agent-child'}
     if action == 'send':
         request['message'] = text
-    return {'hook_event_name': 'PostToolUse', 'tool_name': f'mcp__{server}__agents',
+    return {'hook_event_name': 'PostToolUse', 'tool_name': f'mcp__{server}__subagents',
             'session_id': 'native-parent', 'tool_use_id': 'tool-' + action,
             'tool_input': request, 'tool_response': {'structuredContent': {
                 'action': action, 'agent': 'agent-child', 'result': {

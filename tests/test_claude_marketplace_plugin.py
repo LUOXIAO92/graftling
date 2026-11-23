@@ -42,7 +42,7 @@ def test_manifests_name_graftling_and_bake_in_no_path() -> None:
     assert not (REPOSITORY / '.claude-plugin').exists(), 'the checkout is no second marketplace'
     manifest = json.loads((PLUGIN / '.claude-plugin' / 'plugin.json').read_text())
     assert (manifest['name'], manifest['version']) == ('graftling', graftling.__version__)
-    server = manifest['mcpServers']['agents']
+    server = manifest['mcpServers']['subagents']
     assert server == {'command': 'sh', 'args': ['${CLAUDE_PLUGIN_ROOT}/bin/graftling-host', 'serve',
                                                 '--project', '${CLAUDE_PROJECT_DIR}']}
     assert json.loads((PLUGIN / 'hooks' / 'hooks.json').read_text()) == {'modules': ['./host_context.mjs']}
@@ -125,7 +125,7 @@ def test_host_plugin_handles_only_its_servers_tools(tmp_path: Path, server: str 
     module.parent.mkdir()
     module.write_text(files[str(module)])
     name = server or 'graftling'
-    assert handled_tools(module) == [f'mcp__{name}__agents', f'mcp__{name}__tasks']
+    assert handled_tools(module) == [f'mcp__{name}__subagents', f'mcp__{name}__tasks']
 
 
 def test_configuration_write_registers_graftling_and_drops_its_old_agents_entry(
@@ -143,7 +143,7 @@ def test_configuration_write_registers_graftling_and_drops_its_old_agents_entry(
     assert set(servers) == {'graftling', 'other'} and servers['other'] == other
     assert 'graftling.claude.host' in servers['graftling']['args']
     assert handled_tools(project / '.claude/skills/agents-claude-host/hooks/host_context.mjs') == [
-        'mcp__graftling__agents']
+        'mcp__graftling__subagents']
 
     # An agents entry that does not start this host is someone else's and stays.
     (project / '.mcp.json').write_text(json.dumps({'mcpServers': {'agents': other}}))
@@ -248,7 +248,7 @@ const runs = [], log = [], registrations = [];
 const host = {
  session: {id: async () => 'main', cwd: async () => '/project/sub'},
  command: {register: async entry => registrations.push(entry)},
- tool: {list: async () => [{name: 'mcp__plugin_graftling_agents__agents'}]},
+ tool: {list: async () => [{name: 'mcp__plugin_graftling_subagents__subagents'}]},
  env: {get: async key => env[key]},
  process: {run: async (argv, options) => {
    runs.push(argv);
@@ -258,10 +258,11 @@ const host = {
  clock: {setTimeout: () => {}},
  ui: {log: value => log.push(value)},
 };
-assert.ok(handlers.has('tool.check:mcp__plugin_graftling_agents__agents'));
-assert.ok(!handlers.has('tool.check:mcp__agents__agents'));
+assert.ok(handlers.has('tool.check:mcp__plugin_graftling_subagents__subagents'));
+assert.ok(!handlers.has('tool.check:mcp__graftling__subagents'));
+assert.ok(!handlers.has('tool.check:mcp__plugin_graftling_agents__subagents'));
 await handlers.get('session.start')(host, {}, async () => 'started');
-const check = handlers.get('tool.check:mcp__plugin_graftling_agents__agents');
+const check = handlers.get('tool.check:mcp__plugin_graftling_subagents__subagents');
 const decided = await check(host, {input: {action: 'discover'}}, async () => ({decision: 'allow'}));
 if (inert) {
  assert.equal(registrations.length, 0);
@@ -279,7 +280,7 @@ if (inert) {
  assert.deepEqual(runs[0], [python, '-m', 'graftling.claude.host', 'context', '--project-from', '/project/sub']);
  await handlers.get('command.run')(host);
  assert.ok(log.includes(`graftling 0.5.0 at ${python}`), log.join('\n'));
- assert.ok(log.includes('MCP agents registered'));
+ assert.ok(log.includes('MCP subagents registered'));
  const ignored = "GRAFTLING_CLAUDE_HOST_CONFIG names another project's host; the plugin ignored it";
  assert.equal(log.includes(ignored), foreign, log.join('\n'));
 }

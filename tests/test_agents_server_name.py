@@ -54,7 +54,9 @@ for (const name of JSON.parse(process.argv[3])) {
 console.log(JSON.stringify(asked));
 '''
 
-TOOLS = ['mcp__graftling__agents', 'mcp__agents__agents', 'mcp__other__agents', 'mcp__graphtraj__agents', 'Bash']
+# The old tool name is a different tool now: reviewed on every server, the owner's included.
+TOOLS = ['mcp__graftling__subagents', 'mcp__agents__subagents', 'mcp__other__subagents', 'mcp__graphtraj__subagents',
+         'mcp__graftling__agents', 'mcp__graphtraj__agents', 'Bash']
 
 
 def node(script: str, *arguments: str, **environment: str) -> object:
@@ -75,7 +77,7 @@ def test_pi_registers_its_server_and_reviews_every_other_agents_tool(server: str
     found = node(PI, (SOURCE / 'pi/extension.mjs').as_uri(), json.dumps({'server': server, 'tools': TOOLS}),
                  GRAFTLING_CONNECTION='/fake/connection', GRAFTLING_PYTHON='/fake/python')
     assert found['servers'] == [name]
-    assert found['asked'] == found['blocked'] == [tool for tool in TOOLS if tool != f'mcp__{name}__agents']
+    assert found['asked'] == found['blocked'] == [tool for tool in TOOLS if tool != f'mcp__{name}__subagents']
 
 
 @pytest.mark.parametrize('server', ['graftling', 'graphtraj', None])
@@ -83,7 +85,7 @@ def test_dsh_review_row_lets_through_only_the_registered_servers_agents_tool(tmp
     """The row's mcpServer names the one agents tool not reviewed; without it every call is reviewed."""
     config = {'readyFile': str(tmp_path / 'ready'), **({'mcpServer': server} if server else {})}
     asked = node(DSH, (SOURCE / 'dsh/review.mjs').as_uri(), json.dumps(config), json.dumps(TOOLS))
-    assert asked == [tool for tool in TOOLS if tool != f'mcp__{server}__agents']
+    assert asked == [tool for tool in TOOLS if tool != f'mcp__{server}__subagents']
 
 
 @pytest.mark.parametrize('mcp', [True, False])

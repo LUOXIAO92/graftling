@@ -5,17 +5,22 @@
  * It never caches session.start as identity across clear/resume/branch.
  */
 
+// graftling's own MCP tool, the only one whose exchange this module renders. It
+// is graftling.tool.TOOL_NAME; graftling.claude.plugin refuses a copy whose
+// line differs, so the two cannot drift.
+const TOOL = "subagents";
 // The tools this module associates. claude_host_plugin() replaces this line in
-// the written copy with the tools a package declares beside agents.
-const TOOLS = ["agents"];
+// the written copy with the tools a package declares beside TOOL.
+const TOOLS = [TOOL];
 // The plugin whose MCP server serves these tools. null: the project's own
-// .mcp.json (configuration --write). The marketplace copy names its plugin,
-// whose tools Claude Code calls mcp__plugin_<plugin>_agents__<tool>.
+// .mcp.json (configuration --write). The marketplace copy names its plugin. Its
+// server key is TOOL (claude-plugin/.claude-plugin/plugin.json), so Claude Code
+// calls its tools mcp__plugin_<plugin>_subagents__<tool>.
 const PLUGIN = "graftling";
 // Without a plugin, the .mcp.json server serving these tools: Claude Code calls
 // them mcp__<server>__<tool>. claude_host_plugin() replaces this line too.
 const SERVER = "graftling";
-const PREFIX = PLUGIN ? `mcp__plugin_${PLUGIN}_agents__` : `mcp__${SERVER}__`;
+const PREFIX = PLUGIN ? `mcp__plugin_${PLUGIN}_${TOOL}__` : `mcp__${SERVER}__`;
 const INSTALL = 'Install the graftling wheel into a Python 3.12+ environment '
   + '(python -m pip install graftling-<version>-py3-none-any.whl) and set GRAFTLING_PYTHON '
   + 'to that python, in your shell or under env in ~/.claude/settings.json; then restart Claude Code.';
@@ -340,7 +345,7 @@ export function register(on) {
       try {
         ending.session = await $.session.id();
         const result = await next(event);
-        const request = name === 'agents' && event.action === 'execute'
+        const request = name === TOOL && event.action === 'execute'
           ? {action: event.feature, ...event.arguments} : {};
         await showFrames($, state, exchangeFrames(ending.session, request, result, displayed));
         return result;

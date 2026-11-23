@@ -9,8 +9,10 @@ const READY_MS = 2000;
 // How often, and how many times, to look for a notice's entry after its message_end.
 const ENTRY_POLL_MS = 20;
 const ENTRY_POLLS = 250;
-// The MCP server name graftling registers its agents tool under: the model sees
-// mcp__<this>__agents. A consumer registering under its own name passes `server`.
+// graftling's own MCP tool: graftling.tool.TOOL_NAME, which a test compares with this.
+export const TOOL = 'subagents';
+// The MCP server name graftling registers TOOL under: the model sees
+// mcp__<this>__subagents. A consumer registering under its own name passes `server`.
 export const MCP_SERVER = 'graftling';
 
 /**
@@ -42,7 +44,7 @@ export function registerAgentDisplay(pi, sdk, servers = [MCP_SERVER]) {
   pi.on('tool_result', (event, ctx) => {
     if (!ctx.hasUI || event.isError || !servers.includes(event.details?.server)) return;
     const tool = event.details.tool;
-    const input = tool === 'agents' && event.input.action === 'execute'
+    const input = tool === TOOL && event.input.action === 'execute'
         ? {action: event.input.feature, ...event.input.arguments} : undefined;
     if (!input) return;
     const result = event.structuredContent?.structuredContent;
@@ -373,13 +375,13 @@ export function ownerTools(environment = process.env, server = MCP_SERVER) {
   let declared;
   try { declared = JSON.parse(environment.GRAFTLING_EXTRA_TOOLS || '[]'); } catch { declared = []; }
   if (!Array.isArray(declared)) return [];
-  return declared.filter(item => typeof item?.name === 'string' && /^[A-Za-z0-9_-]+$/.test(item.name) && item.name !== 'agents')
+  return declared.filter(item => typeof item?.name === 'string' && /^[A-Za-z0-9_-]+$/.test(item.name) && item.name !== TOOL)
     .map(item => `mcp__${server}__${item.name}`);
 }
 
 export function registerReview(pi, environment = process.env, server = MCP_SERVER) {
-  const agentsTool = `mcp__${server}__agents`;
-  // The owner's own entries pass without an ask: agents and every extra tool it declared (551).
+  const agentsTool = `mcp__${server}__${TOOL}`;
+  // The owner's own entries pass without an ask: TOOL and every extra tool it declared (551).
   const exempt = new Set([agentsTool, ...ownerTools(environment, server)]);
   const title = environment.GRAFTLING_PI_REVIEW || globalThis[REVIEW_TITLE];
   delete environment.GRAFTLING_PI_REVIEW;

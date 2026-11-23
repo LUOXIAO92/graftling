@@ -35,9 +35,9 @@ def test_the_pi_extension_export_is_listed() -> None:
     assert 'export function childServer(' in source
 
 
-def test_extra_tool_table_refuses_the_agents_name() -> None:
-    """The published table keeps its checks: ``agents`` cannot be an extra tool."""
-    descriptor = {'name': 'agents', 'description': 'x', 'inputSchema': {'type': 'object'}}
+def test_extra_tool_table_refuses_the_subagents_name() -> None:
+    """The published table keeps its checks: ``subagents`` cannot be an extra tool."""
+    descriptor = {'name': 'subagents', 'description': 'x', 'inputSchema': {'type': 'object'}}
     with pytest.raises(ValueError):
         extra_tool_table([(descriptor, lambda arguments: AgentsResult({}))])
 

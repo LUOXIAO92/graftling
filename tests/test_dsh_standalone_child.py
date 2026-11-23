@@ -176,7 +176,7 @@ def test_a_missing_stored_dsh_session_is_not_resumable(tmp_path: Path, dsh: dict
     invoke('wait', agent=agent, timeout_seconds=10)
     for log in (FakeDshService.instances[0].logs / 'workspace').rglob('v4.jsonl'):
         log.unlink()
-    result = call('agents', {'action': 'execute', 'feature': 'resume', 'arguments': {'agent': agent, 'message': 'two'}})
+    result = call('subagents',{'action': 'execute', 'feature': 'resume', 'arguments': {'agent': agent, 'message': 'two'}})
     assert result.failed
     error = json.dumps(result.document)
     assert 'RUNTIME_SESSION_NOT_RESUMABLE' in error and 'session/not-found' in error, error
@@ -197,7 +197,7 @@ def claude_main(host: IndependentCalls, cwd: Path):
 
     def invoke(feature: str, **arguments) -> dict:
         """Call as the Main; ``invoke.shown`` keeps the notices its results carried."""
-        result = call('agents', {'action': 'execute', 'feature': feature, 'arguments': arguments})
+        result = call('subagents',{'action': 'execute', 'feature': feature, 'arguments': arguments})
         assert not result.failed, result.document
         invoke.shown.extend(result.document.get('main_notices', []))
         return result.document
@@ -457,7 +457,7 @@ call = host.make_call(str(uuid4()), work)
 shown = []
 
 def run(feature, **arguments):
-    document = call('agents', {'action': 'execute', 'feature': feature, 'arguments': arguments}).document
+    document = call('subagents',{'action': 'execute', 'feature': feature, 'arguments': arguments}).document
     shown.extend(document.get('main_notices', []))
     return document
 
@@ -525,8 +525,8 @@ def test_the_dsh_mcp_command_serves_without_graphtraj(tmp_path: Path) -> None:
                             input=''.join(json.dumps(message) + '\n' for message in messages),
                             capture_output=True, text=True, timeout=30)
     replies = [json.loads(line) for line in result.stdout.splitlines()]
-    assert replies[0]['result']['serverInfo']['name'] == 'agents', result.stderr
-    assert [tool['name'] for tool in replies[1]['result']['tools']] == ['agents']
+    assert replies[0]['result']['serverInfo']['name'] == 'subagents', result.stderr
+    assert [tool['name'] for tool in replies[1]['result']['tools']] == ['subagents']
 
 
 def test_delivered_plugin_loads_from_dsh_agent_package_alone(tmp_path: Path) -> None:
@@ -743,7 +743,7 @@ def test_a_dsh_that_cannot_start_tells_the_standalone_parent_why(
     (tmp_path / 'agents/config.yml').write_text('save_normalized_sessions: true\n')
     host = IndependentCalls(tmp_path / 'agents', tmp_path, {}, {'dsh': dsh})
     _, call, _ = claude_main(host, tmp_path)
-    created = call('agents', {'action': 'execute', 'feature': 'create',
+    created = call('subagents',{'action': 'execute', 'feature': 'create',
                               'arguments': {'runtime': 'dsh', 'instruction': 'one'}})
     assert created.failed
     failure = created.document['result']['last_result']['error']
@@ -766,7 +766,7 @@ def test_a_resume_that_cannot_start_tells_the_standalone_parent_why(
         raise DshError('RUNTIME_START_FAILED', REASON)
 
     monkeypatch.setattr(FakeDshService, 'start', exits_before_authentication)
-    resumed = call('agents', {'action': 'execute', 'feature': 'resume', 'arguments': {'agent': agent, 'message': 'two'}})
+    resumed = call('subagents',{'action': 'execute', 'feature': 'resume', 'arguments': {'agent': agent, 'message': 'two'}})
     assert resumed.failed
     failure = resumed.document['result']['last_result']['error']
     assert failure['code'] == 'RUNTIME_START_FAILED' and REASON in failure['message']

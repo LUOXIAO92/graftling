@@ -14,6 +14,7 @@ from typing import TextIO
 from uuid import UUID
 
 from graftling import AgentControl, AgentsError, AgentsResult, Caller, __version__, bind
+from graftling.tool import TOOL_NAME
 from graftling.connection import connection_operation, host_alive, worker_connection
 from graftling.discovery import handle_request
 from graftling.process import process_ancestors, process_executable
@@ -204,7 +205,7 @@ def serve_refusal(error: Exception, log: Path, descriptors=tool_documents,
 
     try:
         serve_until_ended(mcp_in, mcp_out, lambda message: respond(
-            message, descriptors, call, server or {'name': 'agents', 'version': __version__}))
+            message, descriptors, call, server or {'name': TOOL_NAME, 'version': __version__}))
     finally:
         record.unlink(missing_ok=True)
 
@@ -295,9 +296,9 @@ class IndependentCalls(NativeCalls):
         with self.lock:
             self.attach(session)
         def call(tool: str, request: dict) -> AgentsResult:
-            """Expose agents only through the verified native association."""
-            if tool != 'agents':
-                raise AgentsError('invalid-input', 'The independent host exposes agents only.')
+            """Expose ``TOOL_NAME`` only through the verified native association."""
+            if tool != TOOL_NAME:
+                raise AgentsError('invalid-input', f'The independent host exposes {TOOL_NAME} only.')
             result = handle_request(request, self.callers[session], files=cwd)
             # Reuse the native host's next-result delivery when prompt push is
             # unavailable (notably print mode); the mod renders this same fact.
@@ -603,8 +604,8 @@ def main() -> None:
 
     def call(identity: object, params: dict) -> dict:
         """Return one progressive tool result after native caller verification."""
-        if params.get('name') != 'agents' or not isinstance(params.get('arguments', {}), dict):
-            return error_response(identity, -32602, 'Expected agents and object arguments.')
+        if params.get('name') != TOOL_NAME or not isinstance(params.get('arguments', {}), dict):
+            return error_response(identity, -32602, f'Expected {TOOL_NAME} and object arguments.')
         try:
             result = calls.call(params.get('arguments', {}))
         except Exception as error:
@@ -630,7 +631,7 @@ def main() -> None:
                         log_replaced_channel(channel_file)
                     with ended_by_claude():
                         serve_concurrent(mcp_in, mcp_out, lambda message: respond(
-                            message, tool_documents, call, {'name': 'agents', 'version': __version__}))
+                            message, tool_documents, call, {'name': TOOL_NAME, 'version': __version__}))
                 finally:
                     channel_file.unlink()
     finally:

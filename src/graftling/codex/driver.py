@@ -148,7 +148,7 @@ class CodexDriver:
         """Capture explicit native settings without starting a Runtime.
 
         ``extra_tools(run)`` returns the host's own tools for that Agent's
-        child, served beside ``agents`` (:mod:`graftling.extra_tools`).
+        child, served beside ``subagents`` (:mod:`graftling.extra_tools`).
         """
         self.settings = deepcopy(dict(settings)) if settings is not None else None
         self.execution = execution

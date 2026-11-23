@@ -25,7 +25,7 @@ from test_dsh_standalone_child import dsh  # noqa: F401 - pytest fixture
 
 SOURCE = Path(graftling.__file__).resolve().parent
 TASKS = {'name': 'tasks', 'description': 'Host tasks.', 'inputSchema': {'type': 'object'}}
-CALLS = ['mcp__graphtraj__tasks', 'mcp__graphtraj__agents', 'mcp__other__tasks', 'Bash']
+CALLS = ['mcp__graphtraj__tasks', 'mcp__graphtraj__subagents', 'mcp__other__tasks', 'Bash']
 
 # Pi: which tool calls the review hook turns into an ask (the confirm answers deny).
 PI = r'''
@@ -98,7 +98,7 @@ def test_dsh_disallowed_owner_tool_is_not_offered(tmp_path: Path, monkeypatch: p
     assert list(bind(tmp_path, monkeypatch, []).extra_tools) == ['tasks']
     assert list(bind(tmp_path, monkeypatch, ['mcp__graphtraj__tasks', 'tool-web']).extra_tools) == []
     with pytest.raises(AgentsError) as refused:
-        bind(tmp_path, monkeypatch, ['mcp__graphtraj__agents'])
+        bind(tmp_path, monkeypatch, ['mcp__graphtraj__subagents'])
     assert refused.value.code == 'unavailable'
 
 
@@ -118,15 +118,15 @@ def test_pi_disallowed_owner_tool_is_excluded_natively(tmp_path: Path) -> None:
         ['--exclude-tools', 'mcp__graphtraj__tasks'], [])
 
 
-OWNED = ['mcp__graphtraj__agents', 'mcp__graphtraj__tasks']
+OWNED = ['mcp__graphtraj__subagents', 'mcp__graphtraj__tasks']
 
 
 def test_pi_available_set_keeps_the_owners_entries(tmp_path: Path) -> None:
     """Main's AU pi run: `--tools read,grep` declared no MCP tool. The owner's entries are always named."""
     assert tool_arguments({'tools': ['read', 'grep']}, tmp_path, OWNED)[0] == [
-        '--tools', 'read,grep,mcp__graphtraj__agents,mcp__graphtraj__tasks']
+        '--tools', 'read,grep,mcp__graphtraj__subagents,mcp__graphtraj__tasks']
     argv, _ = tool_arguments({'tools': ['read', 'grep'], 'disallowed_tools': ['mcp__graphtraj__tasks']}, tmp_path, OWNED)
-    assert argv == ['--tools', 'read,grep,mcp__graphtraj__agents', '--exclude-tools', 'mcp__graphtraj__tasks']
+    assert argv == ['--tools', 'read,grep,mcp__graphtraj__subagents', '--exclude-tools', 'mcp__graphtraj__tasks']
     # +/- entries change Pi's defaults and keep MCP tools; plain and +/- cannot be mixed, so nothing is added.
     assert tool_arguments({'tools': ['+grep']}, tmp_path, OWNED)[0] == ['--tools', '+grep']
     assert tool_arguments({}, tmp_path, OWNED)[0] == []
@@ -140,7 +140,7 @@ def test_pi_launch_names_the_owner_entries_in_its_argv(tmp_path: Path, monkeypat
     import inspect
 
     source = inspect.getsource(pi_execution.PiExecution.prepare_launch)
-    assert "f'mcp__{self.mcp_server}__agents'" in source
+    assert "f'mcp__{self.mcp_server}__{TOOL_NAME}'" in source
     assert "f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools" in source
     assert 'tool_arguments(request, source, owned)' in source
 

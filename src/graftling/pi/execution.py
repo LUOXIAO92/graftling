@@ -31,6 +31,7 @@ from graftling.child_env import child_environment, consumer_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from graftling.runtime import RuntimeAdapterError, SessionStarted, credential_environment
+from graftling.tool import TOOL_NAME
 
 
 INFORMATION = {'notify', 'setStatus', 'setWidget', 'setTitle', 'set_editor_text'}
@@ -90,7 +91,7 @@ def tool_arguments(request: Mapping[str, Any], agent_dir: Path,
     plain-name allowlist declares no MCP tool it does not name (Pi docs/cli.md;
     Main's AU pi run: `--tools read,grep` left the child no agents or tasks),
     so it also names ``owner_tools``, the owner's own MCP entries
-    (``mcp__<server>__agents`` and each declared extra tool), minus any that
+    (``mcp__<server>__subagents`` and each declared extra tool), minus any that
     ``disallowed_tools`` names: the available set narrows host tools and never
     drops the owner's entries. A requested built-in that the host's settings
     do not enable is returned for the parent's approval.
@@ -116,8 +117,8 @@ class AckLost(RuntimeAdapterError):
     """Pi got a command and did not acknowledge it, so it may have acted on it."""
 
 
-# The MCP server name the child's extension registers agents under: the model
-# sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+# The MCP server name the child's extension registers TOOL_NAME under: the model
+# sees mcp__<this>__subagents. A consumer serving its own entry sets ``mcp_server``.
 MCP_SERVER = 'graftling'
 
 
@@ -448,7 +449,7 @@ class PiExecution:
             argv += ['--thinking', request['reasoning_effort']]
         # 551: the child's tool choice; a built-in beyond the host's settings waits for its parent's allow.
         # The owner's own MCP entries exist only where the extension registers the child's server.
-        owned = ([f'mcp__{self.mcp_server}__agents', *(f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools)]
+        owned = ([f'mcp__{self.mcp_server}__{TOOL_NAME}', *(f'mcp__{self.mcp_server}__{name}' for name in self.extra_tools)]
                  if self.independent and address is not None else [])
         tool_argv, beyond = tool_arguments(request, source, owned)
         if beyond and not (self.independent and address is not None):

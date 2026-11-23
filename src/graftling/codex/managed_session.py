@@ -84,7 +84,7 @@ async def in_thread(function: Callable, *args: object) -> object:
 # app-server: item/autoApprovalReview/completed, GuardianApprovalReviewStatus).
 REVIEW_COMPLETED = 'item/autoApprovalReview/completed'
 RELAYED_REVIEWS = {'denied', 'timedOut', 'aborted'}
-# The name Codex's model sees the tool under: mcp__<this>__agents.
+# The name Codex's model sees the tool under: mcp__<this>__subagents.
 MCP_SERVER = 'graftling'
 
 
@@ -169,7 +169,7 @@ class CodexManagedExecution:
         nothing; ``extra_fields`` goes to the header of a Session first archived here.
         ``review`` is the reviewer judging this execution's native approvals, or
         ``None`` to keep Codex's own. ``extra_tools`` are the host's own tools
-        served beside ``agents`` on the child's channel (:mod:`graftling.extra_tools`).
+        served beside ``subagents`` on the child's channel (:mod:`graftling.extra_tools`).
         """
         self.context = restore_codex_context(request, context_evidence)
         self.connection_environment = recovery_environment(connection or {})

@@ -25,13 +25,15 @@ DESCRIPTOR = {'name': 'tasks', 'description': 'Host tasks.', 'inputSchema': {'ty
 
 
 def test_table_refuses_agents_and_repeats() -> None:
-    """``agents`` stays graftling's own name, and each name is served once."""
+    """``subagents`` stays graftling's own name, and each name is served once."""
     callback = lambda arguments: AgentsResult({})
-    for tools in ([({'name': 'agents'}, callback)], [(DESCRIPTOR, callback), (DESCRIPTOR, callback)],
+    for tools in ([({'name': 'subagents'}, callback)], [(DESCRIPTOR, callback), (DESCRIPTOR, callback)],
                   [({'name': ''}, callback)], [(DESCRIPTOR, None)]):
         with pytest.raises(ValueError):
             extra_tool_table(tools)
     assert extra_tool_table(None) == {}
+    # The old name is reserved no longer (591): only the tool's current name is.
+    assert list(extra_tool_table([({'name': 'agents'}, callback)])) == ['agents']
 
 
 def test_call_reports_refusals_as_failed_results() -> None:
@@ -61,7 +63,7 @@ def test_environment_descriptors_ignore_malformed(monkeypatch: pytest.MonkeyPatc
     assert environment_descriptors() == []
     monkeypatch.setenv(EXTRA_TOOLS_ENV, 'not json')
     assert environment_descriptors() == []
-    monkeypatch.setenv(EXTRA_TOOLS_ENV, json.dumps([{'name': 'agents'}, DESCRIPTOR, 3]))
+    monkeypatch.setenv(EXTRA_TOOLS_ENV, json.dumps([{'name': 'subagents'}, DESCRIPTOR, 3]))
     assert environment_descriptors() == [DESCRIPTOR]
 
 
@@ -89,14 +91,14 @@ def test_codex_child_lists_and_calls_host_tools(tmp_path: Path, native_settings:
             {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'},
             {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
              'params': {'name': 'tasks', 'arguments': {'action': 'discover'}}},
-            {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'agents',
+            {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'subagents',
              'arguments': {'action': 'execute', 'feature': 'status', 'arguments': {}}}},
             {'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
              'params': {'name': 'undeclared', 'arguments': {}}},
         ]))
         agent = invoke('create', runtime='codex', instruction='mcp-requests')['agent']
         responses = json.loads(invoke('wait', agent=agent, timeout_seconds=10)['result']['last_result']['last_message'])
-        assert [tool['name'] for tool in responses[0]['result']['tools']] == ['agents', 'tasks']
+        assert [tool['name'] for tool in responses[0]['result']['tools']] == ['subagents', 'tasks']
         assert responses[1]['result']['structuredContent'] == {'served_for': agent}
         assert responses[2]['result']['structuredContent']['result']['agents'] == []
         assert responses[3]['error']['code'] == -32602
@@ -115,7 +117,7 @@ def test_codex_child_without_host_tools_keeps_agents_only(tmp_path: Path, native
     agent = call({'action': 'create', 'runtime': 'codex', 'instruction': 'mcp-requests'}).document['agent']
     done = call({'action': 'wait', 'agent': agent, 'timeout_seconds': 10}).document
     responses = json.loads(done['result']['last_result']['last_message'])
-    assert [tool['name'] for tool in responses[0]['result']['tools']] == ['agents']
+    assert [tool['name'] for tool in responses[0]['result']['tools']] == ['subagents']
 
 
 def _claude(tmp_path: Path) -> tuple[ClaudeExecution, queue.Queue]:
@@ -148,7 +150,7 @@ def test_claude_child_lists_and_calls_host_tools(tmp_path: Path) -> None:
         extra_tools=[(DESCRIPTOR, lambda arguments: (calls.append(arguments), AgentsResult({'ok': 1}))[1])])
     execution.session = 'session'
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
-    assert [tool['name'] for tool in listed['result']['tools']] == ['agents', 'tasks']
+    assert [tool['name'] for tool in listed['result']['tools']] == ['subagents', 'tasks']
     called = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
                                        'params': {'name': 'tasks', 'arguments': {'action': 'discover'}}})
     assert called['result']['structuredContent'] == {'ok': 1}
@@ -163,7 +165,7 @@ def test_claude_child_without_host_tools_lists_agents_only(tmp_path: Path) -> No
     execution, replies = _claude(tmp_path)
     execution.configure_independent(archive=None, agents_callback=lambda request: AgentsResult({}))
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
-    assert [tool['name'] for tool in listed['result']['tools']] == ['agents']
+    assert [tool['name'] for tool in listed['result']['tools']] == ['subagents']
 
 
 def _can_use_tool(execution: ClaudeExecution, replies: queue.Queue, tool: str, identity: str) -> object:
@@ -205,7 +207,7 @@ def test_claude_disallowed_host_tool_is_not_offered(tmp_path: Path, denied: str)
                                     extra_tools=[(DESCRIPTOR, lambda arguments: AgentsResult({}))])
     assert execution.exempt_tools == []
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
-    assert [tool['name'] for tool in listed['result']['tools']] == ['agents']
+    assert [tool['name'] for tool in listed['result']['tools']] == ['subagents']
 
 
 @pytest.mark.parametrize('chosen', [['Read'], ['Read', 'WebSearch']])
@@ -214,7 +216,7 @@ def test_claude_tool_choice_keeps_agents_and_host_tools(tmp_path: Path, chosen: 
 
     Claude's --tools limits its built-in set; the in-process SDK server's tools
     are registered separately (before 551 every child ran with a fixed --tools
-    list and its startup check required mcp__<server>__agents in system init).
+    list and its startup check required mcp__<server>__subagents, then named agents, in system init).
     """
     execution, replies = _claude(tmp_path)
     execution.request.update(tools=chosen, disallowed_tools=[])
@@ -222,5 +224,5 @@ def test_claude_tool_choice_keeps_agents_and_host_tools(tmp_path: Path, chosen: 
                                     extra_tools=[(DESCRIPTOR, lambda arguments: AgentsResult({}))])
     assert execution.tool_arguments() == ['--tools', ','.join(chosen)]
     listed = _sdk(execution, replies, {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
-    assert [tool['name'] for tool in listed['result']['tools']] == ['agents', 'tasks']
+    assert [tool['name'] for tool in listed['result']['tools']] == ['subagents', 'tasks']
     assert execution.exempt_tools == [f'mcp__{execution.mcp_server}__tasks']

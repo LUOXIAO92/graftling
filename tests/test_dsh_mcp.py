@@ -21,7 +21,7 @@ def test_installed_dsh_official_mcp_client() -> None:
     ], capture_output=True, text=True, timeout=20)
     assert completed.returncode == 0, completed.stdout + completed.stderr
     evidence = json.loads(completed.stdout)
-    assert evidence['tools'] == ['mcp__graftling__agents']
+    assert evidence['tools'] == ['mcp__graftling__subagents']
     assert evidence['call']['result']['caller'] == 'native-parent'
 
 

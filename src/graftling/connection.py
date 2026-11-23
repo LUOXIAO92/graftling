@@ -390,7 +390,7 @@ def agents_connection(
     directory the caller may read an ``arguments_file`` from; by default the
     verified native ``cwd``, and without either an arguments file is refused.
     ``extra_tools`` are the
-    host's own tools served beside ``agents`` on this same authenticated
+    host's own tools served beside ``subagents`` on this same authenticated
     channel (see :mod:`graftling.extra_tools`); each callback keeps its own
     authorization.
     """

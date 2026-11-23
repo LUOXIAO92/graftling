@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.scripts]
-agents = "graftling.cli:main"
-agents-mcp = "graftling.mcp:main"
+subagents = "graftling.cli:main"
+subagents-mcp = "graftling.mcp:main"
 
 [tool.setuptools]
 packages = ["graftling", "graftling.dsh", "graftling.claude", "graftling.pi", "graftling.codex",

@@ -86,7 +86,7 @@ def _checkout_import_problem(cwd: Path, executable: str = sys.executable) -> Opt
 def _command_problem(executable: str = sys.executable) -> Optional[str]:
     """Say which console command of the installed distribution is missing."""
     scripts = Path(executable).parent
-    missing = [name for name in ("agents", "agents-mcp") if not (scripts / name).exists()]
+    missing = [name for name in ("subagents", "subagents-mcp") if not (scripts / name).exists()]
     if not missing:
         return None
     return "The test interpreter's bin directory {0} lacks {1}; install this checkout: {2} -m pip install -e {3}".format(

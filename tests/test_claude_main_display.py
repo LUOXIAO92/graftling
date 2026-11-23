@@ -50,10 +50,10 @@ const host = {
 };
 const flat = (node) => node == null ? '' : typeof node === 'string' ? node
   : [node.type === 'Markdown' ? `<md>${node.text}</md>` : '', ...(node.children ?? []).map(flat)].join('');
-const tool = 'tool.call:mcp__graftling__agents';
+const tool = 'tool.call:mcp__graftling__subagents';
 const message = '# Plan\n\n1. read `a.md`\n2. reply';
 const document = {agent: 'agent-1', execution: 'exec-1', result: {name: 'n533', last_result: {id: 'exec-1', last_message: '**done**'}}};
-await handlers.get(tool)(host, {tool: 'mcp__graftling__agents', action: 'execute', feature: 'send',
+await handlers.get(tool)(host, {tool: 'mcp__graftling__subagents', action: 'execute', feature: 'send',
   arguments: {agent: 'agent-1', message}}, async () => ({result: [{type: 'text', text: JSON.stringify(document)}]}));
 if (scenario === 'unplaced') {
   // Where no row can be drawn, the old one-line-per-row log remains.

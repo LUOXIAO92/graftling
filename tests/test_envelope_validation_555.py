@@ -170,7 +170,7 @@ host.stdin.flush()
 address = json.loads(host.stdout.readline())['connection']
 env = {**os.environ, 'GRAFTLING_CONNECTION': address, 'DSH_SESSION_ID': 'dsh-main', 'DSH_AGENT_SOURCE': 'main'}
 lines = [json.dumps({'jsonrpc': '2.0', 'id': index, 'method': 'tools/call',
-                     'params': {'name': 'agents', 'arguments': request}})
+                     'params': {'name': 'subagents','arguments': request}})
          for index, request in enumerate(json.loads(os.environ['TEST_REQUESTS']))]
 mcp = subprocess.run([sys.executable, '-I', '-m', 'graftling.mcp'], env=env, input='\\n'.join(lines) + '\\n',
                      capture_output=True, text=True, timeout=60)

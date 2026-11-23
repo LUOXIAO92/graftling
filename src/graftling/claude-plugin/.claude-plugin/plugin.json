@@ -1,9 +1,9 @@
 {
   "name": "graftling",
   "version": "0.8.0",
-  "description": "Make this Claude Code Session the host of child Agents through the agents tool. Add this marketplace from the graftling installed with uv, and set GRAFTLING_PYTHON to that installation's python.",
+  "description": "Make this Claude Code Session the host of child Agents through the subagents tool. Add this marketplace from the graftling installed with uv, and set GRAFTLING_PYTHON to that installation's python.",
   "mcpServers": {
-    "agents": {
+    "subagents": {
       "command": "sh",
       "args": ["${CLAUDE_PLUGIN_ROOT}/bin/graftling-host", "serve", "--project", "${CLAUDE_PROJECT_DIR}"]
     }

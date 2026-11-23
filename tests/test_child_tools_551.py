@@ -131,7 +131,7 @@ def test_claude_reports_tool_entries_it_did_not_apply(tmp_path: Path) -> None:
     """Unknown or unapplied entries are reported after start against system init, never ignored."""
     execution = _claude(tmp_path, tools=['Read', 'NoSuchTool'],
                         disallowed_tools=['WebFetch', 'NoSuchDeny', 'Bash(rm:*)', 'mcp__graftling__x', 'mcp__nosuch__y'])
-    offered = ['Read', 'WebFetch', 'mcp__graftling__agents']
+    offered = ['Read', 'WebFetch', 'mcp__graftling__subagents']
     assert execution.tool_check(offered) == {
         'tools_not_offered': ['NoSuchTool'],
         'disallowed_still_offered': ['WebFetch'],

@@ -39,6 +39,7 @@ from graftling.config import data_root_override, default_data_root
 from graftling.notices import notice_id
 from graftling.runtime import RuntimeAdapterError
 from graftling.shutdown import exit_if_owned_unconfirmed, stop_owned
+from graftling.tool import TOOL_NAME
 from .app_server import CodexServerRequest
 from .driver import CodexDriver
 from .managed_session import MCP_SERVER, CodexManagedExecution
@@ -46,10 +47,10 @@ from .managed_session import MCP_SERVER, CodexManagedExecution
 # Added to the parent only, after the user's own text: the model also has Codex's
 # native spawn_agent, which literally does what "create a child" asks (432).
 GUIDANCE = (
-    f'The MCP tool `agents` (`mcp__{MCP_SERVER}__agents`) is how this host creates and controls child Agents. '
-    'Use it when asked for a child, a subagent or the agents tool. '
-    "Codex's own `spawn_agent` and related tools put a child outside agents' hierarchy, approvals and records; "
-    'use those only when the user names them.'
+    f'The MCP tool `{TOOL_NAME}` (`mcp__{MCP_SERVER}__{TOOL_NAME}`) is how this host creates and controls '
+    f'child Agents. Use it when asked for a child, a subagent or the {TOOL_NAME} tool. '
+    "Codex's own `spawn_agent` and related tools are not that tool: they put a child outside its hierarchy, "
+    'approvals and records; use those only when the user names them.'
 )
 
 

@@ -36,8 +36,8 @@ _PERSONA_PLUGIN = '@deepseek-ai/dsh-persona'
 # The review row's mark on its asks (review.mjs): a displayReason key, which only
 # in-process code sets. Text a model writes reaches its values, never a key.
 REVIEW_MARKER = 'agents-review'
-# The MCP server name the plugin row registers agents under: the model sees
-# mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+# The MCP server name the plugin row registers graftling's tool under: the model sees
+# mcp__<this>__subagents. A consumer serving its own entry sets ``mcp_server``.
 MCP_SERVER = 'graftling'
 # How long a started service has to apply the review row.
 REVIEW_HOOK_SECONDS = 10

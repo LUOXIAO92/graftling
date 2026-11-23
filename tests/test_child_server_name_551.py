@@ -128,7 +128,7 @@ def test_codex_disallowed_owner_tool_is_dropped_not_refused(tmp_path: Path, nati
 
 def test_codex_tool_choice_keeps_the_owner_server(tmp_path: Path, native_settings: dict) -> None:
     """An available-tools choice never removes the owner's agents/tasks entry."""
-    entry = _codex_entry(tmp_path, native_settings, tools=['mcp__host_name__agents'])
+    entry = _codex_entry(tmp_path, native_settings, tools=['mcp__host_name__subagents'])
     assert json.loads(entry['env']['GRAFTLING_EXTRA_TOOLS']) == [DESCRIPTOR]
     assert entry['tools'] == {'tasks': {'approval_mode': 'approve'}}
     assert 'enabled_tools' not in entry

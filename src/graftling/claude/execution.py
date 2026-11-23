@@ -25,6 +25,7 @@ from graftling import AgentsResult, __version__
 from graftling.approval import REVIEW_METHOD, parse_decision, review_failed
 from graftling.discovery import handle_request as discover_agents
 from graftling.mcp import tool_documents
+from graftling.tool import TOOL_NAME
 from graftling.extra_tools import (ExtraTool, call_extra_tool, descriptors as extra_descriptors,
                                    extra_tool_table)
 from graftling import SessionArchive
@@ -47,8 +48,8 @@ PROMPT_HOOK_LIMIT_SECONDS = 30
 # only plans (plan) or refuses what it would ask (dontAsk). A child goes on under them.
 NARROWER_MODES = {'auto': frozenset({'default', 'manual', 'plan', 'dontAsk'}),
                   'default': frozenset({'plan', 'dontAsk'})}
-# The MCP server name graftling registers its agents tool under: the model
-# sees mcp__<this>__agents. A consumer serving its own entry sets ``mcp_server``.
+# The MCP server name graftling registers its TOOL_NAME tool under: the model
+# sees mcp__<this>__subagents. A consumer serving its own entry sets ``mcp_server``.
 MCP_SERVER = 'graftling'
 # The host answers a PreToolUse hook before its timeout, so nothing depends on what
 # Claude does past it. See PUBLIC_API.md 4.1 for what is known.
@@ -359,20 +360,20 @@ class ClaudeExecution:
 
     @property
     def agents_tool(self) -> str:
-        """Return the agents tool's native name, ``mcp__<mcp_server>__agents``.
+        """Return the ``TOOL_NAME`` tool's native name, ``mcp__<mcp_server>__subagents``.
 
-        It is the child's channel to its parent, limited by agents' own
+        It is the child's channel to its parent, limited by graftling's own
         authority checks, so review lets it through: reviewing it would block
-        ask_parent and status when the reviewer is down. A tool named
-        ``agents`` on any other server is reviewed.
+        ask_parent and status when the reviewer is down. A tool of that name
+        on any other server is reviewed.
         """
-        return f'mcp__{self.mcp_server}__agents'
+        return f'mcp__{self.mcp_server}__{TOOL_NAME}'
 
     @property
     def exempt_tools(self) -> list[str]:
         """Native names of the owner's extra tools, which run without a review or permission ask (551).
 
-        Like ``agents``, each keeps its owner's own authorization; the owner
+        Like ``TOOL_NAME``, each keeps its owner's own authorization; the owner
         declared it for this child, so asking the user adds nothing. A tool the
         create disallowed is never offered, so never exempt.
         """
@@ -428,7 +429,7 @@ class ClaudeExecution:
         """Bind the core's archive choice and verified caller before starting.
 
         ``extra_fields`` goes to the header of a Session first archived here.
-        ``extra_tools`` are the host's own tools served beside ``agents`` on the
+        ``extra_tools`` are the host's own tools served beside ``TOOL_NAME`` on the
         same in-process server (see :mod:`graftling.extra_tools`).
         """
         if self.proc is not None:
@@ -456,11 +457,11 @@ class ClaudeExecution:
                 params = message.get('params', {})
                 if method == 'initialize':
                     result = {'protocolVersion': params.get('protocolVersion', '2025-06-18'),
-                              'capabilities': {'tools': {}}, 'serverInfo': {'name': 'agents', 'version': __version__}}
+                              'capabilities': {'tools': {}}, 'serverInfo': {'name': TOOL_NAME, 'version': __version__}}
                 elif method == 'tools/list':
                     result = {'tools': tool_documents() + extra_descriptors(self.extra_tools)}
                     self.sdk_tools_listed = True
-                elif method == 'tools/call' and (params.get('name') == 'agents'
+                elif method == 'tools/call' and (params.get('name') == TOOL_NAME
                                                  or params.get('name') in self.extra_tools):
                     if self.session is None or self.stopping.is_set():
                         raise ValueError('Claude caller is not bound to an active execution.')

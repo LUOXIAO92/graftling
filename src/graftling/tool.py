@@ -1,4 +1,4 @@
-"""The registrable ``agents`` function: description, validation and dispatch.
+"""The registrable ``subagents`` function: description, validation and dispatch.
 
 A host registers :func:`tool_descriptor` as one model-callable function and
 binds :func:`bind` to the caller it has already verified and to a control
@@ -37,7 +37,9 @@ from typing import Any, Mapping, Protocol
 from graftling.schema import ValidationErrors, schema_errors
 
 
-TOOL_NAME = "agents"
+# The MCP tool's name, the one source for every host, server and check in this
+# package (a .mjs file holds one constant a test compares with it).
+TOOL_NAME = "subagents"
 
 # Required and optional fields of each action. Identity and authority come
 # from the host binding, so no action accepts them.
@@ -247,7 +249,7 @@ class AgentsResult:
 
 
 def tool_descriptor() -> dict[str, Any]:
-    """Return the function description a host registers as ``agents``."""
+    """Return the function description a host registers as ``TOOL_NAME``."""
     return {
         "name":         TOOL_NAME,
         "description":  TOOL_DESCRIPTION,
@@ -307,7 +309,7 @@ def bind(
     *,
     archive: SessionArchive | None = None,
 ) -> Any:
-    """Return the ``agents`` callback for one host-verified caller.
+    """Return the ``subagents`` callback for one host-verified caller.
 
     Parameters
     ----------

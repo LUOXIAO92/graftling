@@ -74,14 +74,14 @@ def test_independent_lifecycle_requests_and_authentication(
 
         monkeypatch.setenv('PEER_MCP_REQUESTS', json.dumps([
             {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'},
-            {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'agents',
+            {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call', 'params': {'name': 'subagents',
              'arguments': {'action': 'describe', 'feature': 'status', 'schema': True}}},
-            {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'agents',
+            {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'subagents',
              'arguments': {'action': 'execute', 'feature': 'status', 'arguments': {}}}},
         ]))
         invoke('resume', agent=agent, message='mcp-requests')
         responses = json.loads(invoke('wait', agent=agent, timeout_seconds=10)['result']['last_result']['last_message'])
-        assert [tool['name'] for tool in responses[0]['result']['tools']] == ['agents']
+        assert [tool['name'] for tool in responses[0]['result']['tools']] == ['subagents']
         assert 'input_schema' in responses[1]['result']['structuredContent']
         assert responses[2]['result']['structuredContent']['result']['agents'] == []
         invoke('retire', agent=agent)
@@ -102,7 +102,7 @@ def test_packaged_host_owns_parent_mcp_and_resume(
     from graftling.codex.host import CodexHost
 
     monkeypatch.setenv('PEER_MCP_REQUESTS', json.dumps([
-        {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'agents',
+        {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call', 'params': {'name': 'subagents',
          'arguments': {'action': 'execute', 'feature': 'status', 'arguments': {}}}},
     ]))
     host = CodexHost(native_settings, tmp_path / 'host-state', 'mcp-requests')

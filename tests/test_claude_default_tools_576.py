@@ -174,7 +174,7 @@ def test_tool_check_reports_probed_tools_the_child_lacks(tmp_path: Path) -> None
     execution.default_tools = ['Bash', 'Read', 'WebFetch', 'Monitor']
     assert execution.tool_check(['Bash', 'Read']) == {'default_tools_not_offered': ['Monitor']}
     execution.default_tools = ['Bash', 'Read']
-    assert execution.tool_check(['Bash', 'Read', 'mcp__graftling__agents']) == {}
+    assert execution.tool_check(['Bash', 'Read', 'mcp__graftling__subagents']) == {}
 
 
 class MemberShapedExecution(ClaudeExecution):

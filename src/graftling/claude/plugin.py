@@ -6,8 +6,13 @@ from pathlib import Path
 import re
 from typing import Iterable
 
+from graftling.tool import TOOL_NAME
+
+# The one line of host_context.mjs naming graftling's tool. It is computed from
+# TOOL_NAME, so a template that names another tool is refused, never written.
+TOOL_LINE = f'const TOOL = {json.dumps(TOOL_NAME)};'
 # The one line of host_context.mjs naming its tools; the written copy replaces it.
-TOOLS_LINE = 'const TOOLS = ["agents"];'
+TOOLS_LINE = 'const TOOLS = [TOOL];'
 # The one line naming the plugin whose MCP server serves them; the marketplace copy replaces it.
 PLUGIN_LINE = 'const PLUGIN = null;'
 # The one line naming the .mcp.json server that serves them; the written copy replaces it.
@@ -18,10 +23,14 @@ MARKETPLACE_DIRECTORY = Path(__file__).resolve().parent.parent / 'claude-plugin'
 
 
 def _module() -> str:
-    """Return host_context.mjs, refusing a copy whose replaced lines are not each there once."""
+    """Return host_context.mjs, refusing a copy whose fixed or replaced lines are not each there once.
+
+    Every replacement below is of a line checked here, so a changed template
+    raises instead of being written unchanged.
+    """
     module = Path(__file__).with_name('host_context.mjs').read_text(encoding='utf-8')
-    for line in (TOOLS_LINE, PLUGIN_LINE, SERVER_LINE):
-        if module.count(line) != 1:
+    for line in (TOOL_LINE, TOOLS_LINE, PLUGIN_LINE, SERVER_LINE):
+        if module.splitlines().count(line) != 1:
             raise RuntimeError(f'host_context.mjs must hold exactly one line {line!r}.')
     return module
 
@@ -53,9 +62,9 @@ def claude_host_plugin(
     """Return a host plugin's files, keyed by absolute path; nothing is written.
 
     The plugin is the one module ``hooks/host_context.mjs``. It associates
-    each native call of the ``agents`` tool with its Claude Session, and does
-    the same for ``tools``, the names of tools a package serves beside
-    ``agents`` on the same MCP server ``server``.
+    each native call of the ``TOOL_NAME`` tool with its Claude Session, and
+    does the same for ``tools``, the names of tools a package serves beside
+    it on the same MCP server ``server``.
 
     Parameters
     ----------
@@ -65,7 +74,7 @@ def claude_host_plugin(
         The plugin manifest's fields.
     tools
         A declared tool gets the association, notices and cleanup of
-        ``agents`` but renders no agents exchange. The host's ``NativeCalls``
+        ``TOOL_NAME`` but renders no agents exchange. The host's ``NativeCalls``
         must declare the same names.
     server
         The project's ``.mcp.json`` key of that server; Claude Code calls its
@@ -78,7 +87,7 @@ def claude_host_plugin(
     Raises
     ------
     ValueError
-        A tool or server name MCP cannot carry, ``agents`` itself, or a repeated name.
+        A tool or server name MCP cannot carry, ``TOOL_NAME`` itself, or a repeated name.
     """
     tools = list(tools)
     for tool in tools:
@@ -86,15 +95,15 @@ def claude_host_plugin(
             raise ValueError(f'Not a tool name: {tool!r}.')
     if not isinstance(server, str) or re.fullmatch(r'[A-Za-z0-9_-]+', server) is None:
         raise ValueError(f'Not a server name: {server!r}.')
-    if len({'agents', *tools}) != len(tools) + 1:
-        raise ValueError('Declare each added tool once, and not agents itself.')
+    if len({TOOL_NAME, *tools}) != len(tools) + 1:
+        raise ValueError(f'Declare each added tool once, and not {TOOL_NAME} itself.')
     module = _module()
     directory = Path(directory)
     return {
         str(directory / '.claude-plugin/plugin.json'): {'name': name, 'version': '1', 'description': description},
         str(directory / 'hooks/hooks.json'): {'modules': ['./host_context.mjs']},
         str(directory / 'hooks/host_context.mjs'): module.replace(
-            TOOLS_LINE, f"const TOOLS = {json.dumps(['agents', *tools])};").replace(
+            TOOLS_LINE, f"const TOOLS = [{', '.join(['TOOL', *map(json.dumps, tools)])}];").replace(
             SERVER_LINE, f'const SERVER = {json.dumps(server)};'),
     }
 

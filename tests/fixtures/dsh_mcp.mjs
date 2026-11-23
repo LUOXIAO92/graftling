@@ -20,8 +20,8 @@ try {
     cwd: process.cwd(), env: { PYTHONPATH: pythonPath },
     failOnStartupError: true, toolCallTimeoutMs: 10000,
   }).await();
-  assert.deepEqual([...definitions.keys()], ['mcp__graftling__agents']);
-  const tool = definitions.get('mcp__graftling__agents');
+  assert.deepEqual([...definitions.keys()], ['mcp__graftling__subagents']);
+  const tool = definitions.get('mcp__graftling__subagents');
   assert.deepEqual(Object.keys(tool.parameters.properties), ['action', 'query', 'feature', 'arguments']);
   const invoke = args => tool.execute(args, { signal: new AbortController().signal });
   const discovered = (await invoke({ action: 'discover', query: 'status' })).structuredContent;
