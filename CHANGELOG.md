@@ -12,7 +12,7 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased (incompatible; to be released as 0.9.0)
+## 0.9.0 (incompatible)
 
 The MCP tool `agents` is renamed `subagents`, a rename section 7 lists as
 incompatible, so the minor version rises. There is no alias: the old names are
