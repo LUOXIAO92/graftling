@@ -319,6 +319,12 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
       if (agentsConfig && managed) {
         throw new Error('Standalone agents config cannot replace an existing managed Agent context; retain its owning connection.');
       }
+      // A Pi subagent child is not Main: a plugin's marker, or no persistent
+      // Session file (Pi's bundled subagent example runs `pi --no-session`).
+      // It starts no host and creates no data root, with or without the flag;
+      // a user's own `pi --no-session` gets no agents tool either (585).
+      if (process.env.PI_SUBAGENT_CHILD === '1' || Number(process.env.PI_SUBAGENT_DEPTH) > 0
+          || !ctx.sessionManager.getSessionFile()) return false;
       // Without --agents-config a managed DSH context stays inert, as before 572,
       // whatever GRAFTLING_DATA_ROOT says (577).
       if (agentsConfig || !managed) {

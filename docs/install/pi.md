@@ -91,6 +91,19 @@ extension stays inert without the flag, whatever `GRAFTLING_DATA_ROOT` says. In 
 child of an agents host (`GRAFTLING_CONNECTION` set), it uses the owner's connection,
 as before; the inherited `GRAFTLING_DATA_ROOT` starts no host there.
 
+**Subagent children start nothing (585).** A Pi subagent child is not Main. When
+`PI_SUBAGENT_CHILD=1` (set by `pi-subagents`), `PI_SUBAGENT_DEPTH` is greater than 0
+(set by `pi-subagent`), or the Session has no persistent Session file (`pi
+--no-session`, which Pi's bundled subagent example runs), the extension starts no
+host, creates no data root and reports no error, with or without `--agents-config` and
+`GRAFTLING_DATA_ROOT`. Only the Main Session that started the subagent has the `agents`
+tool. Before 585 such a child started a second host, and Pi's bundled example showed
+`Extension error ...: The Pi native Session association is unavailable.` in the
+subagent's result.
+
+This includes your own `pi --no-session`: that Session gets no `agents` tool. Start
+`pi` with a Session file (the default) to use agents.
+
 `--agents-config <file>` selects an explicit configuration instead, which works
 as before; it is kept from earlier releases.
 

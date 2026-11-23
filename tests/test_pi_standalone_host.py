@@ -423,7 +423,7 @@ const pi = {
   },
 };
 const ctx = {hasUI: false, cwd: process.cwd(), sessionManager: {
-  getSessionId: () => 'pi-main', getSessionFile: () => '', getHeader: () => ({id: 'pi-main'}), getEntries: () => []}};
+  getSessionId: () => 'pi-main', getSessionFile: () => '/sessions/pi-main.jsonl', getHeader: () => ({id: 'pi-main'}), getEntries: () => []}};
 const owner = module.registerAgents(pi);
 await owner.start(ctx);
 while (sent.length < 2) await new Promise(done => setTimeout(done, 20));

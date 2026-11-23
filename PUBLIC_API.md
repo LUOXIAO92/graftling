@@ -810,6 +810,15 @@ extension stays inert in a DSH-managed context (`DSH_SESSION_ID` or
 `DSH_AGENT_SOURCE`), whatever the variable says. A Pi child
 (`GRAFTLING_CONNECTION`) is unchanged and starts no host.
 
+Unreleased (585): a Pi subagent child is not Main and starts no host. The
+extension tests this after the two cases above and before anything else, with
+or without the flag and the variable: `PI_SUBAGENT_CHILD=1`,
+`PI_SUBAGENT_DEPTH` greater than 0, or no persistent Session file
+(`ctx.sessionManager.getSessionFile()` empty, as for `pi --no-session`, which
+Pi's bundled subagent example runs). Such a Session gets no `agents` tool, no
+host process and no data root, and no error is reported. Accepted side
+effect: a user's own `pi --no-session` Session gets no `agents` tool either.
+
 **Distribution.** The installed directory `graftling/pi/` is a Pi package:
 its `package.json` declares `"pi": {"extensions": ["./extension.mjs"]}` and
 repeats `__version__` (tested like the DSH manifest). Install it with Pi's
