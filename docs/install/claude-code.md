@@ -5,64 +5,67 @@ This makes a Claude Code Session the host of its child Agents. Back to the
 
 ## Prerequisites
 
-- Python 3.12 or later.
+- [uv](https://docs.astral.sh/uv/). It provides Python 3.12 or later.
 - Claude Code 2.1.299 or later, installed and logged in. Earlier versions are refused
   when a Claude child starts. The real runs used 2.1.312 and 2.1.314.
 - A directory you will start Claude Code from. It does not need to be a Git
   repository.
 
-## Install the wheel
+## Install graftling
 
-In a checkout of the repository, or skip the `pip wheel` line and give `pip install`
-the path of a wheel you were given:
+Once, with uv, as in the [README](../../README.md#install). Every host uses this one
+installation:
 
 ```sh
-AGENTS_VENV=/absolute/agents-venv
-python3 -m venv "$AGENTS_VENV"
-WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
-"$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
+uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
 
 ## Distribution
 
-Two ways install the host. Use one per project:
+Two ways attach the host to the installation above. Use one per project:
 
-- **The marketplace plugin** `graftling`, below. Claude Code installs it from this
-  repository's marketplace; nothing is written into your project until the host starts.
-- **Generated plugin files**: `configuration --write`, in the next section, writes them
-  into one project.
+- **Generated plugin files**: `configuration --write`, in
+  [Generate the plugin files](#generate-the-plugin-files), writes the MCP server and the
+  plugin into one project, both naming `$AGENTS_PYTHON`. This is the way the other host
+  notes assume.
+- **The marketplace plugin** `graftling`, below. The marketplace ships inside the
+  installation, so the plugin comes from the same place as the Python; nothing is
+  written into your project until the host starts.
 
-Nothing is published to a public marketplace. Add this repository's marketplace from a
-local checkout (or from the repository once it has one).
+Nothing is published to a public marketplace, and a checkout of the repository is no
+marketplace: add the one inside your installation.
 
 ## Install the marketplace plugin
 
 > Seen on a real host only in print mode (`claude -p`), with the marketplace added from a
-> local checkout, the plugin installed at project scope and `GRAFTLING_PYTHON` exported in
-> the shell: the plugin loaded, its tool created a Claude child and `wait` returned it
-> completed. A missing Python showed in `host.log` and as a failed server in
-> `claude mcp list`, and a project with both hosts refused with `host-busy`. Not yet
-> seen: interactive Claude Code under the plugin, including `/agents-context` and its
-> advice, and notices pushed into the Session. Not yet run: `GRAFTLING_PYTHON` under
-> `env` in `settings.json`, the `python3` on `PATH` fallback, user scope and the upgrade
-> steps. Tests cover the host and module with stand-ins.
+> local checkout (before 581 moved it into the installation), the plugin installed at
+> project scope and `GRAFTLING_PYTHON` exported in the shell: the plugin loaded, its tool
+> created a Claude child and `wait` returned it completed. A missing Python showed in
+> `host.log` and as a failed server in `claude mcp list`, and a project with both hosts
+> refused with `host-busy`. Not yet seen: the marketplace added from a uv installation,
+> interactive Claude Code under the plugin, including `/agents-context` and its advice,
+> and notices pushed into the Session. Not yet run: `GRAFTLING_PYTHON` under `env` in
+> `settings.json`, user scope and the upgrade steps. Tests cover the host and module with
+> stand-ins.
 
-1. Install the wheel, above. Point the plugin at that environment's Python with
-   `GRAFTLING_PYTHON`, in the shell you start Claude Code from or under `env` in
-   `~/.claude/settings.json`:
+1. Point the plugin at the installation's Python with `GRAFTLING_PYTHON`, in the shell
+   you start Claude Code from or under `env` in `~/.claude/settings.json`. Print the
+   value with `echo "$AGENTS_PYTHON"`:
 
    ```json
-   {"env": {"GRAFTLING_PYTHON": "/absolute/agents-venv/bin/python"}}
+   {"env": {"GRAFTLING_PYTHON": "/absolute/home/.local/share/uv/tools/graftling/bin/python"}}
    ```
 
-   Without `GRAFTLING_PYTHON` the plugin uses `python3` on `PATH`, if that imports
-   `graftling`. A set `GRAFTLING_PYTHON` is never skipped for `python3`.
+   Claude Code keeps its own copy of a marketplace plugin, so the plugin cannot find the
+   installation by itself. Without `GRAFTLING_PYTHON` it tries `python3` on `PATH`, which
+   only a development checkout installed into that `python3` satisfies. A set
+   `GRAFTLING_PYTHON` is never skipped for `python3`.
 
-2. Add the marketplace and install the plugin:
+2. Add the marketplace from the installation and install the plugin:
 
    ```sh
-   claude plugin marketplace add /absolute/checkout
+   claude plugin marketplace add "$("$AGENTS_PYTHON" -c 'import graftling, pathlib; print(pathlib.Path(graftling.__file__).parent)')"
    claude plugin install graftling@graftling --scope project
    ```
 
@@ -108,15 +111,15 @@ project, such as from a shell started in its Claude Code session, is ignored. Ke
 `graftling` server (`agents` before 0.6.0) from `.mcp.json`, the two `GRAFTLING_CLAUDE_HOST_*` entries from
 `.claude/settings.local.json` and `.claude/skills/agents-claude-host/`.
 
-To upgrade, install the new wheel into the same environment, run
-`claude plugin marketplace update graftling` and `claude plugin update graftling@graftling`,
+To upgrade, install the new version with uv as in the [README](../../README.md#install),
+run `claude plugin marketplace update graftling` and `claude plugin update graftling@graftling`,
 then start a new Claude Code process.
 
 ## Generate the plugin files
 
 ```sh
 PROJECT=/absolute/working-directory
-"$AGENTS_VENV/bin/python" -m graftling.claude.host configuration \
+"$AGENTS_PYTHON" -m graftling.claude.host configuration \
   --project "$PROJECT" --claude "$(command -v claude)" --write
 ```
 
@@ -125,7 +128,7 @@ prints the list of paths and writes:
 
 | Path under the project | What it is |
 | --- | --- |
-| `.mcp.json` | The `graftling` MCP server, started with this environment's Python |
+| `.mcp.json` | The `graftling` MCP server, started with the installation's Python, `$AGENTS_PYTHON` |
 | `.agents-control/claude-host.json` | The host configuration |
 | `.claude/settings.local.json` | Two `env` entries that point the plugin at this Python and configuration |
 | `.claude/skills/agents-claude-host/` | The plugin: its manifest, hooks and `host_context.mjs` |
@@ -180,7 +183,7 @@ trust and project MCP server prompts. Start or resume Claude Code from this exac
 directory: a host started from a subdirectory refuses, and elsewhere Claude Code does
 not load this project's `.mcp.json`.
 
-> Not yet walked on a real host from a wheel-only install: these steps run as written
+> Not yet walked on a real host from a uv-only install: these steps run as written
 > in a clean environment. The same host ran on real Claude Code in earlier checks.
 
 ## See that it worked
@@ -280,7 +283,7 @@ and any existing `control/`, `native/` and `sessions/` there. `channel_file` and
 
 ## Upgrade
 
-1. Install the new wheel into the same environment, as above.
+1. Install the new version with uv, as in the [README](../../README.md#install).
 2. Run `configuration --write` again. **This is required:** an earlier copy of the
    plugin never acknowledges a notice, so its pushed notices repeat once per host
    process.

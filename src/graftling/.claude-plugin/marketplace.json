@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "graftling",
-      "source": "./src/graftling/claude-plugin",
+      "source": "./claude-plugin",
       "description": "Make this Claude Code Session the host of child Agents through the agents tool."
     }
   ]

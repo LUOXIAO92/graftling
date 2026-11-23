@@ -189,6 +189,12 @@ notes (`install/`) are public with their documented flags:
   marketplace plugin's `serve --project` then refuses before writing a
   configuration. The plugin module passes the value it reads to the private
   `context` operation as `--data-root`.
+- Unreleased (581): one installation serves every host. The Claude Code
+  marketplace `graftling` ships inside the installed package: the package
+  directory holds `.claude-plugin/marketplace.json`, whose plugin is its
+  `claude-plugin/`; the repository root is no marketplace. The DSH plugin
+  finds its own installation's Python (1.7). The install notes use
+  `uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"`.
 
 ### 1.2 The `agents` tool and its features
 
@@ -925,15 +931,25 @@ project, with no per-Runtime settings.
 bundle named `graftling-dsh`: its `package.json` declares `"dsh": {"bundle":
 {"patch": "./dsh.patch.yml"}}`, and that patch inserts the row `agents-host`
 (module `graftling-dsh`, that is `plugin.mjs`) with no settings. Install it with
-DSH's own plugin command (it runs pnpm in the profile directory), from the
-agents installation DSH should use:
+DSH's own plugin command (it runs pnpm in the profile directory, which links
+the profile's package to this directory), from the one agents installation
+(`uv tool install`, README; `<python>` is its Python):
 
 ```sh
 DSH_PACKAGE="$(<python> -c 'import graftling.dsh, pathlib; print(pathlib.Path(graftling.dsh.__file__).parent)')"
 dsh plugin --profile headless add "$DSH_PACKAGE"     # once per profile
-GRAFTLING_PYTHON=<python> GRAFTLING_DSH_CONFIG=/abs/dsh-host.json \
+GRAFTLING_DSH_CONFIG=/abs/dsh-host.json \
   env -u DEEPSEEK_BASE_URL dsh --profile headless "<task>"
 ```
+
+Without `GRAFTLING_PYTHON` (581), the plugin uses the first candidate that
+imports `graftling` under `-I` from the plugin's own installation, as the Pi
+extension does: the interpreters of the environment whose site-packages holds
+the plugin's real path, then `python3` and `python` on `PATH`. Nothing is
+built or written. If none does, the Session's `agent/created` fails with a
+message naming the `uv tool install` command for the plugin's version and
+`GRAFTLING_PYTHON`. The repository itself is no plugin bundle: it has no root
+`package.json` (removed with 569's build under `$DSH_HOME/graftling-python`).
 
 The `env -u` concerns only this main Session's own endpoint, which DSH takes
 from that variable when its profile names none. Its DSH children ignore the
@@ -942,8 +958,8 @@ variable (section 2).
 Any profile works the same way (`web`, `tui`, `acp`, `sdk`). Without
 installing, a patch file with the row `{id: agents-host, name:
 <DSH_PACKAGE>/plugin.mjs}` under `insert`, passed with `dsh --profile <name>
---patch <file>`, loads it for one invocation. `GRAFTLING_PYTHON` names the
-Python that has `graftling` installed. The row does nothing inside a DSH
+--patch <file>`, loads it for one invocation. `GRAFTLING_PYTHON`, when set,
+names the Python that has `graftling` installed and is used unchecked. The row does nothing inside a DSH
 that is itself an agents child (`GRAFTLING_CONNECTION` or
 `DSH_AGENT_PACKAGE` set), whatever `GRAFTLING_DATA_ROOT` says. Without
 `GRAFTLING_DSH_CONFIG` and `GRAFTLING_DATA_ROOT`, a main Session

@@ -5,32 +5,31 @@ the [README](../../README.md).
 
 ## Prerequisites
 
-- Python 3.12 or later.
+- [uv](https://docs.astral.sh/uv/). It provides Python 3.12 or later.
 - Pi, installed, with a model selected and logged in. There is no version floor in
   agents; the sources and real runs are Pi `1.4.0`.
 - A Pi child also needs [its sandbox tools](../../README.md#what-a-pi-child-needs). A
   Claude, Codex or DSH child of a Pi host does not.
 
-## Install the wheel
+## Install graftling
 
-In a checkout of the repository, or skip the `pip wheel` line and give `pip install`
-the path of a wheel you were given:
+Once, with uv, as in the [README](../../README.md#install). Every host uses this one
+installation:
 
 ```sh
-AGENTS_VENV=/absolute/agents-venv
-python3 -m venv "$AGENTS_VENV"
-WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
-"$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
+uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
 
 ## Distribution: `pi install`
 
-The installed directory `graftling/pi/` is a Pi package. Install it with Pi's own
-command, from the agents environment Pi should use. It is not on a public market.
+The directory `graftling/pi/` of the one installation is a Pi package. Install it with
+Pi's own command. Pi loads it from there, and the extension runs that installation's
+Python, so the extension and the Python package are always the same graftling. It is
+not on a public market.
 
 ```sh
-PI_PACKAGE="$("$AGENTS_VENV/bin/python" -c 'import graftling.pi, pathlib; print(pathlib.Path(graftling.pi.__file__).parent)')"
+PI_PACKAGE="$("$AGENTS_PYTHON" -c 'import graftling.pi, pathlib; print(pathlib.Path(graftling.pi.__file__).parent)')"
 pi install "$PI_PACKAGE"       # for you; add -l for this project only
 ```
 
@@ -223,9 +222,11 @@ Set a model at `create` to choose another one for one child.
 
 ## Upgrade
 
-1. Install the new wheel into the same environment, as above.
-2. If you used `pi install`, run it again with the same directory, so Pi loads the new
-   extension. With `-e` there is nothing else to do.
+1. Install the new version with uv, as in the [README](../../README.md#install). The
+   installation stays in the same directory.
+2. If you used `pi install`, run it again with the same `$PI_PACKAGE`, so Pi loads the new
+   extension (the directory changes only when uv picks another Python minor version).
+   With `-e` there is nothing else to do.
 3. Start Pi with the same configuration. Resuming the same Session binds a new host,
    which delivers what was held.
 

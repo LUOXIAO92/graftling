@@ -20,7 +20,8 @@ import graftling.claude.host' 2>&1); then
   exec "$python" -m graftling.claude.host "$@"
 fi
 reason=$(printf '%s\n' "$reason" | tail -n 1)
-message="graftling plugin: the agents host did not start: $named cannot run graftling ($reason). Install the graftling wheel into a Python 3.12+ environment (python -m pip install graftling-<version>-py3-none-any.whl) and set GRAFTLING_PYTHON to that python, in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
+version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")
+message="graftling plugin: the agents host did not start: $named cannot run graftling ($reason). Install graftling once with uv (uv tool install \"git+https://github.com/LUOXIAO92/graftling.git@v${version:-<version>}\") and set GRAFTLING_PYTHON to that installation's python, \"\$(uv tool dir)/graftling/bin/python\", in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
 printf '%s\n' "$message" >&2
 if [ "$1" = serve ] && [ "$2" = --project ] && [ -d "$3" ]; then
   directory=$3/.agents-control

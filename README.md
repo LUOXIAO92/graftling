@@ -38,36 +38,45 @@ another MCP client, every request fails with `authority-denied`, including
 
 ## Install
 
-`graftling` is not on PyPI and no version has been published. Build the wheel from
-a checkout, or use a wheel you were given, and install it alone in a dedicated
-environment with Python 3.12 or later. Its only dependencies are PyYAML and
-websockets. On DSH you can skip this: the plugin installed from this repository's
-GitHub address builds its own environment ([docs/install/dsh.md](docs/install/dsh.md)).
+Install graftling once, with [uv](https://docs.astral.sh/uv/), straight from GitHub.
+It is not on PyPI. Pin a tag or a commit:
 
 ```sh
-AGENTS_VENV=/absolute/agents-venv
-python3 -m venv "$AGENTS_VENV"
-
-# In a checkout of the repository. The new directory holds exactly one wheel.
-WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
-"$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
-
-"$AGENTS_VENV/bin/agents" --help
+uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
+"$(uv tool dir --bin)/agents" --help
 ```
 
-With a wheel you were given, run only the `pip install` line with its path.
+uv gets a Python 3.12 or later when it needs one, installs graftling with its only
+dependencies, PyYAML and websockets, in its own environment under `uv tool dir`, and
+puts the `agents` and `agents-mcp` commands on its tool bin directory
+(`uv tool dir --bin`). This one installation serves every host: each host's MCP
+server and hook plugin come from it, as the table says. `$AGENTS_PYTHON` is that
+installation's Python; the host notes use it for every `python -m graftling...`
+command. Nothing else installs graftling: no host plugin builds or carries a copy of
+its own.
 
-Use this environment's Python for every `python -m graftling...` command in these
-documents. Install and log in to each Runtime separately; agents never copies
-credentials. Then follow the note for the host you use:
+A package that depends on graftling, such as GraphTraj, installs it into that
+package's own environment instead, from the same GitHub source. Then that
+environment is the one installation: use its Python as `$AGENTS_PYTHON`, and the
+plugins find it the same way. Do not install graftling a second time with uv.
 
-| Your main Agent runs in | Note | How the host is delivered |
+Install and log in to each Runtime separately; agents never copies credentials. Then
+follow the note for the host you use:
+
+| Your main Agent runs in | Note | How the host is attached to the one installation |
 | --- | --- | --- |
-| Claude Code | [docs/install/claude-code.md](docs/install/claude-code.md) | The `graftling` plugin from this repository's marketplace (real only in print mode, `claude -p`), or plugin files generated into your project |
-| Codex | [docs/install/codex.md](docs/install/codex.md) | A command that runs a headless parent. No plugin |
-| Pi | [docs/install/pi.md](docs/install/pi.md) | `pi install` of the installed package directory, or `-e` for one invocation |
-| DSH | [docs/install/dsh.md](docs/install/dsh.md) | `dsh plugin add` or the Plugins page with `git+https://github.com/LUOXIAO92/graftling.git#<full commit>`, which needs no wheel: the plugin builds its own Python environment under the DSH home on first start. Or `dsh plugin add` of the installed package directory, or `--patch` for one invocation |
+| Claude Code | [docs/install/claude-code.md](docs/install/claude-code.md) | `"$AGENTS_PYTHON" -m graftling.claude.host configuration --write` generates the MCP server and the plugin files into your project from it; or the `graftling` plugin from the marketplace inside it (real only in print mode, `claude -p`) |
+| Codex | [docs/install/codex.md](docs/install/codex.md) | `"$AGENTS_PYTHON" -m graftling.codex.host` runs a headless parent. No plugin |
+| Pi | [docs/install/pi.md](docs/install/pi.md) | `pi install` of its `graftling/pi` directory, or `-e` for one invocation |
+| DSH | [docs/install/dsh.md](docs/install/dsh.md) | `dsh plugin add` of its `graftling/dsh` directory, or `--patch` for one invocation. The plugin runs that installation's Python |
+
+To upgrade, install the new tag or commit the same way with `--reinstall`. The
+installation stays where it was, so the DSH and Pi plugins keep pointing at it; the
+Claude Code notes say what to run again.
+
+Coming from 0.7.0's DSH install from this repository's GitHub address, see
+[Moving from the 0.7.0 DSH install](docs/install/dsh.md#moving-from-the-070-dsh-install).
 
 ## Use the tool
 
@@ -309,7 +318,7 @@ reviewer never defaults to the child's own provider.
 ### What a Pi child needs
 
 A Pi child always runs in a native sandbox, so its host must reach four things beyond
-Pi. The wheel does not install them:
+Pi. Installing graftling does not install them:
 
 | Needed | Where it comes from |
 | --- | --- |

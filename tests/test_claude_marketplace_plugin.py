@@ -34,11 +34,12 @@ def test_checked_in_module_is_generated_from_host_context() -> None:
 
 
 def test_manifests_name_graftling_and_bake_in_no_path() -> None:
-    """The marketplace points at the plugin; the server uses only Claude Code's path variables."""
-    marketplace = json.loads((REPOSITORY / '.claude-plugin' / 'marketplace.json').read_text())
+    """The installed package is the marketplace (581); the server uses only Claude Code's path variables."""
+    marketplace = json.loads((PLUGIN.parent / '.claude-plugin' / 'marketplace.json').read_text())
     entry, = marketplace['plugins']
     assert (marketplace['name'], entry['name']) == ('graftling', 'graftling')
-    assert (REPOSITORY / entry['source']).resolve() == PLUGIN.resolve()
+    assert (PLUGIN.parent / entry['source']).resolve() == PLUGIN.resolve()
+    assert not (REPOSITORY / '.claude-plugin').exists(), 'the checkout is no second marketplace'
     manifest = json.loads((PLUGIN / '.claude-plugin' / 'plugin.json').read_text())
     assert (manifest['name'], manifest['version']) == ('graftling', graftling.__version__)
     server = manifest['mcpServers']['agents']
@@ -201,7 +202,8 @@ def test_launcher_names_what_to_install_when_python_cannot_run_graftling(
     for text in (result.stderr, (project / '.agents-control' / 'host.log').read_text()):
         assert 'graftling plugin: the agents host did not start' in text
         assert f'{named}{executable}' in text
-        assert 'Install the graftling wheel' in text and 'set GRAFTLING_PYTHON' in text
+        assert (f'uv tool install "git+https://github.com/LUOXIAO92/graftling.git@v{graftling.__version__}"' in text
+                and 'set GRAFTLING_PYTHON' in text)
     if python == 'without':
         assert "No module named 'graftling'" in result.stderr
 

@@ -27,6 +27,35 @@ The numbers in parentheses are the project's Task numbers.
   and the Claude Code plugin's server in such a child now refuses before
   writing `claude-host.json` (577).
 
+### Changed
+
+- One installation, from one source (581): install graftling once with
+  `uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"`;
+  every host's MCP server and hook plugin come from it. The install notes
+  (README, `docs/install/*`) use it in place of building a wheel.
+- graftling-dsh without `GRAFTLING_PYTHON` runs the Python of the installation
+  it belongs to (the environment whose site-packages holds the plugin's real
+  path; `dsh plugin add` links the profile's package there), then `python3` or
+  `python` on `PATH` that imports this same graftling, as the Pi extension does
+  (572). Otherwise the start is refused with the `uv tool install` command and
+  `GRAFTLING_PYTHON`. An explicit `GRAFTLING_PYTHON` is still used unchanged.
+- The Claude Code marketplace moved into the installed package
+  (`graftling/.claude-plugin/marketplace.json`, plugin `graftling/claude-plugin/`,
+  now in the wheel), so the marketplace plugin is added from the installation.
+  Its missing-Python message names the `uv tool install` command.
+
+### Removed
+
+- 569's install of graftling-dsh from the repository's GitHub address
+  (incompatible for that route): the root `package.json` and
+  `dsh/plugin_python.py`, which built a second graftling under
+  `$DSH_HOME/graftling-python`. The repository-root Claude marketplace
+  (`.claude-plugin/marketplace.json`) is gone too. To move a 0.7.0 DSH profile:
+  `dsh plugin --profile <profile> remove graftling-dsh`, delete
+  `$DSH_HOME/graftling-python` with DSH stopped, install with uv and
+  `dsh plugin add` the installed `graftling/dsh` directory
+  (`docs/install/dsh.md`, "Moving from the 0.7.0 DSH install").
+
 ### Fixed
 
 - A Claude child no longer fails with `RUNTIME_REQUEST_FAILED` "Claude did not confirm

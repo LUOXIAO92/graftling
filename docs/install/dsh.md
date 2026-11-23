@@ -5,105 +5,59 @@ a DSH plugin. Back to the [README](../../README.md).
 
 ## Prerequisites
 
-- Python 3.12 or later.
+- [uv](https://docs.astral.sh/uv/). It provides Python 3.12 or later.
 - DSH 0.2.0-rc.2 or later, with a login or an API key. An older DSH, or one whose
   version cannot be read, is refused. The sources and real runs are DSH `0.2.2-alpha.2`.
 - pnpm, for `dsh plugin add`, which runs pnpm in the profile directory. `--patch` does
   not need it.
 
-## Install from GitHub: the Plugins page or `dsh plugin add`
+## Install graftling
 
-DSH installs the plugin straight from this repository. The plugin then builds its own
-Python environment when the first Session starts, so you need no wheel and no
-`GRAFTLING_PYTHON`. Use a full 40-character commit: DSH offers updates only for a Git
-plugin pinned to one. A branch or a tag also installs, but DSH offers it no updates.
+Once, with uv, as in the [README](../../README.md#install). Every host uses this one
+installation:
 
 ```sh
-dsh plugin --profile headless add "git+https://github.com/LUOXIAO92/graftling.git#<full commit>"
-```
-
-In DSH's web interface: open the Plugins page, paste
-`git+https://github.com/LUOXIAO92/graftling.git#<full commit>` into the install field,
-leave the registry choice as it is, and install. The profile's bundles then list
-`graftling-dsh`.
-
-The repository's root `package.json` makes the whole repository the `graftling-dsh`
-bundle. It has no install script, so pnpm installs it without asking for build
-approval.
-
-Nothing else is needed: the next Session has the `agents` tool, with its data in the
-project's `.agents-control` ([Data root](#data-root-and-configuration)).
-
-> Walked on a real host: `dsh plugin add` of the root URL pinned to a full commit, and the
-> first start below, with DSH 0.2.2-rc.5 and pnpm 12.21.0 in the `headless` profile. The
-> web Plugins-page install has not been walked.
-
-### The Python environment
-
-Without `GRAFTLING_PYTHON`, the first Session start runs `python3` from `PATH`, which must be Python 3.12 or later. It builds
-`$DSH_HOME/graftling-python/<version>-<key>` (`~/.dsh/graftling-python/...` when
-`DSH_HOME` is not set): a venv with access to that Python's own packages, holding a
-copy of the plugin's graftling sources. Nothing is downloaded. Later starts reuse it,
-and every profile with the same sources shares it. `<key>` changes with the sources and
-with the `python3` used, so either change builds a new environment.
-
-graftling needs PyYAML 6 and websockets 15 or 16. The environment takes them from
-`python3` when it has them. When it lacks them, the start stops with a message that
-ends in the command to run once. That command downloads them from PyPI:
-
-```sh
-'<environment>/bin/python' -m ensurepip && '<environment>/bin/python' -m pip install 'PyYAML>=6,<7' 'websockets>=15,<17'
-```
-
-Then start DSH again.
-
-What the plugin does in each case. Each refusal fails the Session's `agent/created`
-handler with the message, so the Session does not start
-([A refused start](#a-refused-start)):
-
-| Case | What happens |
-| --- | --- |
-| No `python3` on `PATH`, or one older than 3.12 | Refused. Put a Python 3.12+ first on `PATH` as `python3`, or set `GRAFTLING_PYTHON` |
-| PyYAML or websockets missing or of another major version | Refused, with the command above for that environment |
-| Two Sessions or DSH processes starting at once | One builds; the other waits for it, then both use it |
-| A build that failed or was killed | Refused, naming the cause. Its unfinished copy (`<name>.partial`) is never used; the next start removes it and builds again |
-| `GRAFTLING_PYTHON` set | Used as given; nothing is built |
-
-The build takes an exclusive lock with `flock`, so it runs on macOS and Linux.
-
-## Install the wheel
-
-This and the next two sections are the other ways: a wheel in an environment you
-choose, named by `GRAFTLING_PYTHON`. The Git form
-`git+https://github.com/LUOXIAO92/graftling.git#<commit>&path:/src/graftling/dsh`
-installs only the plugin directory, so it needs this environment too.
-
-In a checkout of the repository, or skip the `pip wheel` line and give `pip install`
-the path of a wheel you were given:
-
-```sh
-AGENTS_VENV=/absolute/agents-venv
-python3 -m venv "$AGENTS_VENV"
-WHEELS="$(mktemp -d)"
-"$AGENTS_VENV/bin/python" -m pip wheel --no-deps -w "$WHEELS" .
-"$AGENTS_VENV/bin/python" -m pip install "$WHEELS"/graftling-*.whl
+uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
 
 ## Distribution: `dsh plugin add`
 
-The installed directory `graftling/dsh/` is a DSH plugin bundle named `graftling-dsh`.
-Install it with DSH's own plugin command, once per profile, from the agents environment
-DSH should use. It is not on a public market.
+The directory `graftling/dsh/` of that installation is a DSH plugin bundle named
+`graftling-dsh`. Add it with DSH's own plugin command, once per profile. It is not on a
+public market.
 
 ```sh
-DSH_PACKAGE="$("$AGENTS_VENV/bin/python" -c 'import graftling.dsh, pathlib; print(pathlib.Path(graftling.dsh.__file__).parent)')"
+DSH_PACKAGE="$("$AGENTS_PYTHON" -c 'import graftling.dsh, pathlib; print(pathlib.Path(graftling.dsh.__file__).parent)')"
 dsh plugin --profile headless add "$DSH_PACKAGE"
 ```
 
-Any profile works the same way: `headless`, `web`, `tui`, `acp` or `sdk`.
+Any profile works the same way: `headless`, `web`, `tui`, `acp` or `sdk`. DSH runs pnpm,
+which links the profile's `node_modules/graftling-dsh` to `$DSH_PACKAGE` (it saves
+`"graftling-dsh": "link:<that directory>"`); nothing is copied.
 
-> Not yet walked on a real host: `dsh plugin add` of this directory. An earlier real
-> attempt failed because pnpm was missing, so the real runs used `--patch`, below.
+Nothing else is needed: the next Session has the `agents` tool, with its data in the
+project's `.agents-control` ([Data root](#data-root-and-configuration)).
+
+> Walked on a real host (569): `dsh plugin add` of an installed `graftling/dsh`
+> directory registered `graftling-dsh` as a `link:` dependency, with DSH 0.2.2-rc.5 and
+> pnpm 12.21.0. Not yet walked: a Session of a profile added from a uv installation.
+
+### Which Python the plugin runs
+
+The plugin runs the host and the `agents` MCP server with the Python of the installation
+it belongs to. Nothing is built or downloaded, and nothing is written under the DSH home.
+
+| Case | What happens |
+| --- | --- |
+| `GRAFTLING_PYTHON` set | Used as given, without a check |
+| Not set, plugin added from an installation | That installation's Python: the plugin's real path is `<installation>/lib/pythonX.Y/site-packages/graftling/dsh/`, and it runs `<installation>/bin/pythonX.Y`, else `python3`, else `python` there |
+| Not set, a development checkout | `python3`, else `python`, on `PATH`, when it imports this very checkout (an editable install) |
+| None of these imports the plugin's own graftling | Refused ([A refused start](#a-refused-start)) with `graftling-dsh: no Python that imports this graftling (...) was found; tried ...`, followed by the `uv tool install` command for the plugin's version and `GRAFTLING_PYTHON` as the other way |
+
+A Python counts only when it imports `graftling` from the plugin's own directory, so the
+plugin and the Python package are always one installation. A plugin directory copied away
+from its installation, such as one installed from a Git address, is refused this way.
 
 ## Local files: `--patch` for one invocation
 
@@ -222,9 +176,7 @@ page has not been walked.
 env -u DEEPSEEK_BASE_URL dsh --profile headless "Your task."
 ```
 
-After a wheel install, add `GRAFTLING_PYTHON="$AGENTS_VENV/bin/python"`, the Python that
-has `graftling`; leave it out after the
-[GitHub install](#install-from-github-the-plugins-page-or-dsh-plugin-add). Add
+No `GRAFTLING_PYTHON` is needed ([Which Python](#which-python-the-plugin-runs)). Add
 `GRAFTLING_DATA_ROOT=/absolute/agents-data` for
 [another directory](#another-directory-graftling_data_root), or
 `GRAFTLING_DSH_CONFIG=/absolute/dsh-host.json` for an
@@ -243,14 +195,14 @@ env -u DEEPSEEK_BASE_URL dsh --profile headless --session-id "<session id>" "Nex
 A refused host start makes the DSH Session fail to start. The host prints one
 `{"error": {"code", "message"}}` line, or the plugin refuses before starting it, and
 DSH's `agent/created` handler fails with that text. Since the plugin is on by default,
-this covers missing PyYAML or websockets, a Session without a usable working directory
+this covers a plugin without its installation's Python, a Session without a usable working directory
 and a `.agents-control` that cannot be created. Observed in `headless`: the run prints
 only `dsh: graftling-dsh: ...` with the message and exits 1; the task does not run.
 Fix the cause the message names, or remove the plugin from the profile
 ([Turning it off](#turning-it-off)), and start again. The TUI and the web interface have
 not been run with a refused start.
 
-> Not yet walked on a real host from a wheel-only install: these steps run as written
+> Not yet walked on a real host from a uv-only install: these steps run as written
 > in a clean environment. The same host ran on real DSH 0.2.2-alpha.2 with `--patch` in
 > earlier checks.
 
@@ -323,21 +275,34 @@ Set a model at `create` to choose another one for one child.
 
 ## Upgrade
 
-From GitHub: install the new full commit with the same command or the Plugins page, or
-use DSH's update when the install is pinned to a commit. The next Session start builds a
-new environment for the new sources, as on the first start; if you ran the pip command
-before, the message asks for it again for the new environment. Older environments stay
-under `$DSH_HOME/graftling-python` until you delete them while DSH is stopped.
-
-From a wheel:
-
-1. Install the new wheel into the same environment, as above.
-2. If you used `dsh plugin add`, run it again for each profile, so that profile loads
-   the new plugin. With `--patch`, nothing else is needed: the path does not change.
+1. Install the new version with uv, as in the [README](../../README.md#install). The
+   installation stays in the same directory, so the profile's link keeps pointing at it.
+2. Run `dsh plugin add "$DSH_PACKAGE"` again for each profile, so DSH reads the new
+   bundle's version and patch; it is required when uv picked another Python minor
+   version, which moves `$DSH_PACKAGE`. With `--patch`, use the new `$DSH_PACKAGE`.
 3. Start DSH with the same configuration. Reopening a Session binds a new host, which
    delivers what was held, each once.
 
 > Not yet walked on a real host: `dsh plugin add` over an earlier install of this package.
+
+### Moving from the 0.7.0 DSH install
+
+0.7.0 also installed `graftling-dsh` from this repository's GitHub address (the Plugins
+page or `dsh plugin add "git+https://github.com/LUOXIAO92/graftling.git#<commit>"`), and
+that plugin built its own copy of graftling under `$DSH_HOME/graftling-python`. Both are
+gone: the bare address now registers no bundle, and the `&path:/src/graftling/dsh`
+subdirectory form gives a plugin without its Python, which refuses to start with the
+`uv tool install` message. A profile that already has the 0.7.0 plugin keeps running
+it, and its copy of graftling, until you move. To move to the one installation:
+
+1. Remove the plugin from every profile that has it:
+   `dsh plugin --profile <profile> remove graftling-dsh`.
+2. With every DSH process stopped, delete the environment it built:
+   `rm -rf "${DSH_HOME:-$HOME/.dsh}/graftling-python"`.
+3. [Install graftling](#install-graftling) with uv and
+   [add the plugin](#distribution-dsh-plugin-add) from it to each profile again.
+
+The data root is unchanged, so held notices and children's records stay.
 
 ## Limits
 

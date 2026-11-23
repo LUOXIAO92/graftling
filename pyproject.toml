@@ -33,6 +33,11 @@ version = {attr = "graftling.__version__"}
 # (GraphTraj's tests/test_codex_parent_uses_agents.py runs the commands of
 # install/<host>.md). src/graftling/PUBLIC_API.md and src/graftling/install are links to
 # the repository root's PUBLIC_API.md and docs/install, so each has one copy.
+# The hosts' plugins ship too, so each is taken from the one installation (581):
+# graftling-dsh (dsh/), the Pi package (pi/) and the Claude Code marketplace
+# (.claude-plugin/marketplace.json naming claude-plugin/).
 [tool.setuptools.package-data]
 graftling = ["PUBLIC_API.md", "install/*.md", "dsh/*.mjs", "dsh/package.json", "dsh/dsh.patch.yml", "claude/*.mjs",
-             "pi/*.mjs", "pi/package.json", "sessions/DSH-LICENSE", "review_policy/*"]
+             "pi/*.mjs", "pi/package.json", "sessions/DSH-LICENSE", "review_policy/*",
+             ".claude-plugin/marketplace.json", "claude-plugin/.claude-plugin/plugin.json",
+             "claude-plugin/bin/graftling-host", "claude-plugin/hooks/*"]
