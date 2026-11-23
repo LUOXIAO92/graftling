@@ -63,6 +63,9 @@ REVIEW_HOOK_MARGIN_SECONDS = 60
 # --restricted keeps the commands-and-code tools (Bash, ...) and WebFetch off
 # unless --tools names them, and `--tools default` does not name them, so a child
 # whose create names no tools gets `--tools <this set>`. Nothing is hard-coded.
+# The set is the default WITHOUT a login; account-level availability under the
+# user's login can remove tools from it (seen: WebFetch), and Claude Code then
+# does not offer them although --tools names them (tool_check reports them).
 TOOL_PROBE_TIMEOUT_SECONDS = 60
 TOOL_PROBE_CREDENTIALS = ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN')
 # The discard port: nothing listens there, so even a found credential reaches nothing.
@@ -159,8 +162,14 @@ def tool_probe_key(executable: str, version: object, model: str, permission_mode
 
 def probe_default_tools(executable: str, version: object, model: str, permission_mode: str | None,
                   environment: dict, state: Path) -> list[str]:
-    """Return the built-in tools Claude Code offers by default, probed once per key (576).
+    """Return Claude Code's default built-in tools without a login, probed once per key (576).
 
+    The probe has an empty config directory and no credential, so this is the
+    default before any account-level availability: under the user's login
+    Claude Code can withhold some of these tools (on the real host WebFetch was
+    absent from every logged-in session and present only in this probe). They
+    are still passed in ``--tools``; Claude Code does not offer them, and the
+    child reports them in ``tool_check``'s ``default_tools_not_offered``.
     ``state`` is graftling's own private directory (never the user's ~/.claude);
     the set is cached there as ``claude-default-tools/<key>.json``. A probe that
     finds no set raises ``RUNTIME_REQUEST_FAILED``: there is no fixed fallback.
@@ -644,8 +653,11 @@ class ClaudeExecution:
         ``--tools`` names them; ``--tools default`` does not name them. So
         ``--tools`` is always passed: the create's ``tools`` when given,
         otherwise ``default_tool_set()``, the set the child's own Claude Code
-        offers without ``--restricted`` (probed at run time; nothing is
-        hard-coded). ``disallowed_tools`` removes tools (``--disallowedTools``).
+        offers without ``--restricted`` and without a login (probed at run time;
+        nothing is hard-coded). Account-level availability under the login can
+        remove tools from it (seen: WebFetch): they are passed in ``--tools``,
+        Claude Code does not offer them, and ``tool_check`` reports them as
+        ``default_tools_not_offered``. ``disallowed_tools`` removes tools (``--disallowedTools``).
         A subclass that returns its own flags without calling this never probes.
 
         Neither grants a use. Under ``--restricted`` the child reads no user,
@@ -662,9 +674,11 @@ class ClaudeExecution:
         return argv
 
     def default_tool_set(self) -> list[str]:
-        """Return the child's Claude Code default built-in set, probed once (576).
+        """Return the child's Claude Code default built-in set without a login, probed once (576).
 
-        Uses the probe environment and state ``_prepare`` stored; records the
+        Tools that account-level availability withholds under the login are
+        included; the child's Claude Code does not offer them (see
+        ``probe_default_tools``). Uses the probe environment and state ``_prepare`` stored; records the
         set as ``default_tools`` and in the diagnostics. Raises
         ``RUNTIME_REQUEST_FAILED`` when the probe finds no set.
         """
@@ -691,7 +705,9 @@ class ClaudeExecution:
         server the child has, so it may be a name Claude does not know).
         Without the create's ``tools``, ``default_tools_not_offered`` names
         probed default tools the child does not have (576), other than the
-        disallowed ones. Empty when nothing is to report.
+        disallowed ones: the probed set is the default without a login, and
+        account-level availability under the login can remove tools from it
+        (seen: WebFetch). Empty when nothing is to report.
         """
         request = self.request
         chosen, denied = request.get('tools'), request.get('disallowed_tools') or []

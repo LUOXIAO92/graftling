@@ -24,7 +24,12 @@ The numbers in parentheses are the project's Task numbers.
   Claude Code, read at run time by starting the same executable once without
   `--restricted`, with no settings sources, MCP servers or credential, a closed base URL
   and an empty graftling-owned config directory, stopped at its system init before any
-  model call. The set is cached in the data root's private state
+  model call. That is Claude Code's default set without a login: account-level
+  availability under the user's login can remove tools from it (on the real host
+  WebFetch was absent from every logged-in session and present only in the no-login
+  probe). Such tools are still passed in `--tools`, Claude Code does not offer them,
+  and the child reports them in `tool_check`'s `default_tools_not_offered`. The set
+  is cached in the data root's private state
   (`claude-default-tools/`); nothing is hard-coded. If it cannot be read, the child does
   not start and the create fails `RUNTIME_REQUEST_FAILED`, naming the cause and
   suggesting create's `tools`. A subclass whose `tool_arguments()` returns its own flags
@@ -38,11 +43,14 @@ The numbers in parentheses are the project's Task numbers.
 ### Changed
 
 - An observable default change (576): a Claude child created without `tools` now has
-  Claude Code's unrestricted default built-in set instead of 0.7.0's restricted one. On
-  Claude Code 2.1.330 the child gains Bash, WebFetch, CronCreate, Monitor and Workflow
-  and loses Glob and Grep, which the restricted set had.
+  Claude Code's unrestricted default built-in set (without a login) instead of 0.7.0's
+  restricted one. On Claude Code 2.1.330 the probed set adds Bash, WebFetch, CronCreate,
+  Monitor and Workflow and drops Glob and Grep, which the restricted set had. Under the
+  user's login on the real host the child had Bash but not WebFetch, which account-level
+  availability withheld (see Fixed).
 - `tool_check` reports `default_tools_not_offered`: probed default tools a child
-  without `tools` does not have, other than disallowed ones (576).
+  without `tools` does not have, other than disallowed ones, such as tools the
+  login's account-level availability withholds (576).
 
 ## 0.7.0 (incompatible)
 

@@ -1027,6 +1027,12 @@ and, without `tools`, `default_tools_not_offered` (576).
   (`--setting-sources ""`), no MCP servers, no credential, a closed local
   base URL and an empty graftling-owned `CLAUDE_CONFIG_DIR`, and stops it at
   its system init, before any model call. Only built-in names are kept. The
+  set is therefore Claude Code's default WITHOUT a login. Account-level
+  availability under the user's login can remove tools from it: on the real
+  host WebFetch was absent from every logged-in session, the child included,
+  and present only in the no-login probe. Such tools are still passed in
+  `--tools`, Claude Code does not offer them, and the child reports them in
+  `tool_check`'s `default_tools_not_offered`. The
   set is cached per resolved executable, version, file, model, permission
   mode and `CLAUDE_CODE_*` environment in the data root's private state
   (`claude-default-tools/<key>.json`); nothing is hard-coded and there is no
@@ -1048,7 +1054,8 @@ and, without `tools`, `default_tools_not_offered` (576).
   reaches the direct parent as a pending request; a tool they deny stays off,
   visible as absent from the child's system init tool list. `tool_check`
   also reports `default_tools_not_offered`, probed tools the child does not
-  have (other than disallowed ones). The host process's own command-line flags
+  have (other than disallowed ones), such as tools the login's account-level
+  availability withholds. The host process's own command-line flags
   (its own `--tools`, `--disallowedTools`) are not observable and so not
   inherited. `--restricted`, the mandatory sandbox and the runtime-home and
   private-state denies are unchanged.
