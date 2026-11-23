@@ -34,18 +34,52 @@ PI_PACKAGE="$("$AGENTS_VENV/bin/python" -c 'import graftling.pi, pathlib; print(
 pi install "$PI_PACKAGE"       # for you; add -l for this project only
 ```
 
-> Not yet walked on a real host: `pi install` of this directory. The real runs used
-> `-e`, below.
+`pi install -l` writes only the project's `.pi/settings.json`. Pi loads that
+declaration once the project is trusted (`--approve` trusts it for one run).
+
+> Walked in a sandbox with an isolated `PI_CODING_AGENT_DIR` and no model login (Pi 1.4.0, 572):
+> `pi install -l` of this directory from a wheel install, then a Session start. The
+> start served `<project>/.agents-control/live/pi-host`. Not yet walked: a full turn
+> with the `agents` tool after `pi install` (Task 572's `start` step), and `pi install`
+> without `-l`.
 
 ## Local files: `-e` for one invocation
 
 Nothing is installed; the extension loads for this one run:
 
 ```sh
-pi -e "$PI_PACKAGE/extension.mjs" --agents-config /absolute/pi-host.json
+pi -e "$PI_PACKAGE/extension.mjs"
 ```
 
-## Minimal configuration
+## Data root and configuration
+
+With no flag, the data root is `<project>/.agents-control`. It is created when
+missing. The project is the Session's working directory (`ctx.cwd`). In Pi 1.4.0
+that is the directory `pi` starts in, because Pi has no option to set it. This is
+the Claude Code host's default, and the DSH plugin's, so the hosts share one data
+root and each Main sees only its own children.
+
+**Pi children need more.** A Pi child is refused on this default root, because
+the root lies inside the project the child may read (`Pi cannot deny reading
+<project>/.agents-control inside the readable <project>`). Claude, Codex and DSH
+children work on it. For Pi children:
+
+- give a data root outside the project with `--agents-config`;
+- install [what a Pi child needs](../../README.md#what-a-pi-child-needs)
+  (agent-sandbox, srt, node, rg).
+
+A Session whose working directory is not an absolute, existing directory gets no
+`agents` tool. A data root that cannot be created stops the start too. In both
+cases the message names `--agents-config`.
+
+Inside a DSH-managed context (`DSH_SESSION_ID` or `DSH_AGENT_SOURCE` set), the
+extension stays inert without the flag. In a Pi child of an agents host
+(`GRAFTLING_CONNECTION` set), it uses the owner's connection, as before.
+
+`--agents-config <file>` selects an explicit configuration instead, which works
+as before.
+
+### Minimal explicit configuration
 
 `/absolute/pi-host.json`:
 
@@ -62,17 +96,50 @@ key stops the start.
 ## Start it
 
 ```sh
-GRAFTLING_PYTHON="$AGENTS_VENV/bin/python" pi --agents-config /absolute/pi-host.json
+pi                                          # data root <project>/.agents-control
+pi --agents-config /absolute/pi-host.json   # an explicit configuration
 ```
 
-Add `-e "$PI_PACKAGE/extension.mjs"` if you did not `pi install`. `GRAFTLING_PYTHON`
-names the Python that has `graftling`; without it the Session start fails.
+Add `-e "$PI_PACKAGE/extension.mjs"` if you did not `pi install`.
 
-A refused start shows as the extension's error, with one `{"error": {"code",
-"message"}}` line, and the Session has no `agents` tool.
+**Which Python.** `GRAFTLING_PYTHON`, when set, names the Python that has
+`graftling`. Without it the extension looks for the Python of the installation it
+was loaded from:
 
-> Not yet walked on a real host from a wheel-only install: these steps run as written
-> in a clean environment. The same host ran on real Pi 1.4.0 with `-e` in earlier checks.
+- the interpreter beside the site-packages holding the extension
+  (`<prefix>/lib/pythonX.Y/site-packages/graftling/pi/` gives `<prefix>/bin/pythonX.Y`,
+  `python3`, `python`);
+- then `python3` and `python` on `PATH`, which covers an editable install from a
+  checkout.
+
+A candidate is used only when `python -I` imports `graftling` from that same
+directory. This needs no network. If none does, the start stops with a message
+naming `GRAFTLING_PYTHON`.
+
+A refused start shows as Pi's `Extension error (<path>/extension.mjs): <message>`. A
+host refusal adds one `{"error": {"code", "message"}}` line. In Pi 1.4.0 the Session
+still starts and runs its prompt, without the `agents` tool. Before 572 this guide
+said the Session start fails; in a real run it did not.
+
+**Turning it off.** The package is the switch:
+
+- `pi remove -l "$PI_PACKAGE"` for a project install. It needs `--approve` in a
+  project that is not trusted. Use `pi remove "$PI_PACKAGE"` for a personal install.
+- `pi --no-extensions` for one run.
+- `pi config` can disable the extension (not walked).
+
+No variable turns the default off. In the 572 sandbox, a start after
+`pi remove -l --approve`, and a start with `--no-extensions`, created no
+`.agents-control`.
+
+> Walked from a wheel install in a sandbox (Pi 1.4.0, isolated `PI_CODING_AGENT_DIR`,
+> no model login, 572), with no flag and no variable:
+>
+> - the start served `<project>/.agents-control/live/pi-host` with the Python it found;
+> - a copy of the package with no interpreter gave the `GRAFTLING_PYTHON` message;
+> - `--agents-config` with `GRAFTLING_PYTHON` served the explicit root.
+>
+> Not yet walked: a model turn that creates a child this way (Task 572's `start` step).
 
 ## See that it worked
 

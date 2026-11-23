@@ -4,6 +4,7 @@ The extension supplies its native Session association on the owned stdio
 launch boundary. Model requests supply neither identity nor launch settings.
 The host configuration is Task-free: ``root`` plus optional per-Runtime
 settings (``pi``, ``claude``, ``codex``, ``dsh``); see PUBLIC_API.md 1.6.
+Without ``--config`` it is ``<Session cwd>/.agents-control``, created when missing.
 The host builds the Pi child request from its verified native parent.
 
 Private pipe protocol with the extension: stdin carries one Session event
@@ -128,6 +129,21 @@ def read_configuration(document: object) -> tuple[Path, dict]:
     check_pi_settings(settings['pi'])
     return Path(root), settings
 
+
+
+def default_configuration(cwd: Path) -> tuple[Path, dict]:
+    """Without ``--config``: the project's own ``<cwd>/.agents-control``, no per-Runtime settings (572).
+
+    The default data root of the Claude Code and DSH hosts for the same
+    project, so the hosts share it. Only the data root itself is created.
+    """
+    root = cwd / '.agents-control'
+    try:
+        root.mkdir(exist_ok=True)
+    except OSError as error:
+        raise ValueError(f'Cannot create the default data root {root}: {error.strerror or error}. Start pi with '
+                         '--agents-config <file> naming another root (docs/install/pi.md).') from None
+    return read_configuration({'root': str(root)})
 
 def check_pi_settings(pi: Mapping[str, Any]) -> None:
     """Raise ``ValueError`` naming an unknown or fixed Pi setting or a wrong field type."""
@@ -413,9 +429,11 @@ class Notices:
             slot[0].set()
 
 
-def start(config: Path) -> tuple[Path, Notices, Callable, Callable, AgentControl, Caller]:
+def start(config: Path | None) -> tuple[Path, Notices, Callable, Callable, AgentControl, Caller]:
     """Verify the native parent and configuration; bind the Pi Main to its control.
 
+    Without ``config`` the data root is the Session cwd's ``.agents-control``
+    (:func:`default_configuration`).
     Returns the model-facing entry and the plain bound ``call``: only what the
     model reads settles a held notice, not this host's own shutdown.
     """
@@ -423,13 +441,15 @@ def start(config: Path) -> tuple[Path, Notices, Callable, Callable, AgentControl
         'GRAFTLING_CONNECTION', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE',
     )):
         raise ValueError('An already-bound child must use its existing connection, not adopt Main.')
-    root, settings = read_configuration(json.loads(config.read_text(encoding='utf-8')))
+    configured = read_configuration(json.loads(config.read_text(encoding='utf-8'))) if config else None
     cwd = Path.cwd()
-    request = pi_request(settings['pi'], cwd, os.environ)
     verify_native_parent(Path(os.environ['GRAFTLING_PI_ENTRY']))
     connection = current_connection()
     if connection is None:
         raise ValueError('Pi native Session association is unavailable.')
+    # Only a verified Pi Session creates the default root (572).
+    root, settings = configured or default_configuration(cwd)
+    request = pi_request(settings['pi'], cwd, os.environ)
     event = json.loads(sys.stdin.readline())
     # bind_native_main verifies this Session before any child can exist.
     notices = Notices(sys.stdout, connection['session'])
@@ -458,7 +478,7 @@ def start(config: Path) -> tuple[Path, Notices, Callable, Callable, AgentControl
 def main() -> None:
     """Keep one control owner alive until the trusted extension closes its pipe."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', required=True, type=Path)
+    parser.add_argument('--config', type=Path, help='host configuration; default: <Session cwd>/.agents-control')
     options = parser.parse_args()
     try:
         root, notices, operate, call, control, caller = start(options.config)

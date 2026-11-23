@@ -160,7 +160,7 @@ notes (`install/`) are public with their documented flags:
   `.agents-control/host.log`.
 - The Pi host: the agents Pi extension's `--agents-config <file>` flag and
   that file's keys (1.6). The extension starts `python -I -m
-  graftling.pi.host --config <file>` itself; its pipe protocol with the
+  graftling.pi.host [--config <file>]` itself; its pipe protocol with the
   extension is private.
 - The DSH host: the `GRAFTLING_DSH_CONFIG` variable naming that file and its
   keys (1.7). The agents DSH plugin starts `python -I -m graftling.dsh.host
@@ -774,8 +774,15 @@ root holds this host's own records. A consumer adds its own private directories 
 ### 1.6 Pi host: the agents Pi extension
 
 A Pi Session becomes an agents host (the parent of its children) by loading
-the extension `graftling/pi/extension.mjs` and starting with
-`--agents-config <file>`.
+the extension `graftling/pi/extension.mjs`. Its data root is the one
+`--agents-config <file>` names. Without that flag it is
+`<Session cwd>/.agents-control`, created when missing (572). That is the
+Claude Code and DSH hosts' default, so they share it.
+
+A Session cwd that is not an absolute directory, or a root that cannot be
+created, stops the start with a message naming `--agents-config`. Without the
+flag the extension stays inert in a DSH-managed context (`DSH_SESSION_ID` or
+`DSH_AGENT_SOURCE`). A Pi child (`GRAFTLING_CONNECTION`) is unchanged.
 
 **Distribution.** The installed directory `graftling/pi/` is a Pi package:
 its `package.json` declares `"pi": {"extensions": ["./extension.mjs"]}` and
@@ -785,12 +792,21 @@ own package command, from the agents installation Pi should use:
 ```sh
 PI_PACKAGE="$(<python> -c 'import graftling.pi, pathlib; print(pathlib.Path(graftling.pi.__file__).parent)')"
 pi install "$PI_PACKAGE"          # personal; add -l for this project only
-GRAFTLING_PYTHON=<python> pi --agents-config /abs/pi-host.json
+pi                                # or: pi --agents-config /abs/pi-host.json
 ```
 
-`pi -e "$PI_PACKAGE/extension.mjs" --agents-config ...` loads it for one
-invocation without installing. `GRAFTLING_PYTHON` names the Python that has
-`graftling` installed; without it the Session start fails. Pi child
+`pi -e "$PI_PACKAGE/extension.mjs"` loads it for one invocation without
+installing. `GRAFTLING_PYTHON`, when set, names the Python that has
+`graftling` installed.
+
+Without it, the extension uses the first candidate that imports `graftling`
+under `-I` from the extension's own installation. The candidates are the
+interpreters of the environment whose site-packages holds the extension, then
+`python3` and `python` on `PATH`. If none does, the start stops with a message
+naming `GRAFTLING_PYTHON`. Pi 1.4.0 shows such a refusal as an extension
+error, and the Session goes on without the `agents` tool.
+
+A Pi child uses the `GRAFTLING_PYTHON` its owner sets. Pi child
 executions load the same file themselves, so a Pi child of any host needs no
 installation.
 

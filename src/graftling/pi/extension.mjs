@@ -1,8 +1,8 @@
 /** Pi's session-local independent agents entry; loading this file is a native trust step. */
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 // How long a Session with a UI that starts no turn by itself waits before taking held notices.
 const READY_MS = 2000;
@@ -89,6 +89,47 @@ export async function loadHostSdk(executable = process.argv[1]) {
   throw new Error('The owning Pi SDK public entry is unavailable.');
 }
 
+/**
+ * The Python of the graftling installation this file belongs to (572).
+ * GRAFTLING_PYTHON wins when set. Otherwise the candidates are the
+ * interpreters of the environment whose site-packages holds this file
+ * (<prefix>/lib/pythonX.Y/site-packages/graftling/pi/ -> <prefix>/bin/),
+ * then python3 and python on PATH (an editable install). A candidate counts
+ * only when `-I` imports graftling from this same directory. No network.
+ */
+export function graftlingPython(environment = process.env, here = import.meta.url) {
+  if (environment.GRAFTLING_PYTHON) return environment.GRAFTLING_PYTHON;
+  const pkg = dirname(dirname(realpathSync(fileURLToPath(here))));
+  const site = dirname(pkg);
+  const candidates = [];
+  if (basename(site) === 'site-packages') {
+    const lib = dirname(site);
+    const prefix = dirname(dirname(lib));
+    candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+  }
+  candidates.push('python3', 'python');
+  const expected = join(pkg, '__init__.py');
+  for (const candidate of candidates) {
+    const found = spawnSync(candidate, ['-I', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
+      {encoding: 'utf8', env: environment, timeout: 20000});
+    if (found.status === 0 && found.stdout.trim() === expected) return candidate;
+  }
+  throw new Error(`graftling: no Python that imports this graftling (${pkg}) was found; tried ${candidates.join(', ')}. `
+    + 'Set GRAFTLING_PYTHON to the Python graftling is installed in (docs/install/pi.md).');
+}
+
+/** The Session's project directory for the default data root, or an error naming --agents-config. */
+function requireProjectDirectory(cwd) {
+  let usable = typeof cwd === 'string' && isAbsolute(cwd);
+  try { usable = usable && statSync(cwd).isDirectory(); } catch { usable = false; }
+  if (!usable) {
+    throw new Error(`graftling: this Pi Session has no usable project directory (cwd: ${cwd}), so the agents tool `
+      + 'has no default data root <project>/.agents-control. Start pi with --agents-config <file> naming a data root '
+      + '(docs/install/pi.md).');
+  }
+  return cwd;
+}
+
 /** Capture plugin markers during session_start, before a shared host restores env. */
 export function sessionEnvironment(ctx, environment) {
   return {
@@ -138,10 +179,11 @@ export function deliverNotice(pi, notice, session, manager) {
  * starts, a notice is neither injected nor acknowledged, so the host keeps it
  * held. ``ready`` tells the host once that it may deliver the notices it holds.
  */
-export function startAgentHost(ctx, config, onNotice = () => {}) {
+export function startAgentHost(ctx, config, onNotice = () => {}, python = process.env.GRAFTLING_PYTHON) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.env.GRAFTLING_PYTHON,
-      ['-I', '-m', 'graftling.pi.host', '--config', config], {
+    // Without a config the host uses <ctx.cwd>/.agents-control (572).
+    const child = spawn(python,
+      ['-I', '-m', 'graftling.pi.host', ...(config ? ['--config', config] : [])], {
         cwd: ctx.cwd, stdio: ['pipe', 'pipe', 'pipe'],
         env: {...process.env, ...sessionEnvironment(ctx, process.env),
           GRAFTLING_PI_NODE: process.execPath,
@@ -273,18 +315,21 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
         return true;
       }
       const agentsConfig = pi.getFlag?.('agents-config');
-      if (agentsConfig) {
-        if (Object.hasOwn(process.env, 'DSH_SESSION_ID') || Object.hasOwn(process.env, 'DSH_AGENT_SOURCE')) {
-          throw new Error('Standalone agents config cannot replace an existing managed Agent context; retain its owning connection.');
-        }
-        if (!process.env.GRAFTLING_PYTHON) throw new Error('Independent agents requires its selected Python installation.');
+      const managed = Object.hasOwn(process.env, 'DSH_SESSION_ID') || Object.hasOwn(process.env, 'DSH_AGENT_SOURCE');
+      if (agentsConfig && managed) {
+        throw new Error('Standalone agents config cannot replace an existing managed Agent context; retain its owning connection.');
+      }
+      // Without --agents-config a managed DSH context stays inert, as before 572.
+      if (agentsConfig || !managed) {
+        if (!agentsConfig) requireProjectDirectory(ctx.cwd);
+        const python = graftlingPython();
         independent.add(ctx.sessionManager);
         const session = ctx.sessionManager.getSessionId();
         sessionManager = ctx.sessionManager;
-        agentHost = await startAgentHost(ctx, agentsConfig, notice => deliverNotice(pi, notice, session, sessionManager));
+        agentHost = await startAgentHost(ctx, agentsConfig, notice => deliverNotice(pi, notice, session, sessionManager), python);
         try {
           pi.registerMcpServer(server, {
-            command: process.env.GRAFTLING_PYTHON,
+            command: python,
             args: ['-I', '-m', 'graftling.mcp'], cwd: ctx.cwd,
             env: {GRAFTLING_CONNECTION: agentHost.connection}, exposure: 'direct',
           });
