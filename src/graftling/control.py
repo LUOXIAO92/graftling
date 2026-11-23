@@ -397,7 +397,7 @@ class ExecutionEvents:
         catalog alias (574); ``status`` shows it beside ``model``.
         ``permission_mode`` records a narrower permission mode the Runtime
         reported than requested, which the run went on under (578); ``status``
-        shows it.
+        shows it only while it is the latest execution's report.
         """
         allowed = {"worker_pid", "runtime_pid", "owned_at", "runtime_exit", "tool_marker",
                    "tool_descendants", "tool_check", "resolved_model", "permission_mode"}
@@ -2359,11 +2359,11 @@ class AgentControl:
                     if execution.get("process", {}).get("resolved_model")]
         if resolved:
             document["resolved_model"] = resolved[-1]
-        # The latest execution's narrower permission mode than requested (578).
-        modes = [execution["process"]["permission_mode"] for execution in record["executions"]
-                 if execution.get("process", {}).get("permission_mode")]
-        if modes:
-            document["permission_mode"] = deepcopy(modes[-1])
+        # The latest execution's narrower permission mode than requested (578); an
+        # earlier execution's report never stands for the current one.
+        mode = (record["executions"][-1].get("process") or {}).get("permission_mode") if record["executions"] else None
+        if mode:
+            document["permission_mode"] = deepcopy(mode)
         if current is not None:
             document["execution"] = current["id"]
             if current.get("stop_requested_at") is not None:

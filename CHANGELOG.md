@@ -24,7 +24,8 @@ The numbers in parentheses are the project's Task numbers.
   killed after 5 s. Now a narrower mode (`default`, `manual`, `plan` or `dontAsk` for
   `auto`; `plan` or `dontAsk` for `default`) lets the run complete. Both modes are
   kept: the `permissions` record and outcome add `narrower: true`, the diagnostics add
-  the warning `permission_mode_narrower`, and `status` adds `permission_mode`. A wider,
+  the warning `permission_mode_narrower`, and `status` adds `permission_mode` for the
+  latest execution only. A wider,
   not comparable (`acceptEdits` against `auto`) or unknown mode still fails. The turn
   is now interrupted at that system init instead of running on while the input closes.
   See `PUBLIC_API.md` 4.1.

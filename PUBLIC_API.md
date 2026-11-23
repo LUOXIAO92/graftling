@@ -1970,8 +1970,10 @@ mode as the requested one:
 - A mode narrower than the request, where Claude only asks or refuses more,
   lets the run go on and complete: `default` (or `manual`), `plan` or
   `dontAsk` for a requested `auto`, and `plan` or `dontAsk` for a requested
-  `default`. Its prompts reach the parent as usual. `status` adds
-  `permission_mode: {"requested", "observed", "narrower": true}`. The
+  `default`. Its prompts reach the parent as usual. While that execution
+  is the child's latest, `status` adds
+  `permission_mode: {"requested", "observed", "narrower": true}`; a later
+  execution that reports the requested mode drops it. The
   child's diagnostics carry the warning `permission_mode_narrower` and
   `permission_mode`. The Session's `permissions` record and the outcome's
   `permissions` show `matches_request: false` and `narrower: true`.

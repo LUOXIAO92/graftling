@@ -92,6 +92,25 @@ def test_a_narrower_mode_is_recorded_warned_and_the_run_completes(
     assert 'interrupt' not in sent
 
 
+@pytest.mark.parametrize(('first', 'second', 'shown'), [('default', 'auto', False), ('auto', 'default', True)])
+def test_status_shows_only_the_latest_executions_mode(
+        tmp_path: Path, native: None, monkeypatch: pytest.MonkeyPatch, first: str, second: str, shown: bool) -> None:
+    result, _ = run_child(tmp_path, monkeypatch, 'auto', first)
+    assert result['last_result']['outcome'] == 'completed'
+    assert ('permission_mode' in result) is (first == 'default')
+    agent = result['agent']
+    monkeypatch.setenv('CLAUDE_FIXTURE_PERMISSION_MODE', second)
+    call = graftling.bind(AgentControl(tmp_path / 'agents', {'claude': ClaudeDriver(tmp_path, {
+        'model': 'claude-opus-5-5', 'permission_mode': 'auto'})}), Caller('test-host', None, 'parent-session', 'claude'))
+    sent = call({'action': 'send', 'agent': agent, 'message': 'second'})
+    assert not sent.failed, sent.document
+    waited = call({'action': 'wait', 'agent': agent, 'timeout_seconds': 20}).document['result']
+    assert waited['last_result']['outcome'] == 'completed' and waited['last_result']['id'] != result['last_result']['id']
+    assert ('permission_mode' in waited) is shown
+    if shown:
+        assert waited['permission_mode'] == {'requested': 'auto', 'observed': 'default', 'narrower': True}
+
+
 def test_a_matching_mode_reports_no_permission_mode(
         tmp_path: Path, native: None, monkeypatch: pytest.MonkeyPatch) -> None:
     result, _ = run_child(tmp_path, monkeypatch, 'auto', 'auto')

@@ -103,7 +103,7 @@ shows the full id as `resolved_model`. You can also request that full id
 directly ([`PUBLIC_API.md`](PUBLIC_API.md) section 2, rule 5). A Claude child may also
 run under another permission mode than its `permission_mode`. A narrower one, such as
 `default` for `auto`, where Claude asks more, lets it complete, and `status` shows
-both modes as `permission_mode`. A wider or unknown one fails it with
+both modes as `permission_mode` for the latest execution only. A wider or unknown one fails it with
 `RUNTIME_REQUEST_FAILED` ([`PUBLIC_API.md`](PUBLIC_API.md) 4.1). Every other code is in
 [`PUBLIC_API.md`](PUBLIC_API.md) 1.2.
 
