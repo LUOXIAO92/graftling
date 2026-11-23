@@ -90,6 +90,62 @@ _STR  = "tag:yaml.org,2002:str"
 _BOOL = "tag:yaml.org,2002:bool"
 _NUMBERS = ("tag:yaml.org,2002:int", "tag:yaml.org,2002:float")
 
+# One variable that chooses the data root for every host (577).
+DATA_ROOT_VARIABLE = "GRAFTLING_DATA_ROOT"
+
+
+def data_root_override() -> Path | None:
+    """Return ``GRAFTLING_DATA_ROOT`` as a data root, created when missing; ``None`` when unset or empty.
+
+    A host's own setting (a host configuration file, ``--directory``) wins
+    over it; callers consult it only without one.
+
+    Raises
+    ------
+    ValueError
+        The value is not an absolute path or the directory cannot be created;
+        the message names the variable.
+    """
+    value = os.environ.get(DATA_ROOT_VARIABLE)
+    if not value:
+        return None
+
+    root = Path(value)
+    if not root.is_absolute():
+        raise ValueError(f"{DATA_ROOT_VARIABLE} must be an absolute directory, not {value!r}.")
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise ValueError(f"Cannot create the data root {root} named by {DATA_ROOT_VARIABLE}: "
+                         f"{error.strerror or error}.") from None
+    return root
+
+
+def default_data_root(project: Path, alternative: str) -> Path:
+    """Return a host's data root when the host has no setting of its own.
+
+    ``GRAFTLING_DATA_ROOT`` when set, else ``<project>/.agents-control``, of
+    which only the directory itself is created. ``alternative`` completes the
+    refusal with the host's own way to name a root, for example
+    ``"set GRAFTLING_DSH_CONFIG to a host configuration (docs/install/dsh.md)"``.
+
+    Raises
+    ------
+    ValueError
+        The chosen directory is unusable; the message names the fix.
+    """
+    override = data_root_override()
+    if override is not None:
+        return override
+
+    root = project / ".agents-control"
+    try:
+        root.mkdir(exist_ok=True)
+    except OSError as error:
+        raise ValueError(f"Cannot create the default data root {root}: {error.strerror or error}. "
+                         f"Set {DATA_ROOT_VARIABLE} to another absolute directory, or {alternative}.") from None
+    return root
+
 
 def explicit_choices(root: Path) -> dict[str, bool]:
     """Return only the boolean choices written in ``<root>/config.yml``.

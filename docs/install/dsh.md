@@ -124,8 +124,9 @@ Then add `--patch /absolute/agents-host.patch.yml` to the `dsh` command below.
 
 ### Default: the project's `.agents-control`
 
-Without `GRAFTLING_DSH_CONFIG` (unset or empty), each main Session's host keeps its data in
-`<project>/.agents-control`, the Claude Code host's default for the same project. It is
+Without `GRAFTLING_DSH_CONFIG` and `GRAFTLING_DATA_ROOT` (unset or empty), each main
+Session's host keeps its data in
+`<project>/.agents-control`, the other hosts' default for the same project. It is
 created when missing (only that directory: the project directory already exists). The
 host then has no per-Runtime settings; that is the same as a configuration of
 `{"root": "<project>/.agents-control"}`.
@@ -144,9 +145,26 @@ A Session that records no working directory, or one that is not an absolute path
 existing directory, gets no host, and the Session does not start
 ([A refused start](#a-refused-start)). The message is
 `graftling-dsh: this DSH Session records no usable project directory (...)`, which names
-`GRAFTLING_DSH_CONFIG` as the fix. A project directory where `.agents-control` cannot be
+`GRAFTLING_DATA_ROOT` and `GRAFTLING_DSH_CONFIG` as the fix. A project directory where `.agents-control` cannot be
 created is refused the same way, with `Cannot create the default data root ...`. A home directory is not special: a Session started in
 `~` keeps its data in `~/.agents-control`, as Claude Code started in `~` does.
+
+### Another directory: `GRAFTLING_DATA_ROOT`
+
+`GRAFTLING_DATA_ROOT`, an absolute directory, replaces `<project>/.agents-control` for
+every Session of that DSH. It is the one variable that chooses the data root of every
+host (Claude Code, Codex, Pi and DSH), and the preferred way to choose it:
+
+```sh
+export GRAFTLING_DATA_ROOT=/absolute/agents-data
+```
+
+It is created when missing; a relative value, or one that cannot be created, stops the
+start with a message naming the variable. It chooses only the directory: per-Runtime
+settings still need [`GRAFTLING_DSH_CONFIG`](#explicit-configuration-graftling_dsh_config),
+which wins when both are set. Children inherit the variable as they inherit any other;
+a DSH child holds `GRAFTLING_CONNECTION`, so its plugin stays inactive
+([Turning it off](#turning-it-off)).
 
 ### Sharing `.agents-control` with Claude Code
 
@@ -169,13 +187,15 @@ same time on one `.agents-control`:
 - Archives (`save_normalized_sessions`) are per Session ID, so they do not collide.
 
 A Claude Code project whose `claude-host.json` names another `root` keeps its data there;
-the DSH host does not read that file. Point `GRAFTLING_DSH_CONFIG` at a configuration
-with the same `root` to share it.
+the DSH host does not read that file. Set `GRAFTLING_DATA_ROOT` to that `root` for DSH,
+or point `GRAFTLING_DSH_CONFIG` at a configuration with the same `root`, to share it.
+The same `GRAFTLING_DATA_ROOT` for both hosts shares one directory without either file.
 
 ### Explicit configuration: `GRAFTLING_DSH_CONFIG`
 
 When `GRAFTLING_DSH_CONFIG` names a file, it is used instead, for every Session of that
-DSH, whatever its working directory. `/absolute/dsh-host.json`:
+DSH, whatever its working directory, and whatever `GRAFTLING_DATA_ROOT` says. It is kept
+from earlier releases; use it for per-Runtime settings. `/absolute/dsh-host.json`:
 
 ```json
 {"root": "/absolute/agents-data"}
@@ -192,7 +212,8 @@ this file.
 
 Remove the plugin from the profile: `dsh plugin --profile <profile> remove graftling-dsh`.
 Other profiles keep it. The plugin also stays inactive inside a DSH that is itself an
-Agent (`GRAFTLING_CONNECTION` or `DSH_AGENT_PACKAGE` set). A switch on the web Plugins
+Agent (`GRAFTLING_CONNECTION` or `DSH_AGENT_PACKAGE` set), whatever `GRAFTLING_DATA_ROOT`
+or `GRAFTLING_DSH_CONFIG` says. A switch on the web Plugins
 page has not been walked.
 
 ## Start it
@@ -204,6 +225,8 @@ env -u DEEPSEEK_BASE_URL dsh --profile headless "Your task."
 After a wheel install, add `GRAFTLING_PYTHON="$AGENTS_VENV/bin/python"`, the Python that
 has `graftling`; leave it out after the
 [GitHub install](#install-from-github-the-plugins-page-or-dsh-plugin-add). Add
+`GRAFTLING_DATA_ROOT=/absolute/agents-data` for
+[another directory](#another-directory-graftling_data_root), or
 `GRAFTLING_DSH_CONFIG=/absolute/dsh-host.json` for an
 [explicit configuration](#explicit-configuration-graftling_dsh_config). The `env -u`
 concerns only this main Session's own endpoint, which DSH takes from that variable when

@@ -81,8 +81,14 @@ notes (`install/`) are public with their documented flags:
   The `context` operation is the plugin's private channel. The plugin this
   `configuration` command writes associates and lists the `agents` tool only;
   a package that adds its own tool writes its plugin as in 1.4.
-- `python -m graftling.codex.host --settings <file> --directory <dir>
-  [--output <file>] [--resume] <instruction>`. Since 0.1.2 the settings file
+- `python -m graftling.codex.host --settings <file> [--directory <dir>]
+  [--output <file>] [--resume] <instruction>`. Unreleased (577): `--directory`
+  is optional; without it the data root is `GRAFTLING_DATA_ROOT`, else
+  `<Session cwd>/.agents-control` (`adapter_request.session_parameters.cwd`,
+  which must be an existing absolute directory; only `.agents-control` itself
+  is created). `--resume` finds the retained Session the same way. An unusable
+  Session cwd or variable is refused naming `--directory` and
+  `GRAFTLING_DATA_ROOT`. Since 0.1.2 the settings file
   may hold an optional top-level `runtimes` object: a Runtime name to that
   driver's settings. The host removes it before reading its own Codex
   settings. `claude` takes the documented Claude host `settings` keys;
@@ -165,6 +171,24 @@ notes (`install/`) are public with their documented flags:
 - The DSH host: the `GRAFTLING_DSH_CONFIG` variable naming that file and its
   keys (1.7). The agents DSH plugin starts `python -I -m graftling.dsh.host
   --config <file>` itself; its pipe protocol with the plugin is private.
+- Unreleased (577): the `GRAFTLING_DATA_ROOT` variable, an absolute directory,
+  is the data root of every host that has no setting of its own, in place of
+  `<project>/.agents-control`; it is created when missing (with its parents),
+  and a relative or uncreatable value is refused naming the variable. Per host,
+  first that applies: Claude Code, configuration `--write` material or `serve
+  --config <file>`, then (marketplace plugin, `serve --project`) the variable,
+  whose directory then also holds `claude-host.json` and `host.log` and whose
+  `root` and `channel_file` are always that directory's, then
+  `<project>/.agents-control`; Codex, `--directory`, the variable, then
+  `<Session cwd>/.agents-control`; Pi, `--agents-config`, the variable, then
+  `<Session cwd>/.agents-control` (1.6); DSH, `GRAFTLING_DSH_CONFIG`, the
+  variable, then `<Session cwd>/.agents-control` (1.7). It chooses only the
+  directory; per-Runtime settings stay in each host's own file. It is not a
+  channel variable: children inherit it (3.1). Every host stays a child when
+  `GRAFTLING_CONNECTION` is present, whatever the variable says; the
+  marketplace plugin's `serve --project` then refuses before writing a
+  configuration. The plugin module passes the value it reads to the private
+  `context` operation as `--data-root`.
 
 ### 1.2 The `agents` tool and its features
 
@@ -775,14 +799,16 @@ root holds this host's own records. A consumer adds its own private directories 
 
 A Pi Session becomes an agents host (the parent of its children) by loading
 the extension `graftling/pi/extension.mjs`. Its data root is the one
-`--agents-config <file>` names. Without that flag it is
-`<Session cwd>/.agents-control`, created when missing (572). That is the
-Claude Code and DSH hosts' default, so they share it.
+`--agents-config <file>` names. Without that flag it is `GRAFTLING_DATA_ROOT`
+when set (577, 1.1), else `<Session cwd>/.agents-control`, created when
+missing (572). That is the other hosts' default, so they share it.
 
-A Session cwd that is not an absolute directory, or a root that cannot be
-created, stops the start with a message naming `--agents-config`. Without the
-flag the extension stays inert in a DSH-managed context (`DSH_SESSION_ID` or
-`DSH_AGENT_SOURCE`). A Pi child (`GRAFTLING_CONNECTION`) is unchanged.
+Without the flag or the variable, a Session cwd that is not an absolute
+directory stops the start; so does a root that cannot be created. The message
+names `GRAFTLING_DATA_ROOT` and `--agents-config`. Without the flag the
+extension stays inert in a DSH-managed context (`DSH_SESSION_ID` or
+`DSH_AGENT_SOURCE`), whatever the variable says. A Pi child
+(`GRAFTLING_CONNECTION`) is unchanged and starts no host.
 
 **Distribution.** The installed directory `graftling/pi/` is a Pi package:
 its `package.json` declares `"pi": {"extensions": ["./extension.mjs"]}` and
@@ -891,8 +917,9 @@ The model reaches the Pi Session through the MCP server `graftling` (`agents` be
 A DSH main Session becomes an agents host (the parent of its children) when
 its DSH loads the agents DSH plugin. Its data root is the one in the host
 configuration file `GRAFTLING_DSH_CONFIG` names; when that variable is unset
-or empty, it is `<Session cwd>/.agents-control`, the Claude Code host's
-default for the same project, with no per-Runtime settings.
+or empty, it is `GRAFTLING_DATA_ROOT` when set (577, 1.1), else
+`<Session cwd>/.agents-control`, the other hosts' default for the same
+project, with no per-Runtime settings.
 
 **Distribution.** The installed directory `graftling/dsh/` is a DSH plugin
 bundle named `graftling-dsh`: its `package.json` declares `"dsh": {"bundle":
@@ -918,10 +945,11 @@ installing, a patch file with the row `{id: agents-host, name:
 --patch <file>`, loads it for one invocation. `GRAFTLING_PYTHON` names the
 Python that has `graftling` installed. The row does nothing inside a DSH
 that is itself an agents child (`GRAFTLING_CONNECTION` or
-`DSH_AGENT_PACKAGE` set). Without `GRAFTLING_DSH_CONFIG`, a main Session
+`DSH_AGENT_PACKAGE` set), whatever `GRAFTLING_DATA_ROOT` says. Without
+`GRAFTLING_DSH_CONFIG` and `GRAFTLING_DATA_ROOT`, a main Session
 whose header records no `cwd`, or one that is not an absolute path to an
 existing directory, gets no host: its `agent/created` handler fails with a
-message naming `GRAFTLING_DSH_CONFIG`. DSH child
+message naming both variables. DSH child
 executions keep loading the same `plugin.mjs` with their own `mcpCommand`
 row; that path is unchanged. The plugin finds DSH's packages from
 `DSH_AGENT_PACKAGE`, then `GRAFTLING_DSH_PACKAGE`, then the real path of the
@@ -941,7 +969,7 @@ start:
 
 **Start.** The plugin starts one host, `python -I -m graftling.dsh.host
 [--config <file>]` (`--config` only when `GRAFTLING_DSH_CONFIG` is set; without
-it the host creates `<cwd>/.agents-control` when missing), for each DSH main Session when DSH announces it
+it the host uses `GRAFTLING_DATA_ROOT`, else creates `<cwd>/.agents-control` when missing), for each DSH main Session when DSH announces it
 (`agent/created`, for new and resumed Sessions), in the Session's cwd. A
 native DSH subagent (header `origin: subagent` or `delegationDepth` above 0)
 gets no host and no `agents` tool. The host verifies that its parent process

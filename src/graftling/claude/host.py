@@ -18,6 +18,7 @@ from graftling.connection import connection_operation, host_alive, worker_connec
 from graftling.discovery import handle_request
 from graftling.process import process_ancestors, process_executable
 from graftling.calls import on_discard, stop_requested
+from graftling.config import data_root_override
 from graftling.mcp import serve, serve_concurrent, respond, tool_documents, result_response, error_response
 from graftling.notices import notice_id, notice_text
 from graftling.shutdown import exit_if_owned_unconfirmed, stop_owned
@@ -447,16 +448,29 @@ def project_material(project: Path) -> Path | None:
     return path if any(_host_entry(document, server) for server in (MCP_SERVER, OLD_SERVER)) else None
 
 
+def plugin_directory(project: Path) -> Path:
+    """Return where the plugin host keeps ``claude-host.json`` and ``host.log`` (577).
+
+    GRAFTLING_DATA_ROOT when set, which is then also the data root; else
+    ``<project>/.agents-control``. Raises ``ValueError`` naming the variable
+    when its value is unusable.
+    """
+    return data_root_override() or project.resolve() / HOST_CONFIG.parent
+
+
 def plugin_configuration(project: Path) -> Path:
     """Create or update the marketplace plugin host's configuration for ``project``; return its path.
 
-    The plugin's MCP server passes Claude Code's project directory. The
-    configuration is the one configuration --write uses, so either path keeps
-    the other's choices: ``cwd`` is set to ``project``; ``root`` and
-    ``channel_file`` are kept as configuration --write keeps them; an existing
-    ``claude`` stays, else the ``claude`` on PATH is recorded; every other key
-    stays. A project whose ``.mcp.json`` starts configuration --write material
-    is refused: that material serves it, and one host serves a project.
+    The plugin's MCP server passes Claude Code's project directory. Without
+    GRAFTLING_DATA_ROOT the configuration is the one configuration --write
+    uses, so either path keeps the other's choices: ``cwd`` is set to
+    ``project``; ``root`` and ``channel_file`` are kept as configuration
+    --write keeps them; an existing ``claude`` stays, else the ``claude`` on
+    PATH is recorded; every other key stays. With GRAFTLING_DATA_ROOT the
+    configuration is ``claude-host.json`` in that directory, whose ``root``
+    and ``channel_file`` are always that directory's (577). A project whose
+    ``.mcp.json`` starts configuration --write material is refused: that
+    material serves it, and one host serves a project.
     """
     project = project.resolve()
     material = project_material(project)
@@ -467,21 +481,33 @@ def plugin_configuration(project: Path) -> Path:
                           'graftling server (agents before 0.6.0) from .mcp.json, the GRAFTLING_CLAUDE_HOST_* '
                           'entries from '
                           '.claude/settings.local.json and .claude/skills/agents-claude-host.')
-    config = project / HOST_CONFIG
+    override = data_root_override()
+    config = (override or project / HOST_CONFIG.parent) / HOST_CONFIG.name
     existing = _existing_document(config) or {}
     claude = existing.get('claude') if isinstance(existing.get('claude'), str) else shutil.which('claude')
     if claude is None:
         raise AgentsError('invalid-config', f'No claude on the PATH Claude Code gave this host; set "claude" '
                           f'in {config} to the Claude Code executable you start.')
-    kept = kept_host_paths(config, project, {'root': str(config.parent),
-                                             'channel_file': str(config.parent / 'live' / 'channel.json')})
+    defaults = {'root': str(config.parent), 'channel_file': str(config.parent / 'live' / 'channel.json')}
+    kept = defaults if override else kept_host_paths(config, project, defaults)
     write_adoption({str(config): {'root': kept['root'], 'cwd': str(project), 'claude': claude,
                                   'channel_file': kept['channel_file'], 'settings': {}}})
     return config
 
 
-def found_configuration(start: Path) -> Path:
-    """Return the nearest host configuration at or above ``start``, the plugin mod's Session cwd."""
+def found_configuration(start: Path, data_root: str | None = None) -> Path:
+    """Return the plugin host's configuration for the plugin mod's Session cwd ``start``.
+
+    ``data_root`` is GRAFTLING_DATA_ROOT as the mod read it: when given, its
+    ``claude-host.json``; else the nearest one at or above ``start`` (577).
+    """
+    if data_root:
+        config = Path(data_root) / HOST_CONFIG.name
+        if config.is_file():
+            return config
+        print(f'graftling plugin: no {config} (GRAFTLING_DATA_ROOT), so the agents host has not started '
+              f'for this project. See /mcp and {config.with_name("host.log")}.', file=sys.stderr)
+        raise SystemExit(1)
     for directory in (start.resolve(), *start.resolve().parents):
         if (directory / HOST_CONFIG).is_file():
             return directory / HOST_CONFIG
@@ -500,6 +526,7 @@ def main() -> None:
     parser.add_argument('--claude', type=Path)
     parser.add_argument('--write', action='store_true')
     parser.add_argument('--project-from', type=Path, help='context: find the configuration at or above this directory')
+    parser.add_argument('--data-root', help='context with --project-from: GRAFTLING_DATA_ROOT as the plugin mod read it')
     options = parser.parse_args()
     if options.operation == 'configuration':
         if options.project is None or options.claude is None:
@@ -512,13 +539,23 @@ def main() -> None:
         return
     if options.operation == 'serve' and options.config is None and options.project is not None:
         # The marketplace plugin: no configuration --write ran, Claude Code names the project.
+        project_log = options.project.absolute() / HOST_CONFIG.parent / 'host.log'
+        # A bound child writes no configuration, not even with an inherited
+        # GRAFTLING_DATA_ROOT naming its parent's root (577).
+        if 'GRAFTLING_CONNECTION' in os.environ:
+            serve_refusal(AgentsError('authority-denied', 'A bound child must use its existing owner.'), project_log)
+            return
         try:
             options.config = plugin_configuration(options.project)
         except Exception as error:
-            serve_refusal(error, options.project.absolute() / HOST_CONFIG.parent / 'host.log')
+            try:
+                log = plugin_directory(options.project) / 'host.log'
+            except ValueError:
+                log = project_log
+            serve_refusal(error, log)
             return
     if options.operation == 'context' and options.config is None and options.project_from is not None:
-        options.config = found_configuration(options.project_from)
+        options.config = found_configuration(options.project_from, options.data_root)
     if options.config is None:
         parser.error('serve requires --config or --project; context requires --config or --project-from')
     # Until the configuration names the channel, a refusal is logged beside it.

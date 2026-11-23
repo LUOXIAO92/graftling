@@ -78,6 +78,19 @@ On its first start the host writes `.agents-control/claude-host.json`, the same 
 is the `claude` on `PATH` (an existing value stays), and every other key you set stays
 on later starts. Edit it as under [Minimal configuration](#minimal-configuration).
 
+**Another data root.** To keep the data root outside the project, set
+`GRAFTLING_DATA_ROOT` to an absolute directory in the environment Claude Code starts
+with, for example `export GRAFTLING_DATA_ROOT=/abs/agents-data` in the shell, or under
+`env` in `.claude/settings.local.json`. The same variable chooses the data root of the
+Codex, Pi and DSH hosts. With it, the plugin's host keeps `claude-host.json`, `host.log`
+and everything else in that directory, whose `root` and `channel_file` are always that
+directory's, and the project gets no `.agents-control/`. A relative value, or one that
+cannot be created, is refused with a message naming the variable. One directory serves
+one running Claude Code host at a time; a second refuses with `host-busy`. The variable
+does not apply to `configuration --write` material below, which keeps the `root` in its
+own `claude-host.json`. Children inherit the variable; a child holds
+`GRAFTLING_CONNECTION` to its owner, so its plugin server refuses before writing anything.
+
 If the plugin cannot find a Python that imports `graftling`, it says what to install and
 set, in three places: `/mcp` shows the server `plugin:graftling:agents` failed, with the
 message in its error output; `.agents-control/host.log` ends with a line starting

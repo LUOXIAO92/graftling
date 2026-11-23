@@ -118,14 +118,14 @@ export function graftlingPython(environment = process.env, here = import.meta.ur
     + 'Set GRAFTLING_PYTHON to the Python graftling is installed in (docs/install/pi.md).');
 }
 
-/** The Session's project directory for the default data root, or an error naming --agents-config. */
+/** The Session's project directory for the default data root, or an error naming the two other ways. */
 function requireProjectDirectory(cwd) {
   let usable = typeof cwd === 'string' && isAbsolute(cwd);
   try { usable = usable && statSync(cwd).isDirectory(); } catch { usable = false; }
   if (!usable) {
     throw new Error(`graftling: this Pi Session has no usable project directory (cwd: ${cwd}), so the agents tool `
-      + 'has no default data root <project>/.agents-control. Start pi with --agents-config <file> naming a data root '
-      + '(docs/install/pi.md).');
+      + 'has no default data root <project>/.agents-control. Set GRAFTLING_DATA_ROOT to an absolute data root '
+      + 'directory, or start pi with --agents-config <file> naming a data root (docs/install/pi.md).');
   }
   return cwd;
 }
@@ -181,7 +181,7 @@ export function deliverNotice(pi, notice, session, manager) {
  */
 export function startAgentHost(ctx, config, onNotice = () => {}, python = process.env.GRAFTLING_PYTHON) {
   return new Promise((resolve, reject) => {
-    // Without a config the host uses <ctx.cwd>/.agents-control (572).
+    // Without a config the host uses GRAFTLING_DATA_ROOT, else <ctx.cwd>/.agents-control (572, 577).
     const child = spawn(python,
       ['-I', '-m', 'graftling.pi.host', ...(config ? ['--config', config] : [])], {
         cwd: ctx.cwd, stdio: ['pipe', 'pipe', 'pipe'],
@@ -319,9 +319,10 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
       if (agentsConfig && managed) {
         throw new Error('Standalone agents config cannot replace an existing managed Agent context; retain its owning connection.');
       }
-      // Without --agents-config a managed DSH context stays inert, as before 572.
+      // Without --agents-config a managed DSH context stays inert, as before 572,
+      // whatever GRAFTLING_DATA_ROOT says (577).
       if (agentsConfig || !managed) {
-        if (!agentsConfig) requireProjectDirectory(ctx.cwd);
+        if (!agentsConfig && !process.env.GRAFTLING_DATA_ROOT) requireProjectDirectory(ctx.cwd);
         const python = graftlingPython();
         independent.add(ctx.sessionManager);
         const session = ctx.sessionManager.getSessionId();

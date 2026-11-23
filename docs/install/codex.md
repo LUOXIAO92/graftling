@@ -35,8 +35,14 @@ and `--resume` gives it the next one.
 
 ## Local files
 
-Nothing is generated into a project. You write one settings file and choose one
-directory for the host's data.
+Nothing is generated into a project. You write one settings file. The host's data
+goes in its data root: `--directory` when you pass it, else `GRAFTLING_DATA_ROOT`
+when set (the variable that chooses the data root of every host), else
+`<Session cwd>/.agents-control`, where the Session cwd is the settings'
+`adapter_request.session_parameters.cwd`. That default is the one the Claude Code,
+Pi and DSH hosts use for the same project. Only that directory itself is created; a
+Session cwd that is missing, relative or not a directory, or a relative
+`GRAFTLING_DATA_ROOT`, is refused with a message naming `--directory` and the variable.
 
 ## Minimal configuration
 
@@ -67,7 +73,7 @@ options. A top-level `connection` may set `runtime_home`, `base_url` or `api_key
 (the name of a variable, never its value). Codex's own `auto_review` reviews approvals
 unless your settings name another reviewer.
 
-`config.yml` for connections and presets goes in the `--directory` you choose. See
+`config.yml` for connections and presets goes in the data root. See
 [Configuration](../../README.md#configuration).
 
 The host adds a short passage after your `developerInstructions`, for the parent only.
@@ -78,8 +84,9 @@ children get. No native tool is removed.
 ## Run it
 
 ```sh
+export GRAFTLING_DATA_ROOT=/absolute/agents-data   # or omit for /absolute/work/.agents-control
 "$AGENTS_VENV/bin/python" -m graftling.codex.host \
-  --settings native-settings.json --directory /absolute/agents-data \
+  --settings native-settings.json \
   --output /absolute/agents-data/last-run.json \
   'Use only the MCP tool agents, not spawn_agent. Make these tool calls one at a time, in this order. Where an argument says <agent from 1>, use the "agent" field returned by call 1.
 1. {"action": "execute", "feature": "create", "arguments": {"runtime": "codex", "instruction": "Do not use any tool. Reply with exactly: PONG"}}
@@ -90,9 +97,9 @@ A notice from agents may arrive at any time and changes nothing. Then reply with
 | Flag | Meaning |
 | --- | --- |
 | `--settings <file>` | Required. The settings above |
-| `--directory <dir>` | Required. The data root and the parent's retained state |
+| `--directory <dir>` | Optional. The data root and the parent's retained state; wins over `GRAFTLING_DATA_ROOT`. Kept from earlier releases; the variable is the preferred way |
 | `--output <file>` | Optional. Writes the result document as JSON |
-| `--resume` | Continue the retained parent Session in this `--directory` |
+| `--resume` | Continue the retained parent Session in the same data root, found as above |
 | `<instruction>` | Required. The parent's instruction |
 
 Without `--resume`, a directory that already holds a parent Session is refused with
@@ -178,9 +185,10 @@ and needs Claude Code 2.1.299 or later. `dsh` requires `model` and `sandbox` and
 DSH 0.2.0-rc.2 or later. `pi` requires `provider` and `model`, and needs
 [what a Pi child needs](../../README.md#what-a-pi-child-needs).
 
-**Pi children need `--directory` outside `worktree_path`.** A Pi child must not read
-the data root, and its sandbox cannot deny a path inside a readable one, so the host
-refuses that layout at start with `invalid-config`.
+**Pi children need a data root outside `worktree_path`** (`--directory` or
+`GRAFTLING_DATA_ROOT`; the default `<Session cwd>/.agents-control` is inside it). A
+Pi child must not read the data root, and its sandbox cannot deny a path inside a
+readable one, so the host refuses that layout at start with `invalid-config`.
 
 > Not yet walked on a real host: Pi children of this host. Claude and DSH children have
 > run on a real host.
@@ -188,7 +196,7 @@ refuses that layout at start with `invalid-config`.
 ## Upgrade
 
 Install the new wheel into the same environment, as above. Nothing else is generated,
-so there is nothing to regenerate. Use `--resume` with the same `--directory` to
+so there is nothing to regenerate. Use `--resume` with the same data root to
 continue the parent; its children stay listed by `status`.
 
 ## Limits
