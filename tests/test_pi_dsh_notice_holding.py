@@ -783,7 +783,7 @@ const pi = {
 };
 process.argv[1] = process.env.TEST_ENTRY;
 const ctx = {hasUI: process.env.TEST_UI === '1', cwd: process.cwd(), sessionManager: {
-  getSessionId: () => 'pi-main', getSessionFile: () => '', getHeader: () => ({id: 'pi-main'}), getEntries: () => entries}};
+  getSessionId: () => 'pi-main', getSessionFile: () => '/sessions/pi-main.jsonl', getHeader: () => ({id: 'pi-main'}), getEntries: () => entries}};
 const owner = module.registerAgents(pi);
 await owner.start(ctx);
 if (process.env.TEST_TURN === '1') setTimeout(() => { handlers.agent_start({type: 'agent_start'}, ctx); handlers.agent_start({type: 'agent_start'}, ctx); }, 200);

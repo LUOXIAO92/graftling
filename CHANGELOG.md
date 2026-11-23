@@ -58,6 +58,14 @@ The numbers in parentheses are the project's Task numbers.
 
 ### Fixed
 
+- A Pi subagent child no longer starts a second graftling host (585). The Pi extension
+  starts no host, creates no data root and reports no error when `PI_SUBAGENT_CHILD=1`,
+  `PI_SUBAGENT_DEPTH` is greater than 0, or the Session has no persistent Session file,
+  with or without `--agents-config` and `GRAFTLING_DATA_ROOT`. Before, a child of Pi's
+  bundled subagent example (`pi --no-session`) started its own host and its result
+  carried `Extension error ...: The Pi native Session association is unavailable.`
+  `GRAFTLING_CONNECTION` children and DSH-managed contexts are unchanged. Side effect:
+  a user's own `pi --no-session` Session no longer has the `agents` tool.
 - A Claude child no longer fails with `RUNTIME_REQUEST_FAILED` "Claude did not confirm
   the requested permission mode." when Claude reports a narrower mode than requested
   (578). On the real host, `claude-haiku-4-5-20251001` children requested `auto` and

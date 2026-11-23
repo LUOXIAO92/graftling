@@ -29,8 +29,10 @@ const pi = {
   registerFlag() {}, on() {}, getFlag: name => name === 'agents-config' ? process.env.TEST_CONFIG : undefined,
   registerMcpServer: (name, options) => servers.push({name, command: options.command}),
 };
+// A Main has a persistent Session file; TEST_SESSION_FILE='' is a `pi --no-session` Session (undefined, 585).
+const file = process.env.TEST_SESSION_FILE ?? '/sessions/pi-main.jsonl';
 const ctx = {hasUI: false, cwd: process.env.TEST_CWD ?? process.cwd(), sessionManager: {
-  getSessionId: () => 'pi-main', getSessionFile: () => '', getHeader: () => ({id: 'pi-main'}), getEntries: () => []}};
+  getSessionId: () => 'pi-main', getSessionFile: () => file || undefined, getHeader: () => ({id: 'pi-main'}), getEntries: () => []}};
 const owner = module.registerAgents(pi);
 let started, error;
 try { started = await owner.start(ctx); } catch (failure) { error = failure.message; }
@@ -81,7 +83,8 @@ def start(tmp_path: Path, extension: Path = EXTENSION, imports: Path | None = No
     project.mkdir(exist_ok=True)
     log = tmp_path / 'launches.jsonl'
     env = {key: value for key, value in os.environ.items() if key not in {
-        'GRAFTLING_CONNECTION', 'GRAFTLING_PYTHON', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE'}}
+        'GRAFTLING_CONNECTION', 'GRAFTLING_PYTHON', 'DSH_SESSION_ID', 'DSH_AGENT_SOURCE',
+        'GRAFTLING_DATA_ROOT', 'PI_SUBAGENT_CHILD', 'PI_SUBAGENT_DEPTH'}}
     env.update(PATH=str(tmp_path / 'empty-path'), TEST_LOG=str(log),
                TEST_IMPORTS=str((imports or extension.parents[1] / '__init__.py').resolve()), **environment)
     result = subprocess.run([node, '--input-type=module', '-e', DRIVER, str(extension)],
