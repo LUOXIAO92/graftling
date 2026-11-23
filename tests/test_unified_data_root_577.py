@@ -286,7 +286,7 @@ def test_claude_plugin_keeps_its_configuration_in_the_variable(tmp_path: Path, c
     # The mod's context finds it through the value it read.
     found = run_claude_host('context', '--project-from', str(project), '--data-root', str(root),
                             cwd=project, input='{}')
-    assert found.returncode == 1 and 'agents host for this project is not running' in found.stderr
+    assert found.returncode == 1 and 'The subagents host for this project is not running' in found.stderr
     missing = run_claude_host('context', '--project-from', str(project), '--data-root', str(tmp_path / 'none'),
                               cwd=project, input='{}')
     assert missing.returncode == 1 and 'GRAFTLING_DATA_ROOT' in missing.stderr
@@ -376,7 +376,7 @@ def test_claude_launcher_logs_into_the_variable(tmp_path: Path) -> None:
                                                  'GRAFTLING_DATA_ROOT': str(root)},
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
-    assert 'the agents host did not start' in (root / 'host.log').read_text()
+    assert 'the subagents host did not start' in (root / 'host.log').read_text()
     assert not (project / '.agents-control').exists()
 
 

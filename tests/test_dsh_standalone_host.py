@@ -517,7 +517,7 @@ def test_plugin_host_row_relays_each_notice_to_its_main_session(tmp_path: Path) 
         'dsh-main', 'dsh-main', 'agent-1', 'child-session')
     assert first['body'] == '[Graftling notice from agent-1 · completed · execution exec-1]\n\nthe answer'
     # A host that sends no text keeps the older title (538 fallback).
-    assert shown['received'][1]['body'] == '[agents notice from agent-1 · failed · execution exec-2]\nprovider refused'
+    assert shown['received'][1]['body'] == '[subagents notice from agent-1 · failed · execution exec-2]\nprovider refused'
     assert log['acknowledgements'] == [{'ack': 'exec-1:completed', 'shown': True},
                                        {'ack': 'exec-2:failed', 'shown': False},
                                        {'ack': 'exec-3:request:t', 'shown': True}]

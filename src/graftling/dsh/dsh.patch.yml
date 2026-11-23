@@ -1,4 +1,4 @@
-# The agents host row of the graftling-dsh bundle (`dsh plugin --profile <name> add <this directory>`).
+# The subagents host row (row id agents-host, kept) of the graftling-dsh bundle (`dsh plugin --profile <name> add <this directory>`).
 # Data root: GRAFTLING_DSH_CONFIG's, else GRAFTLING_DATA_ROOT, else <Session cwd>/.agents-control; see PUBLIC_API.md 1.7.
 - insert:
     - id: agents-host

@@ -1,4 +1,4 @@
-/** Native context and human-only observation for the external agents entry.
+/** Native context and human-only observation for the external subagents entry.
  *
  * This module associates the current native call with its MCP owner while
  * preserving Claude's entire tool/permission chain.
@@ -113,7 +113,7 @@ function cut(frames) {
 
 // The ui.log fallback where no placed row is drawn: one native row per line.
 function frameLines(frame) {
-  return [`┌ agents · ${frame.from} → ${frame.to}`, ...frame.body.split(/\r?\n/).map((line) => '│ ' + line),
+  return [`┌ subagents · ${frame.from} → ${frame.to}`, ...frame.body.split(/\r?\n/).map((line) => '│ ' + line),
     ...(frame.facts ? ['│ ' + frame.facts] : []), '└'];
 }
 
@@ -124,7 +124,7 @@ function drawFrames($, e, frames) {
   return Box({flexDirection: 'column', children: frames.map((frame, index) => Box({
     key: String(index), flexDirection: 'column', marginBottom: index < frames.length - 1 ? 1 : 0, children: [
       frame.outgoing
-        ? Text({children: [Text({dimColor: true, children: ['agents → ']}), Text({bold: true, children: [frame.to]})]})
+        ? Text({children: [Text({dimColor: true, children: ['subagents → ']}), Text({bold: true, children: [frame.to]})]})
         : Text({children: [Text({bold: true, children: [frame.from]}),
           Text({dimColor: true, children: [frame.label ? ` · ${frame.label}` : '']})]}),
       body(frame.body || '(no text)'),
@@ -180,7 +180,7 @@ async function context($, document) {
   } else {
     const python = await $.env.get('GRAFTLING_CLAUDE_HOST_PYTHON');
     const config = await $.env.get('GRAFTLING_CLAUDE_HOST_CONFIG');
-    if (!python || !config) throw new Error('Native agents host configuration is missing.');
+    if (!python || !config) throw new Error('Native subagents host configuration is missing.');
     command = [python, '-m', 'graftling.claude.host', 'context', '--config', config];
   }
   let result;
@@ -240,7 +240,7 @@ async function retryEnds($, state) {
       state.ends.push(ending);
       if (!state.endFailureShown) {
         state.endFailureShown = true;
-        try { await $.ui.log('agents context cleanup failed: ' + String(error)); } catch {}
+        try { await $.ui.log('subagents context cleanup failed: ' + String(error)); } catch {}
       }
     }
   }
@@ -317,7 +317,7 @@ export function register(on) {
   on('command.run', {command: 'agents-context'}, async ($) => {
     const session = await $.session.id();
     const tools = await $.tool.list();
-    await $.ui.log(`agents · current Session ${session}`);
+    await $.ui.log(`subagents · current Session ${session}`);
     if (PLUGIN) await $.ui.log(await pythonReport($));
     if (state.foreignConfig) {
       await $.ui.log('GRAFTLING_CLAUDE_HOST_CONFIG names another project\'s host; the plugin ignored it');
@@ -361,7 +361,7 @@ export function register(on) {
         if (state.pushing) pushNotices($, state);
       }
     }).catch(async ($, event, next) => next.called ? next(event)
-      : {deny: 'The native agents context hook failed; no call was authorized.'});
+      : {deny: 'The native subagents context hook failed; no call was authorized.'});
 
     on('tool.check', {tool}, async ($, event, next) => {
       const result = await next(event);
@@ -399,7 +399,7 @@ export function register(on) {
   on('session.end', async ($, event, next) => {
     if (state.inert) return next(event);
     try { await context($, {operation: 'end'}); state.ends = []; }
-    catch (error) { $.ui.log('agents context cleanup failed: ' + String(error)); }
+    catch (error) { $.ui.log('subagents context cleanup failed: ' + String(error)); }
     return next(event);
   });
 }

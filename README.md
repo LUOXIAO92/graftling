@@ -445,6 +445,11 @@ After upgrading:
   `disallowed_tools` entry naming `mcp__<server>__agents` no longer denies anything.
 - Review exempts only the `subagents` tool of the server the child registered. A tool
   named `agents` is reviewed like any other.
+- The labels people read follow the tool: transcript rows `subagents → <child>`,
+  frames `subagents · <sender> → <recipient>`, notice titles `[subagents notice from ...]`
+  and log lines such as `subagents host recorded its children stopped.`. A reviewer
+  sees the connectivity probe as `subagents/connectivity-check`. Update anything that
+  searched for the old text.
 - Unchanged: the `tasks` tool, the data root (`.agents-control`), result fields such as
   `"agents"` in `status`, the `/agents-context` command and DSH's `agents` plugin id.
 - Sessions created before keep their earlier calls under the old name; they are drawn

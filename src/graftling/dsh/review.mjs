@@ -31,8 +31,8 @@ export function apply(ctx, config) {
     // A native deny stays denied; a native ask stays a native request for the parent.
     if (decision.kind !== 'allow' || exempt.has(exec.name)) return decision;
     const call = { tool: exec.name, call_id: exec.callId, input: exec.arguments };
-    return { kind: 'ask', reason: `agents review of tool "${exec.name}"`,
-      displayReason: { en: `agents review of tool "${exec.name}"`, [MARKER]: JSON.stringify(call) } };
+    return { kind: 'ask', reason: `subagents review of tool "${exec.name}"`,
+      displayReason: { en: `subagents review of tool "${exec.name}"`, [MARKER]: JSON.stringify(call) } };
   }, { prepend: true });
   // Written last: its existence tells the owner this hook is registered.
   writeFileSync(config.readyFile, `${process.pid}\n`);

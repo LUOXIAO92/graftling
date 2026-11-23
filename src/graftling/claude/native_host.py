@@ -96,7 +96,7 @@ class NativeCalls:
             if any(item['session'] == native['session'] for item in self.running):
                 self.queued.append(native)
         self.prepared = [native for native in self.prepared if not any(native is item for item in ending)]
-        print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'agents-call context-end', f'matched={len(ending)} prepared={len(self.prepared)} '
+        print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'subagents-call context-end', f'matched={len(ending)} prepared={len(self.prepared)} '
               f'queued={len(self.queued)} running={len(self.running)}', file=sys.stderr, flush=True)
         return {'ended': True}
 

@@ -98,7 +98,7 @@ own `claude-host.json`. Children inherit the variable; a child holds
 If the plugin cannot find a Python that imports `graftling`, it says what to install and
 set, in three places: `/mcp` shows the server `plugin:graftling:subagents` failed, with the
 message in its error output; `.agents-control/host.log` ends with a line starting
-`graftling plugin: the agents host did not start`; `/agents-context` prints the same
+`graftling plugin: the subagents host did not start`; `/agents-context` prints the same
 advice instead of `graftling <version> at <python>`.
 
 **Both in one project.** If the project's `.mcp.json` already starts the host through
@@ -196,11 +196,11 @@ not load this project's `.mcp.json`.
   child that answers one word, then to `wait` for it.
   The result shows `state: standby` and `last_result.outcome: completed`.
 - On Claude Code 2.1.314 or later, the transcript shows each message the model sends as a
-  row `agents → <child>` with the message drawn as Markdown, and the child's reply as
+  row `subagents → <child>` with the message drawn as Markdown, and the child's reply as
   `<child> · replied`. A pushed notice shows its sender and event in bold, the content as
   Markdown and a dim facts line (execution, outcome, request ID and token). Earlier
   versions show the same exchange as `graftling:` log lines.
-- After you quit, `.agents-control/host.log` ends with `agents host recorded its
+- After you quit, `.agents-control/host.log` ends with `subagents host recorded its
   children stopped.` If that line is missing, the host could not confirm a stop or
   was killed before it finished, or an Agent started by an earlier host still has a
   running Runtime, and the lines above it say which. If it was killed with a DSH

@@ -57,7 +57,7 @@ PI_BUILTIN_TOOLS = frozenset({'read', 'bash', 'edit', 'write', 'grep', 'find', '
 PI_DEFAULT_TOOLS = ('read', 'bash', 'edit', 'write')
 # The built-ins a child may use only after its parent allows them (graftling.pi extension asks on first use).
 CONFIRM_TOOLS_ENV = 'GRAFTLING_PI_CONFIRM_TOOLS'
-CONFIRM_TITLE = 'agents: allow a tool beyond the host settings'
+CONFIRM_TITLE = 'subagents: allow a tool beyond the host settings'
 
 
 def host_default_tools(agent_dir: Path) -> set[str]:

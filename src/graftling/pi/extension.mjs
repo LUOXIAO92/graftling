@@ -16,7 +16,7 @@ export const TOOL = 'subagents';
 export const MCP_SERVER = 'graftling';
 
 /**
- * Draw a notice custom message of `customType` as `agents · <sender> · <event>`
+ * Draw a notice custom message of `customType` as `subagents · <sender> · <event>`
  * over its Markdown `details.body`; the model still reads its whole content.
  * A message without a sender and body keeps Pi's default drawing.
  */
@@ -25,7 +25,7 @@ export function registerNoticeDisplay(pi, sdk, customType = 'graftling:agent-com
     const { sender, event, body } = message.details ?? {};
     if (typeof sender !== 'string' || typeof body !== 'string') return undefined;
     return new sdk.CustomMessageComponent({ ...message,
-      customType: `agents · ${sender}${event ? ` · ${event}` : ''}`, content: body });
+      customType: `subagents · ${sender}${event ? ` · ${event}` : ''}`, content: body });
   });
 }
 
@@ -36,7 +36,7 @@ export function registerAgentDisplay(pi, sdk, servers = [MCP_SERVER]) {
   pi.registerEntryRenderer(customType, entry => {
     const { sender, recipient, body } = entry.data;
     return new sdk.CustomMessageComponent({
-      role: 'custom', customType: `agents · ${sender} → ${recipient}`,
+      role: 'custom', customType: `subagents · ${sender} → ${recipient}`,
       content: body, display: true, timestamp: 0,
     });
   });
@@ -125,7 +125,7 @@ function requireProjectDirectory(cwd) {
   let usable = typeof cwd === 'string' && isAbsolute(cwd);
   try { usable = usable && statSync(cwd).isDirectory(); } catch { usable = false; }
   if (!usable) {
-    throw new Error(`graftling: this Pi Session has no usable project directory (cwd: ${cwd}), so the agents tool `
+    throw new Error(`graftling: this Pi Session has no usable project directory (cwd: ${cwd}), so the subagents tool `
       + 'has no default data root <project>/.agents-control. Set GRAFTLING_DATA_ROOT to an absolute data root '
       + 'directory, or start pi with --agents-config <file> naming a data root (docs/install/pi.md).');
   }
@@ -165,7 +165,7 @@ export function deliverNotice(pi, notice, session, manager) {
   if (noticeInSession(manager, fact)) return true;
   pi.sendMessage({
     customType: 'graftling:agent-communication',
-    content: `[agents notice from ${alias} · ${event}${execution ? ` · execution ${execution}` : ''}]\n${message}`,
+    content: `[subagents notice from ${alias} · ${event}${execution ? ` · execution ${execution}` : ''}]\n${message}`,
     display: true,
     details: {fact, sender: alias, recipient: session, body: message,
       agent, execution, event, source: 'agents'},
@@ -267,7 +267,7 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
   let sessionManager;
   let displayRegistered = false;
   pi.registerFlag('agents-config', { type: 'string',
-    description: 'Independent agents host configuration: data root and optional per-Runtime settings.' });
+    description: 'Independent subagents host configuration: data root and optional per-Runtime settings.' });
   // A held notice starts a turn in an idle Session, and Pi refuses a prompt
   // while a turn runs (AgentSession.prompt, print mode has no streamingBehavior).
   // So the host flushes during the Session's first turn; a Session with a UI
@@ -387,18 +387,18 @@ export function registerReview(pi, environment = process.env, server = MCP_SERVE
   delete environment.GRAFTLING_PI_REVIEW;
   if (!title) return false;
   globalThis[REVIEW_TITLE] = title;
-  pi.registerCommand('agents-review-hook', { description: 'The agents review plugin is active.', handler: async () => {} });
+  pi.registerCommand('agents-review-hook', { description: 'The subagents review plugin is active.', handler: async () => {} });
   pi.on('tool_call', async (event, ctx) => {
     if (exempt.has(event.toolName)) return undefined;
     const call = JSON.stringify({ tool: event.toolName, call_id: event.toolCallId, input: event.input });
     const confirmed = await ctx.ui.confirm(title, call, { signal: ctx.signal });
     if (confirmed === true) return undefined;
-    return { block: true, reason: `agents review did not allow ${event.toolName}; it did not run. Do not retry it; continue with other work or report it as blocked.` };
+    return { block: true, reason: `subagents review did not allow ${event.toolName}; it did not run. Do not retry it; continue with other work or report it as blocked.` };
   });
   return true;
 }
 
-export const CONFIRM_TITLE = 'agents: allow a tool beyond the host settings';
+export const CONFIRM_TITLE = 'subagents: allow a tool beyond the host settings';
 
 /**
  * Ask before the first use of each tool the owner marked as beyond the host's

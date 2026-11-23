@@ -898,7 +898,7 @@ function process_(active) {
   return { service, sent };
 }
 const request = { id: 'agents-notice:exec-1:completed', sessionId: 'main', senderSessionId: 'child', sender: 'agent-1',
-                  recipient: 'main', body: '[agents notice from agent-1 · completed]\\nthe answer' };
+                  recipient: 'main', body: '[subagents notice from agent-1 · completed]\\nthe answer' };
 const outcomes = [];
 const inactive = process_(false);
 try { await inactive.service.receive(request); outcomes.push('accepted'); } catch (error) { outcomes.push(error.message); }

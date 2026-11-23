@@ -89,7 +89,7 @@ export function noticeMessage(notice, session) {
   // 538: the host's notice_text (title with the execution, Markdown content, Facts), which graftling-dsh's
   // browser module draws as who · event over Markdown; the older title only for a host that sends none.
   const body = typeof notice.text === 'string' && notice.text ? notice.text
-    : `[agents notice from ${agent} · ${event}${named}]\n${message}`;
+    : `[subagents notice from ${agent} · ${event}${named}]\n${message}`;
   return { id: `agents-notice:${id}`, sessionId: session, senderSessionId: notice.session || agent,
     sender: agent, recipient: session, body };
 }
@@ -211,7 +211,7 @@ function requireProjectDirectory(cwd) {
   try { directory = typeof cwd === 'string' && isAbsolute(cwd) && statSync(cwd).isDirectory(); } catch {}
   if (!directory) {
     throw new Error(`graftling-dsh: this DSH Session records no usable project directory (cwd: ${
-      JSON.stringify(cwd) ?? 'none'}), so the agents tool has no default data root <project>/.agents-control. ` +
+      JSON.stringify(cwd) ?? 'none'}), so the subagents tool has no default data root <project>/.agents-control. ` +
       'Set GRAFTLING_DATA_ROOT to an absolute data root directory, or GRAFTLING_DSH_CONFIG to a host ' +
       'configuration naming its data root (docs/install/dsh.md).');
   }
@@ -231,7 +231,7 @@ function applyHost(ctx) {
   const close = async id => {
     const host = hosts.get(id);
     hosts.delete(id);
-    try { await (await host)?.close(); } catch (error) { ctx.logger?.error?.(`agents host: ${error.message}`); }
+    try { await (await host)?.close(); } catch (error) { ctx.logger?.error?.(`subagents host: ${error.message}`); }
   };
   ctx.on('agent/created', async ({ agent }) => {
     const id = agent.session.header?.id;

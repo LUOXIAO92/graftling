@@ -87,7 +87,7 @@ start too. The messages name `GRAFTLING_DATA_ROOT` and `--agents-config`.
 
 Inside a DSH-managed context (`DSH_SESSION_ID` or `DSH_AGENT_SOURCE` set), the
 extension stays inert without the flag, whatever `GRAFTLING_DATA_ROOT` says. In a Pi
-child of an agents host (`GRAFTLING_CONNECTION` set), it uses the owner's connection,
+child of a subagents host (`GRAFTLING_CONNECTION` set), it uses the owner's connection,
 as before; the inherited `GRAFTLING_DATA_ROOT` starts no host there.
 
 **Subagent children start nothing (585).** A Pi subagent child is not Main. When
@@ -174,7 +174,7 @@ No variable turns the default off. In the 572 sandbox, a start after
 - The model can call the `subagents` tool, through the MCP server `graftling`: it sees
   `mcp__graftling__subagents`.
 - Ask it to use the `subagents` tool to create a Claude child that answers one word. A message
-  appears in the Pi Session titled `[agents notice from <agent> · completed · execution <execution>]`.
+  appears in the Pi Session titled `[subagents notice from <agent> · completed · execution <execution>]`.
 - `status` then shows `last_result.notification: delivered`, with the child's answer
   still in `last_message`.
 

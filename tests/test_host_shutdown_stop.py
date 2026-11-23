@@ -760,4 +760,4 @@ def test_the_real_plugin_logs_the_line(tmp_path: Path, monkeypatch: pytest.Monke
         'logger: { error() {} }', 'logger: { error(text) { writeFileSync(process.env.TEST_ERRORS, text); } }'))
     monkeypatch.setattr(holding, 'FAKE_PLUGIN_HOST', holding.FAKE_PLUGIN_HOST + f'sys.stderr.write({STOP_LINE!r} + "\\n")\nsys.exit(1)\n')
     holding.run_plugin(tmp_path, TEST_RUN_MS='100', TEST_ERRORS=str(errors))
-    assert errors.read_text() == f'agents host: {STOP_LINE}\n'
+    assert errors.read_text() == f'subagents host: {STOP_LINE}\n'

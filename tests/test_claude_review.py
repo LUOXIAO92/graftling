@@ -280,7 +280,7 @@ def test_any_failure_in_the_review_path_denies(
     original = getattr(review_core, broken, None)
 
     def fail(*arguments: object, **options: object) -> dict:
-        if arguments[0] == 'agents':  # The connectivity check at create still works.
+        if arguments[0] == 'subagents':  # The connectivity check at create still works.
             return original(*arguments, **options)
         raise RuntimeError('secret detail')
 

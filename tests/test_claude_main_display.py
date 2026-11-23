@@ -57,7 +57,7 @@ await handlers.get(tool)(host, {tool: 'mcp__graftling__subagents', action: 'exec
   arguments: {agent: 'agent-1', message}}, async () => ({result: [{type: 'text', text: JSON.stringify(document)}]}));
 if (scenario === 'unplaced') {
   // Where no row can be drawn, the old one-line-per-row log remains.
-  assert.ok(log.includes('┌ agents · main-session → n533') && log.includes('│ # Plan') && log.includes('│ **done**'));
+  assert.ok(log.includes('┌ subagents · main-session → n533') && log.includes('│ # Plan') && log.includes('│ **done**'));
   console.log('ok'); process.exit(0);
 }
 assert.deepEqual(log, []);
@@ -65,7 +65,7 @@ assert.equal(placed.length, 2);
 assert.ok(placed.every((id) => /^[A-Za-z0-9_-]{1,64}$/.test(id)));
 const render = handlers.get('ui.render:Placed');
 const sent = flat(await render(host, {component: 'Placed', props: {plugin: 'graftling-host', id: placed[0]}}, async () => 'theirs'));
-assert.equal(sent, `agents → n533<md>${message}</md>`);
+assert.equal(sent, `subagents → n533<md>${message}</md>`);
 const reply = flat(await render(host, {component: 'Placed', props: {plugin: 'graftling-host', id: placed[1]}}, async () => 'theirs'));
 assert.equal(reply, 'n533 · replied<md>**done**</md>');
 // A row this process never placed (another mod's) is left alone.

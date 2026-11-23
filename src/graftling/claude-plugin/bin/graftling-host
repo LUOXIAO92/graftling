@@ -1,5 +1,5 @@
 #!/bin/sh
-# Start graftling's agents host for the graftling Claude Code plugin.
+# Start graftling's subagents host for the graftling Claude Code plugin.
 #
 # The Python is GRAFTLING_PYTHON when set, else python3 on PATH; it must be 3.12
 # or later and import graftling. Without one, this says what to install and set:
@@ -21,7 +21,7 @@ import graftling.claude.host' 2>&1); then
 fi
 reason=$(printf '%s\n' "$reason" | tail -n 1)
 version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")
-message="graftling plugin: the agents host did not start: $named cannot run graftling ($reason). Install graftling once with uv (uv tool install \"git+https://github.com/LUOXIAO92/graftling.git@v${version:-<version>}\") and set GRAFTLING_PYTHON to that installation's python, \"\$(uv tool dir)/graftling/bin/python\", in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
+message="graftling plugin: the subagents host did not start: $named cannot run graftling ($reason). Install graftling once with uv (uv tool install \"git+https://github.com/LUOXIAO92/graftling.git@v${version:-<version>}\") and set GRAFTLING_PYTHON to that installation's python, \"\$(uv tool dir)/graftling/bin/python\", in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
 printf '%s\n' "$message" >&2
 if [ "$1" = serve ] && [ "$2" = --project ] && [ -d "$3" ]; then
   directory=$3/.agents-control

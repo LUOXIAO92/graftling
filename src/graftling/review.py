@@ -30,7 +30,7 @@ from graftling.approval import parse_decision, review_failed
 from graftling.config import is_loopback
 from graftling.child_env import consumer_environment
 from graftling.connection import CONNECTION_ENV
-from graftling.tool import AgentsError
+from graftling.tool import TOOL_NAME, AgentsError
 
 
 REVIEW_TIMEOUT_DEFAULT = 20
@@ -131,7 +131,7 @@ def check_reviewer(reviewer: Mapping[str, Any]) -> None:
     of holding every later tool call. A well-formed decision of any value
     passes.
     """
-    probe = build_request("agents", "agents/connectivity-check", {}, cwd="/", instruction=(
+    probe = build_request(TOOL_NAME, f"{TOOL_NAME}/connectivity-check", {}, cwd="/", instruction=(
         "Connectivity check only: no tool call is planned and nothing will run. "
         "Answer with one valid decision document."))
     try:

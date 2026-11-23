@@ -298,7 +298,7 @@ class ConcurrentServer:
         fields = {'id': json.dumps(identity)[:64], 'tool': tool, 'feature': feature, **facts}
         details = ' '.join(f'{key}={value}' for key, value in fields.items() if value is not None)
         try:
-            sys.stderr.write(f'{stamp}{time.strftime("%z")} agents-call {event} {details}\n')
+            sys.stderr.write(f'{stamp}{time.strftime("%z")} subagents-call {event} {details}\n')
             sys.stderr.flush()
         except (OSError, ValueError):
             pass

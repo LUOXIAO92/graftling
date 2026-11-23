@@ -233,7 +233,7 @@ class PiDriver:
 
         def framed(notice: Mapping[str, Any]) -> str:
             """Name the child and this parent, as the Claude and Codex bindings do."""
-            return f"[agents · {notice['agent']} → {run.agent}]\n{notice['body']}"
+            return f"[subagents ·{notice['agent']} → {run.agent}]\n{notice['body']}"
 
         # The child's end that continues this Session is the turn's input.
         notice = run.settings.get('completion_message')

@@ -174,7 +174,7 @@ def test_context_finds_the_configuration_above_the_session_cwd(tmp_path: Path, c
     host.plugin_configuration(project)
     found = run_host('context', '--project-from', str(project / 'sub'), cwd=project, input='{}')
     assert found.returncode == 1
-    assert 'agents host for this project is not running' in found.stderr
+    assert 'The subagents host for this project is not running' in found.stderr
 
 
 def fake_python(path: Path, body: str) -> Path:
@@ -200,7 +200,7 @@ def test_launcher_names_what_to_install_when_python_cannot_run_graftling(
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 1
     for text in (result.stderr, (project / '.agents-control' / 'host.log').read_text()):
-        assert 'graftling plugin: the agents host did not start' in text
+        assert 'graftling plugin: the subagents host did not start' in text
         assert f'{named}{executable}' in text
         assert (f'uv tool install "git+https://github.com/LUOXIAO92/graftling.git@v{graftling.__version__}"' in text
                 and 'set GRAFTLING_PYTHON' in text)

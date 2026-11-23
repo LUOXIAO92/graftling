@@ -80,7 +80,7 @@ def ended_by_claude():
         yield
     except KeyboardInterrupt:
         print(time.strftime('%Y-%m-%dT%H:%M:%S%z'),
-              'agents host stopped: Claude Code ended the session (SIGINT).', flush=True)
+              'subagents host stopped: Claude Code ended the session (SIGINT).', flush=True)
 
 
 def serve_until_ended(mcp_in: TextIO, mcp_out: TextIO, responder) -> None:
@@ -100,10 +100,10 @@ def report_missing_host(channel_file: Path, owner: dict | None = None) -> None:
         print(f"{reason['code']}: {reason['message']}", file=sys.stderr)
     except (OSError, ValueError, KeyError, TypeError):
         if owner is not None:
-            print("The agents host of another Claude Code session (Claude Code pid "
+            print("The subagents host of another Claude Code session (Claude Code pid "
                   f"{owner.get('parent')}) owns this project.", file=sys.stderr)
         else:
-            print('The agents host for this project is not running; see '
+            print('The subagents host for this project is not running; see '
                   f"{channel_file.parent.parent / 'host.log'}.", file=sys.stderr)
     raise SystemExit(1)
 
@@ -134,7 +134,7 @@ def require_free_channel(channel_file: Path) -> None:
     """Refuse while another live host serves this channel; a stale file does not count."""
     owner = live_channel(channel_file)
     if owner is not None:
-        raise AgentsError('host-busy', f'{channel_file}: another agents host is serving this project for '
+        raise AgentsError('host-busy', f'{channel_file}: another subagents host is serving this project for '
                           f"Claude Code pid {owner.get('parent')}. Close that Claude Code session.")
 
 
@@ -176,7 +176,7 @@ def claim_channel(channel_file: Path, endpoint: dict) -> bool:
 def log_replaced_channel(channel_file: Path) -> None:
     """Keep one line in host.log saying this start replaced a dead host's channel."""
     print(time.strftime('%Y-%m-%dT%H:%M:%S%z'),
-          f'agents host replaced a stale channel of a dead host: {channel_file}', flush=True)
+          f'subagents host replaced a stale channel of a dead host: {channel_file}', flush=True)
 
 
 def serve_refusal(error: Exception, log: Path, descriptors=tool_documents,
@@ -189,7 +189,7 @@ def serve_refusal(error: Exception, log: Path, descriptors=tool_documents,
     channel or Agent is created, so every startup check remains in force.
     """
     reason = {'code': getattr(error, 'code', 'host-unavailable'),
-              'message': f'The agents host did not start: {error}'}
+              'message': f'The subagents host did not start: {error}'}
     print(reason['message'], file=sys.stderr, flush=True)
     mcp_in, mcp_out = isolate_stdio(log)
     print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), json.dumps(reason, ensure_ascii=False), flush=True)
@@ -437,7 +437,7 @@ HOST_CONFIG = Path('.agents-control') / 'claude-host.json'
 
 
 def project_material(project: Path) -> Path | None:
-    """Return the project's ``.mcp.json`` when configuration --write material starts an agents host there.
+    """Return the project's ``.mcp.json`` when configuration --write material starts an subagents host there.
 
     The entry is ``graftling``, or ``agents`` as written before 0.6.0.
     """
@@ -476,7 +476,7 @@ def plugin_configuration(project: Path) -> Path:
     project = project.resolve()
     material = project_material(project)
     if material is not None:
-        raise AgentsError('host-busy', f'{material} starts this project\'s agents host (configuration --write), '
+        raise AgentsError('host-busy', f'{material} starts this project\'s subagents host (configuration --write), '
                           'so the graftling plugin host stands aside. Keep one: disable the plugin for this '
                           'project (claude plugin disable graftling@graftling --scope local), or remove the '
                           'graftling server (agents before 0.6.0) from .mcp.json, the GRAFTLING_CLAUDE_HOST_* '
@@ -506,13 +506,13 @@ def found_configuration(start: Path, data_root: str | None = None) -> Path:
         config = Path(data_root) / HOST_CONFIG.name
         if config.is_file():
             return config
-        print(f'graftling plugin: no {config} (GRAFTLING_DATA_ROOT), so the agents host has not started '
+        print(f'graftling plugin: no {config} (GRAFTLING_DATA_ROOT), so the subagents host has not started '
               f'for this project. See /mcp and {config.with_name("host.log")}.', file=sys.stderr)
         raise SystemExit(1)
     for directory in (start.resolve(), *start.resolve().parents):
         if (directory / HOST_CONFIG).is_file():
             return directory / HOST_CONFIG
-    print(f'graftling plugin: no {HOST_CONFIG} at or above {start}, so the agents host has not started '
+    print(f'graftling plugin: no {HOST_CONFIG} at or above {start}, so the subagents host has not started '
           'for this project. See /mcp and .agents-control/host.log in the directory Claude Code started in.',
           file=sys.stderr)
     raise SystemExit(1)
@@ -645,10 +645,10 @@ def main() -> None:
             # the process was killed before this point.
             if without_owner:
                 print(time.strftime('%Y-%m-%dT%H:%M:%S%z'),
-                      f"agents host found Agents started by an earlier host that still have a running Runtime: "
+                      f"subagents host found Agents started by an earlier host that still have a running Runtime: "
                       f"{', '.join(without_owner)}.", flush=True)
             elif not unconfirmed:
-                print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'agents host recorded its children stopped.', flush=True)
+                print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'subagents host recorded its children stopped.', flush=True)
             exit_if_owned_unconfirmed(unconfirmed)
     if refused is not None:
         serve_refusal(refused, directory.parent / 'host.log')

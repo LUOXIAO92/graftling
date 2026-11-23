@@ -118,7 +118,7 @@ def _receive_children(turn: CodexManagedExecution, run: Run) -> None:
             return False
         try:
             turn.operate({'operation': 'send', 'session': turn.session, 'execution_id': turn.execution_id,
-                          'instruction': f"[agents · {event['agent']} → {run.agent}]\n{event['body']}"})
+                          'instruction': f"[subagents ·{event['agent']} → {run.agent}]\n{event['body']}"})
             return True
         except RuntimeAdapterError as error:
             # These two are raised before any input is written.
@@ -215,7 +215,7 @@ class CodexDriver:
         elif 'completion_message' in run.settings:
             # The child's end that continues this Session is the turn's input.
             notice = run.settings['completion_message']
-            prompt = f"[agents · {notice['agent']} → {run.agent}]\n{notice['body']}"
+            prompt = f"[subagents ·{notice['agent']} → {run.agent}]\n{notice['body']}"
         if run.settings.get('review') is not None:
             options.update(review=run.settings['review'])
         if self.extra_tools is not None:

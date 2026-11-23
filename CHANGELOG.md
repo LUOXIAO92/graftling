@@ -33,6 +33,17 @@ neither served nor listed. A GraphTraj that serves the renamed tool needs
 - The Claude Code marketplace plugin's MCP server key is `subagents` (591): its tool
   is `mcp__plugin_graftling_subagents__subagents` and `/mcp` shows
   `plugin:graftling:subagents`. The plugin is still named `graftling`.
+- The human-facing labels say `subagents` too (591): the display frames
+  `subagents · <sender> → <recipient>` (Claude Code transcript rows and log,
+  `subagents → <child>`; Pi), notice titles `[subagents notice from ...]`, the prefix of a
+  message relayed into a child's turn `[subagents · <sender> → <recipient>]`, host log
+  lines `subagents host ...` and `subagents-call ...` (including the plugin launcher's
+  `graftling plugin: the subagents host did not start`), the review texts
+  `subagents review of tool ...` and `subagents review did not allow ...`, and the Pi
+  confirmation title `subagents: allow a tool beyond the host settings`.
+- The reviewer connectivity probe at `create` is now `runtime: subagents`,
+  `tool: subagents/connectivity-check` (was `agents`, `agents/connectivity-check`). A
+  reviewer that answers the probe specially, by its tool, must match the new value (591).
 - The reserved extra-tool name is `subagents` only; `agents` may now name an extra
   tool (591).
 - The tool name has one source: `TOOL_NAME` in Python, and one `TOOL` constant in each
@@ -55,8 +66,12 @@ neither served nor listed. A GraphTraj that serves the renamed tool needs
   it **silently stops denying**; replace it with `mcp__<server>__subagents`.
 - Unchanged: the `tasks` tool, the data root (`.agents-control`, `control/agents`),
   result fields such as `{"agents": [...]}` from `status`, DSH's `agents` plugin id and
-  service, the DSH patch rows `agents-mcp` and `agents-review`, the notice
-  `source: "agents"`, and the `/agents-context` command.
+  service, the DSH patch rows `agents-host`, `agents-mcp` and `agents-review`, the
+  notice `source: "agents"`, `run_summary`'s `agents_calls`, and the `/agents-context`
+  command.
+- Anything that matched the old labels or the probe in logs, transcripts or a reviewer
+  (for example a test reading `host.log` for `agents host ...`, or a reviewer allowing
+  `agents/connectivity-check`) must match the new text.
 - Sessions and archives created before keep their earlier calls under the old name;
   they are drawn as ordinary tool calls, not as exchanges.
 

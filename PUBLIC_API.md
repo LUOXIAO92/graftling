@@ -819,7 +819,7 @@ root holds this host's own records. A consumer adds its own private directories 
 
 ### 1.6 Pi host: the agents Pi extension
 
-A Pi Session becomes an agents host (the parent of its children) by loading
+A Pi Session becomes a subagents host (the parent of its children) by loading
 the extension `graftling/pi/extension.mjs`. Its data root is the one
 `--agents-config <file>` names. Without that flag it is `GRAFTLING_DATA_ROOT`
 when set (577, 1.1), else `<Session cwd>/.agents-control`, created when
@@ -945,7 +945,7 @@ The model reaches the Pi Session through the MCP server `graftling` (`agents` be
 
 ### 1.7 DSH host: the agents DSH plugin
 
-A DSH main Session becomes an agents host (the parent of its children) when
+A DSH main Session becomes a subagents host (the parent of its children) when
 its DSH loads the agents DSH plugin. Its data root is the one in the host
 configuration file `GRAFTLING_DSH_CONFIG` names; when that variable is unset
 or empty, it is `GRAFTLING_DATA_ROOT` when set (577, 1.1), else
@@ -1714,9 +1714,9 @@ What the parent sees today:
   permission reply`), the content as Markdown and the facts line dim; Claude
   still reads the whole `text`. It draws each `subagents` exchange the Main makes
   (`create`, `send`, `resume`, the child's reply and notices on a result) as one
-  transcript row Claude does not read: `agents → <child name>` or `<child
+  transcript row Claude does not read: `subagents → <child name>` or `<child
   name> · <event>`, then the content as Markdown. Where Claude Code draws no
-  such row, each line goes to `$.ui.log` as `┌ agents · <from> → <to>`,
+  such row, each line goes to `$.ui.log` as `┌ subagents · <from> → <to>`,
   `│ <line>`, `└`. Bodies over 10,000 characters are cut for display only. An end already shown by `wait`
   or `status` is not pushed again. It enables `hold_notices`: a notice stays
   held until the plugin acknowledges its submission (`{"operation":
@@ -1749,7 +1749,7 @@ What the parent sees today:
 - **Pi host:** it enables `request_notices` and `hold_notices`, for children
   of every Runtime it runs. Each notice is injected into the Pi Session with
   Pi's `pi.sendMessage` as a displayed custom message (`customType`
-  `graftling:agent-communication`, content `[agents notice from <alias> ·
+  `graftling:agent-communication`, content `[subagents notice from <alias> ·
   <event> · execution <execution>]` and the message, `details.execution`, `details.fact` `notice:<id>`, the id as for
   Claude above), with `triggerTurn: true, deliverAs: "followUp"`: an idle
   Session starts a turn with it, a busy one receives it after the current
@@ -1828,7 +1828,7 @@ What the parent sees today:
   writes no line and exits as before. Where the line lands:
   - **Claude Code hosts** (`graftling.claude.host` and GraphTraj's): in
     `host.log`, because the host's stderr is that file once it serves MCP.
-    `agents host recorded its children stopped.` is written only when every stop
+    `subagents host recorded its children stopped.` is written only when every stop
     was confirmed and no record shows a running execution whose owner process is
     gone while its Runtime still lives. If one does, the host writes one line
     naming those Agents, as started by an earlier host and still having a running
@@ -1859,7 +1859,7 @@ What the parent sees today:
   "message", "execution", "text"}` (the id as for Claude above; `text` is `notice_text`, 538) goes
   to the plugin, which hands it to the existing `agentMessages.receive` relay
   (`dsh/communication.mjs`): one native `agent-message` relay message from
-  the child's Agent and Session, text `text` (a host without it: `[agents notice from <agent> ·
+  the child's Agent and Session, text `text` (a host without it: `[subagents notice from <agent> ·
   <event> · execution <execution>]` followed by the message), communication id `agents-notice:<id>`,
   placed in the Session's next-turn inbox with a wake (545), so each notice
   opens a turn of its own and the UI shows it as that turn's block. The relay admits one
@@ -1908,7 +1908,7 @@ What the parent sees today:
   not changed for any of these.
 - A grandchild's notices go to its own parent, whatever the grandchild's
   Runtime. A running Claude, Codex or Pi parent Agent takes them into its turn as
-  `[agents · <child> → <parent>]` followed by the message; a standby one is
+  `[subagents · <child> → <parent>]` followed by the message; a standby one is
   continued with a child's reply, in its retained Session. A standby parent is
   not started for a `request`, or for an end without a body: under
   `hold_notices` those are held and taken into its next run (`resume`, `send`,
@@ -2241,7 +2241,8 @@ keeps the status and the provider's `code`, `type` and `message`. The reviewer's
 environment, unless the child's own connection gives it that variable.
 
 **Connectivity check.** `create` sends one review call through the same path
-with a fixed harmless request (`tool: agents/connectivity-check`), bounded by the
+with a fixed harmless request (`runtime: subagents`, `tool: subagents/connectivity-check`;
+`agents` and `agents/connectivity-check` before 0.9.0), bounded by the
 reviewer's timeout. A well-formed decision of any value passes. A transport
 failure or an invalid document fails `create` with `review-unavailable` and the
 reason, so an endpoint that would reject every review is reported at once.
@@ -2391,8 +2392,17 @@ Recorded classifications:
   create's `tools` / `disallowed_tools` that name the old tool must be changed: a
   `disallowed_tools` entry naming the old tool no longer denies anything. Unchanged:
   the `tasks` tool, the data root (`.agents-control`, `control/agents`), result keys
-  such as `{"agents": [...]}`, DSH's `agents` plugin id and service, and the
-  `/agents-context` command. A GraphTraj that serves the renamed tool needs
+  such as `{"agents": [...]}` and `run_summary`'s `agents_calls`, DSH's `agents` plugin
+  id, service and row ids, the notice `source: "agents"`, and the `/agents-context`
+  command. The human-facing labels follow the tool: display frames
+  `subagents · <sender> → <recipient>`, notice titles `[subagents notice from ...]`,
+  relayed-message prefixes `[subagents · <sender> → <recipient>]`, host log lines
+  `subagents host ...` and `subagents-call ...`, review texts `subagents review of tool ...`,
+  the Pi confirmation title `subagents: allow a tool beyond the host settings`, and the
+  reviewer connectivity probe (`runtime: subagents`, `tool: subagents/connectivity-check`;
+  a reviewer that recognized the old probe by its tool must match the new one). Log text
+  is not public (this section's preamble), but a consumer that matched these strings
+  must change. A GraphTraj that serves the renamed tool needs
   `graftling>=0.9.0,<0.10`.
 - 0.8.0 is incompatible and raises the minor version, for three changes: 581
   removes a released install route (an entry point), 576 changes an observable

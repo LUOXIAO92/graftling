@@ -1,4 +1,4 @@
-"""Human-only agents communication through Claude's synchronous native hook.
+"""Human-only subagents communication through Claude's synchronous native hook.
 
 Return systemMessage, never additionalContext, updatedMCPToolOutput or a user
 message. The owning CLI renders this in its native informational container.
@@ -13,7 +13,7 @@ import sys
 
 def _frame(sender: str, recipient: str, body: str) -> str:
     """Format readable content with explicit direction, without model markup."""
-    return f'┌ agents · {sender} → {recipient}\n' + '\n'.join('│ ' + line for line in body.splitlines()) + '\n└'
+    return f'┌ subagents · {sender} → {recipient}\n' + '\n'.join('│ ' + line for line in body.splitlines()) + '\n└'
 
 
 def display_response(

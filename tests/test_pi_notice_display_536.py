@@ -39,9 +39,9 @@ def test_notice_is_drawn_as_who_and_markdown_with_the_model_input_unchanged() ->
                             capture_output=True, text=True, timeout=60, check=False)
     assert result.returncode == 0, result.stderr
     shown = json.loads(result.stdout)
-    assert shown['content'] == '[agents notice from n536 · completed · execution exec-1]\n## Done\n\n- **one**'
+    assert shown['content'] == '[subagents notice from n536 · completed · execution exec-1]\n## Done\n\n- **one**'
     lines = [line.strip() for line in shown['drawn'].splitlines() if line.strip()]
-    assert lines == ['[agents · n536 · completed]', 'Done', '- one']
+    assert lines == ['[subagents · n536 · completed]', 'Done', '- one']
     assert not re.search(r'graftling:agent-communication|##|\*\*', shown['drawn'])
     # A message without the notice details keeps Pi's default drawing.
     assert shown['plain'] is None

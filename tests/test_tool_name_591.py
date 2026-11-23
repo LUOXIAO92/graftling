@@ -47,9 +47,12 @@ ALLOWED = [
     ('src/graftling/dsh/plugin.mjs', "inject = ['tools', 'sessionQuery', 'agents']"),
     ('src/graftling/dsh/communication.mjs', "inject = ['sessionQuery', 'agents']"),
     ('src/graftling/dsh/execution.py', "{'id': 'agents', 'name': self.request['plugin']}"),
-    # The reviewer connectivity probe's runtime label (not a tool call).
-    ('src/graftling/review.py', 'build_request("agents", "agents/connectivity-check"'),
 ]
+
+# Human-facing labels and log prefixes that named the old tool (591): display frames,
+# notice titles, host log lines, review texts. None is allowed any more.
+OLD_LABEL = re.compile(r"\bagents (·|→|host\b|review|notice|context)|(?<![-\w])agents-call\b|\[agents\b"
+                       r"|'agents: |agents/connectivity-check")
 
 
 def production_files() -> list[Path]:
@@ -85,6 +88,27 @@ def test_every_allowed_look_alike_is_still_there() -> None:
     stale = [(path, fragment) for path, fragment in ALLOWED
              if not any(hit[0] == path and fragment in hit[2] for hit in hits)]
     assert stale == []
+
+
+def test_no_production_line_shows_an_old_label() -> None:
+    """Display frames, notice titles, log lines and the review probe say subagents."""
+    found = [(path.relative_to(ROOT).as_posix(), number, line.strip())
+             for path in production_files()
+             for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1)
+             if OLD_LABEL.search(line)]
+    assert found == []
+
+
+def test_the_label_guard_sees_each_old_label() -> None:
+    """The label pattern catches each label 0.8.0 showed, and not the names that stay."""
+    for line in ("f'┌ agents · {sender} → {recipient}'", "['agents → ']", "'agents host stopped'",
+                 '`agents review of tool "x"`', '`[agents notice from ${a}`', "f\"[agents · {a} → {b}]\"",
+                 "' agents-call finished'", "'agents: allow a tool beyond the host settings'",
+                 'build_request("agents", "agents/connectivity-check"', "'agents context cleanup failed: '"):
+        assert OLD_LABEL.search(line), line
+    for line in ("'subagents host stopped'", "'agents-review'", "'agents-mcp'", "'/agents-context'",
+                 '.agents-control', "'agents-review-hook'", "{'id': 'agents'}", "source: 'agents'"):
+        assert not OLD_LABEL.search(line), line
 
 
 def test_the_guard_sees_the_forms_a_half_rename_leaves() -> None:

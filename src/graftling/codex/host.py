@@ -202,7 +202,7 @@ class CodexHost(CodexManagedExecution):
             return
         summary: dict = {'agents_calls': len(self.calls), 'native_subagents': len(self.native_subagents)}
         if not self.calls:
-            summary['note'] = ('This run made no agents call, so any child the parent reports creating '
+            summary['note'] = ('This run made no subagents call, so any child the parent reports creating '
                                'in this run was not created through agents.')
         print(json.dumps({'run_summary': summary}, ensure_ascii=False), file=sys.stderr, flush=True)
 

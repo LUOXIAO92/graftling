@@ -17,7 +17,7 @@ def bind_run(turn: ClaudeExecution, run: Run) -> None:
                               extra_fields=run.extra_fields)
     if 'completion_message' in run.settings:
         notice = run.settings['completion_message']
-        turn.prompt = f"[agents · {notice['agent']} → {run.agent}]\n{notice['body']}"
+        turn.prompt = f"[subagents ·{notice['agent']} → {run.agent}]\n{notice['body']}"
 
     @contextmanager
     def connection(directory: Path) -> Iterator[str]:
@@ -36,7 +36,7 @@ def bind_run(turn: ClaudeExecution, run: Run) -> None:
             if active:
                 turn.operate({'operation': 'send', 'session': turn.session,
                               'execution_id': turn.execution_id,
-                              'instruction': f"[agents · {event['agent']} → {run.agent}]\n{event['body']}"})
+                              'instruction': f"[subagents ·{event['agent']} → {run.agent}]\n{event['body']}"})
                 return True
         return run.events.continue_from_child(event, run.archive)
 
