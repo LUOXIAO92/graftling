@@ -173,6 +173,14 @@ are all optional: `model` (default `claude-opus-5-5`), `reasoning_effort`,
 `permission_mode` (`auto` by default, or `default`), `base_url` and `api_key_env` (the
 name of a variable, never its value).
 
+A `base_url` here or in a Claude connection needs `api_key_env`; without it the child
+is refused with `invalid-config` before it starts, since its Claude Code would otherwise
+log in to that endpoint with your own Claude login (environment variables, keychain or
+`.credentials.json`). With it, the child reaches `base_url` with that key only, and
+starts without your user, project and local Claude settings files, whose `env` or
+`apiKeyHelper` could add another credential
+([Connections](../../README.md#connections)). Without `base_url` nothing changes.
+
 `config.yml` for connections and presets goes in the data root,
 `.agents-control/config.yml`. See [Configuration](../../README.md#configuration).
 

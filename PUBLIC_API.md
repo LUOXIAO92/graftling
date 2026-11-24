@@ -487,7 +487,11 @@ Public: `graftling.__version__` and the names in `graftling.__all__`:
   `provider` through a private `auth.json` holding `$NAME`, and a DSH query;
   `base_url` routes a Claude and a DSH query. A Claude query with either keeps,
   like its child, no credential-class variable but `api_key_env` (3.1), so no
-  host login reaches that endpoint. Codex lists its home's catalog
+  host login reaches that endpoint. A Claude connection with `base_url` and no
+  `api_key_env` raises `ValueError` before any process starts, and `models`
+  reports it as `invalid-config`, as `create` does (613, section 2); with
+  `api_key_env` the query, like its child, loads no user, project or local
+  settings file. Codex lists its home's catalog
   without `base_url` or `api_key_env`; a Pi connection takes no `base_url`
   (section 2, *Drivers*). An unset key variable makes a Claude query
   `unknown`; Pi lists what it can authenticate without it.
@@ -1275,6 +1279,25 @@ host's `api_key_env`, `base_url` and `provider_api`. A reviewed Pi connection
 whose only key is the reviewer's is refused the same way (section 6). Claude has no native
 provider setting, so a Claude connection's `provider` only names its models.
 
+**A Claude `base_url` needs its own key (613).** A Claude connection, or the
+Claude driver's own settings, with `base_url` and no `api_key_env` is refused with
+`invalid-config` before any process starts: by `create` and the host's start
+(`ClaudeDriver.require_available`, message `Connection '<name>': base_url needs
+api_key_env: ...`), by the `models` feature with the same code and message, by
+`discover_models` (`ValueError`) and by `ClaudeDriver.prepare` for settings
+without a connection. Otherwise the child's Claude Code would authenticate to that
+endpoint with the host's login (its login variables, or the keychain or
+`.credentials.json` login). With `api_key_env`, the child (and its model query)
+gets `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` from the connection only: besides
+the credential rule of 3.1, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+`ANTHROPIC_CUSTOM_HEADERS` and `CLAUDE_CODE_USE_BEDROCK`, `_VERTEX` and `_FOUNDRY`
+are removed, and it starts with `--setting-sources ''`, so no user, project or
+local settings file's `env` or `apiKeyHelper` adds a credential (graftling's
+`--settings` and administrator-managed settings still apply). A keychain or
+`.credentials.json` login is not removed: in `--print` mode Claude Code
+authenticates with `ANTHROPIC_API_KEY` before it, per its documented order. A
+Claude connection without `base_url` runs as before.
+
 **Several Runtimes in one host.** A host registers one driver per Runtime in
 `AgentControl(root, {runtime: driver, ...})`; `create` routes by `runtime`.
 At start a host may call `AgentControl.require_connections()`, which raises
@@ -1439,6 +1462,7 @@ connections:                        # optional
     home: /abs/native/home          # optional native home (absolute; ~ expanded)
     provider: anthropic             # optional native provider
     base_url: https://host/v1       # optional, http(s) without credentials, query or fragment
+                                    # (Claude: only with api_key_env, 613)
     api_key_env: WORK_KEY           # optional: the NAME of an environment variable, never a key
     pass_env: [GH_TOKEN]            # optional: more variables' NAMES this child receives (3.1)
     review: local-review            # optional: this connection's reviewer (section 6)
@@ -1543,7 +1567,7 @@ Runtime's own login variables:
 
 | Runtime | Own variables when `api_key_env` is absent |
 | --- | --- |
-| Claude | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; the `AWS_*` credentials with `CLAUDE_CODE_USE_BEDROCK`, the `GOOGLE_*`, `GCLOUD_*` and `CLOUDSDK_*` credentials with `CLAUDE_CODE_USE_VERTEX`, the `ANTHROPIC_FOUNDRY_*` credentials with `CLAUDE_CODE_USE_FOUNDRY` |
+| Claude | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; the `AWS_*` credentials with `CLAUDE_CODE_USE_BEDROCK`, the `GOOGLE_*`, `GCLOUD_*` and `CLOUDSDK_*` credentials with `CLAUDE_CODE_USE_VERTEX`, the `ANTHROPIC_FOUNDRY_*` credentials with `CLAUDE_CODE_USE_FOUNDRY`. A connection with `base_url` must name `api_key_env` (613, section 2) |
 | Codex | `OPENAI_API_KEY`, `CODEX_API_KEY`, and the `env_key` of the selected provider in the Session's settings or the home's `config.toml` |
 | Pi | A set variable the home's `models.json` `apiKey` or `auth.json` `key` names for the selected provider, as `$NAME`, `${NAME}` or plain text; a `!command` is ignored. Otherwise whatever Pi itself needs: agents asks `get_available_models` with variables kept to a candidate set, on each launch. If Pi offers it under none, none is added |
 | DSH | `DEEPSEEK_API_KEY`, which 430's refusal still covers when a reviewer holds it. A provider other than `deepseek-official` requires `api_key_env` (section 2, Drivers) |

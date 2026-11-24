@@ -17,7 +17,9 @@ The numbers in parentheses are the project's Task numbers.
 
 Compatible: a new feature, a new optional argument, a new result field and a new error
 code for a new situation (609), and DSH providers accepted that were refused before
-(608) (PUBLIC_API section 7).
+(608) (PUBLIC_API section 7). 613 refuses a configuration that used to start, a Claude
+`base_url` without `api_key_env`, which section 7 lists as incompatible (a new
+rejection); it closes a credential leak, and the release classifies it.
 
 ### Added
 
@@ -53,6 +55,17 @@ code for a new situation (609), and DSH providers accepted that were refused bef
   otherwise look for that provider's key itself) or when the installed DSH does not
   serve it, checked with Node against DSH's own catalog by `create`, the host's
   start (`require_connections`) and `discover_models` (`ValueError`) (608).
+- A Claude connection or Claude host setting with `base_url` and no `api_key_env`
+  is refused with `invalid-config` by `create`, the host's start and the `models`
+  feature (alike, `Connection '<name>': base_url needs api_key_env: ...`), and by
+  `discover_models` (`ValueError`), before any process starts. Before, its child and
+  its model query kept the host's Claude login variables and sent them, or the
+  keychain or `.credentials.json` login, to that endpoint. With `api_key_env` the
+  child and its query also lose `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `ANTHROPIC_CUSTOM_HEADERS` and the `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`
+  switches, and start with `--setting-sources ''`, so no user, project or local
+  settings file's `env` or `apiKeyHelper` adds a credential; the connection's key is
+  the only one sent there. Without `base_url` nothing changes (613).
 
 - The install command has no tag: `uv tool install --managed-python
   "git+https://github.com/LUOXIAO92/graftling.git"` installs the default branch

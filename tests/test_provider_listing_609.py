@@ -181,8 +181,6 @@ HOST_CREDENTIALS = {'ANTHROPIC_API_KEY': 'host-anthropic', 'ANTHROPIC_AUTH_TOKEN
 
 
 @pytest.mark.parametrize('connection, expected', [
-    # (a) An endpoint without a key: no host login or other key reaches it.
-    ({'base_url': 'https://gw.example/v1'}, {}),
     # (b) An endpoint with its key: only that key, as Claude's and under its own name.
     ({'base_url': 'https://gw.example/v1', 'api_key_env': 'GATEWAY_TEST_KEY'},
      {'ANTHROPIC_API_KEY': SECRET, 'GATEWAY_TEST_KEY': SECRET}),
@@ -213,6 +211,15 @@ print(json.dumps({reply!r}))
     found = discover_models({'runtime': 'claude', **connection})
     assert found['status'] == 'available'
     assert json.loads(log.read_text()) == expected
+
+
+def test_a_claude_endpoint_without_its_key_is_not_queried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """613: no host login could reach it, because the query is refused before it starts."""
+    fake_client(tmp_path / 'bin', 'claude', f"open({str(tmp_path / 'started')!r}, 'w')\n")
+    monkeypatch.setenv('PATH', f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    with pytest.raises(ValueError, match='base_url needs api_key_env'):
+        discover_models({'runtime': 'claude', 'base_url': 'https://gw.example/v1'})
+    assert not (tmp_path / 'started').exists()
 
 
 def test_codex_names_its_models_by_the_connection_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

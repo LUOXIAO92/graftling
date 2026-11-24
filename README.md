@@ -186,6 +186,18 @@ is the key in the environment, not your DSH home ([below](#a-dsh-childs-provider
 `api_key_env` is optional too: without it the child keeps the variables its Runtime
 logs in with, such as `DEEPSEEK_API_KEY` for DSH.
 
+A Claude connection (or Claude host setting) with `base_url` must also name
+`api_key_env`. Without it, `create`, `models` and the host's start refuse it with
+`invalid-config` before starting anything, because the child's Claude Code would log
+in to that endpoint with your own Claude login. With it, the child reaches `base_url`
+with that key alone: graftling removes your other Claude login and route variables
+(`ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_CUSTOM_HEADERS`,
+`CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`, other keys) and starts it without
+your user, project and local Claude settings files (`--setting-sources ''`), whose
+`env` or `apiKeyHelper` could add another credential. graftling's own child settings
+still apply. Claude Code may then also skip those sources' `CLAUDE.md` files. A
+connection without `base_url` is unchanged.
+
 ```yaml
 connections:
   work-claude:
@@ -241,7 +253,8 @@ connections:
 `provider` (Pi and DSH list only that provider's models; a Claude or Codex connection's
 models are named after it) and its key variable (Claude, Pi with a `provider`, DSH)
 and `base_url` (Claude, DSH). A Claude query with a `base_url` or key variable gets no
-other credential from your environment, so your own login never reaches that endpoint.
+other credential from your environment, so your own login never reaches that endpoint;
+like its child, a Claude `base_url` query needs `api_key_env`, else `invalid-config`.
 With no connection for the Runtime it lists the native login, as `connection: null`.
 
 #### A DSH child's provider, home and key

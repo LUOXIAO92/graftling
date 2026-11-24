@@ -77,7 +77,9 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
         The connection names no supported Runtime or its ``models`` list is
         malformed, or a DSH connection's provider other than
         ``deepseek-official`` names no ``api_key_env`` or is not served by the
-        installed DSH; these are configuration errors, not discovery failures.
+        installed DSH, or a Claude connection has ``base_url`` without
+        ``api_key_env`` (613); these are configuration errors, not discovery
+        failures.
 
     Examples
     --------
@@ -87,6 +89,12 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
     runtime = connection.get('runtime')
     if runtime not in RUNTIMES:
         raise ValueError('Choose claude, codex, pi or dsh.')
+
+    if runtime == 'claude' and connection.get('base_url') and not connection.get('api_key_env'):
+        from graftling.claude.settings import GATEWAY_KEY_REQUIRED
+
+        # 613: refused as its child is, declared models or not.
+        raise ValueError(GATEWAY_KEY_REQUIRED)
 
     if connection.get('models') is not None:
         models = _configured(connection)
@@ -495,12 +503,18 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
     query   = {'type': 'control_request', 'request_id': 'catalog',
                'request': {'subtype': 'initialize'}}
 
+    from graftling.claude.settings import GATEWAY_EXCLUDED, GATEWAY_SETTING_SOURCES
+
     environment = _environment(connection, 'CLAUDE_CONFIG_DIR')
     if connection.get('base_url') or connection.get('api_key_env'):
         # Filtered like the connection's child (child_env.py): no host credential,
         # login or other key reaches the connection's endpoint, only its own key.
         environment = child_environment(environment, api_key_env=connection.get('api_key_env'))
     if connection.get('base_url'):
+        # As its child (613): no host settings file, extra credential or route.
+        command += GATEWAY_SETTING_SOURCES
+        for name in GATEWAY_EXCLUDED:
+            environment.pop(name, None)
         environment['ANTHROPIC_BASE_URL'] = connection['base_url']
     if connection.get('api_key_env'):
         for name in ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'):

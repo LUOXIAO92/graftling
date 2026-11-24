@@ -31,6 +31,18 @@ def login_variables(environment: Mapping[str, str]) -> tuple[str, ...]:
     return ('ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', *provider)
 
 
+# A Claude endpoint other than Anthropic's needs its own key (613): without one, the
+# child's Claude Code would authenticate there with the host's login.
+GATEWAY_KEY_REQUIRED = ("base_url needs api_key_env: without its own key, a Claude child or model listing "
+                        "would send the host's Claude login to that endpoint.")
+# Host variables that would add another credential or route to a base_url child (613).
+GATEWAY_EXCLUDED = ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS',
+                    'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_CODE_USE_FOUNDRY')
+# No user, project or local settings file: their ``env`` or ``apiKeyHelper`` could
+# authenticate a base_url child otherwise; graftling's own --settings still apply.
+GATEWAY_SETTING_SOURCES = ('--setting-sources', '')
+
+
 def current_cli(executable: str | None = None) -> tuple[str, str]:
     """Return the resolved Claude Code executable and its checked version.
 
@@ -62,6 +74,8 @@ def prepare(configuration: Mapping[str, Any], cwd: Path) -> dict:
                'api_key_env', 'instructions', 'worktree_access', 'read_paths', 'permission_mode'}
     if set(config) - allowed:
         raise AgentsError('invalid-config', 'Unknown Claude settings: ' + ', '.join(sorted(set(config) - allowed)))
+    if config.get('base_url') and not config.get('api_key_env'):
+        raise AgentsError('invalid-config', 'Claude ' + GATEWAY_KEY_REQUIRED)
     executable, version = current_cli(config.get('executable'))
     mode = config.get('permission_mode', 'auto')
     effort = config.get('reasoning_effort')

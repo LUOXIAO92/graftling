@@ -13,7 +13,7 @@ from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from graftling.runtime import RuntimeAdapterError
 from .execution import ClaudeExecution
-from .settings import current_cli, prepare
+from .settings import GATEWAY_KEY_REQUIRED, current_cli, prepare
 
 # Native Claude effort levels; a model's own list may be narrower.
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
@@ -101,6 +101,9 @@ class ClaudeDriver:
         native = Path.home() / '.local/bin/claude'
         if executable is None and native.is_file():
             executable = str(native)
+        if connection.get('base_url') and not connection.get('api_key_env'):
+            # 613: before any process, and as the models feature reports it.
+            raise AgentsError('invalid-config', f"Connection {connection.get('name', '')!r}: {GATEWAY_KEY_REQUIRED}")
         explicit = connection.get('home') or os.environ.get('CLAUDE_CONFIG_DIR')
         home = Path(explicit or Path.home() / '.claude')
         # The account record sits beside the default home; the token may be in a keychain.

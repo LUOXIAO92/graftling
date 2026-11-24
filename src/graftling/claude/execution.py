@@ -34,7 +34,7 @@ from graftling.child_env import child_environment, consumer_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from graftling.connection import CONNECTION_ENV
-from .settings import login_variables
+from .settings import GATEWAY_EXCLUDED, GATEWAY_SETTING_SOURCES, login_variables
 from .support import write_text_durably, write_yaml_durably, yaml_sections, credential_environment, redact
 
 from graftling.runtime import RuntimeAdapterError, SessionStarted
@@ -758,6 +758,8 @@ class ClaudeExecution:
                 '--replay-user-messages',
                 '--permission-prompt-tool', 'stdio',
                 '--restricted', '--strict-mcp-config',
+                # 613: a base_url child reads no host settings file that could add a login.
+                *(GATEWAY_SETTING_SOURCES if request.get('base_url') else ()),
                 # Restricted mode confines file tools to cwd; native --add-dir
                 # admits the declared read-only directories, still Edit-denied.
                 *[item for path in settings['permissions']['additionalDirectories'] for item in ('--add-dir', path)],
@@ -800,6 +802,9 @@ class ClaudeExecution:
         if request['reasoning_effort'] is not None:
             environment['CLAUDE_CODE_EFFORT_LEVEL'] = request['reasoning_effort']
         if request.get('base_url'):
+            # 613: only the connection's key (below) authenticates there, on its route.
+            for key in GATEWAY_EXCLUDED:
+                environment.pop(key, None)
             environment['ANTHROPIC_BASE_URL'] = request['base_url']
         else:
             environment.pop('ANTHROPIC_BASE_URL', None)
