@@ -250,7 +250,7 @@ Features and their arguments (`*` = required):
 | `resume` | `agent*`, `message` (required in standby) | `resumed: false, reason: already-active` when it already runs |
 | `requests` | `agent*`, `execution` | `requests: [native request document + "execution"]` |
 | `reply` | `agent*`, `request*` (one document from `requests`), `response*` (explicit native response, or `{"answer"}` for a decision request) | the reply receipt; a repeat returns the first receipt with `duplicate: true`. Checked first under section 6 |
-| `retire` | `agent*` | `retired: true`, `duplicate` on repeat |
+| `retire` | `agent*` | `retired: true`, `duplicate` on repeat; only this result carries `retired` (see *Retired Agents* below) |
 | `ask_parent` | `kind*` (`decision` \| `resources`), `question*`, `timeout_seconds*` (finite, > 0) | `request`, `answer` (text or `null`), `timed_out`, on the caller's own Agent document; see 4 |
 | `session_read` | exactly one of `agent` or `session`; `start`, `stop` (integers), `content` (`text` \| `tools` \| `all`, default `text`), `search` (string) | not an Agent document: the read document below (since 466) |
 
@@ -351,6 +351,21 @@ its own rules for which Agents it accepts.
   `message`), `terminal_confirmed`, `ended_at`, and when present
   `termination_confirmation`, `runtime_exit`, `notification` (see 4);
 - `retired_at` once retired.
+
+**Retired Agents.** `state` says only whether an execution is running:
+`active` while one runs, `standby` otherwise. It does not reflect retirement.
+`retire` requires standby (`active` otherwise), so a retired Agent always
+reports `state: standby`, with `retired_at` set; read `retired_at`, not
+`state`, to tell whether an Agent can still be continued. The flag
+`retired: true` appears only in the `retire` result (with `duplicate: true`
+on a repeat); `status` and `wait` on a retired Agent still return its
+document, with `retired_at` and without `retired`. A retired Agent is left
+out of `status` without `agent` (a visible child of it is listed under its
+nearest visible ancestor) and out of the names a `not-found` message
+suggests; its record and Session are kept. `send`, `resume`, `interrupt`,
+`requests` and `reply` on it fail with `retired`. The one exception is
+`interrupt` on a retired Agent with an unconfirmed end: as for any standby
+Agent, it confirms that end (`confirm_ended`, 1.3).
 
 The Claude Code host may add `main_notices` to the outer document (see 4).
 
