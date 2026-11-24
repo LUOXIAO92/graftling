@@ -279,7 +279,9 @@ models by provider. With `provider`, only the connections declaring exactly that
 `provider`; none is `invalid-provider`, as at `create` (section 2, rule 4). With no
 connection for the Runtime, the native default login is listed as one entry with
 `connection: null`. A Runtime without a driver in this host is `unsupported-runtime`;
-an invalid `config.yml` is `invalid-config`. The caller passes the same control check as
+an invalid `config.yml` is `invalid-config`, and so is a connection `discover_models`
+refuses with `ValueError` (a DSH provider it cannot route, 608), with the message `create`
+gives for it: `Connection '<name>': ...`. The caller passes the same control check as
 `create`. Each entry is queried with `discover_models` (1.3), synchronously, so a native
 query may take up to about 30 seconds per connection; declared `models` avoid it. No
 Agent, Session or execution is created, and the result's `agent`, `session` and

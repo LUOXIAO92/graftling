@@ -310,6 +310,25 @@ def test_models_without_a_connection_lists_the_native_login(tmp_path: Path, pi: 
     assert failed and document['error']['code'] == 'unsupported-runtime'
 
 
+def test_models_and_create_refuse_a_dsh_provider_discovery_cannot_route_alike(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """608 refuses a non-deepseek-official DSH provider without api_key_env; models says so as create does."""
+    from graftling.dsh.driver import DshDriver
+
+    fake_client(tmp_path / 'bin', 'dsh', '')
+    monkeypatch.setenv('PATH', f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    root = configured(tmp_path / 'root', 'connections:\n  dsh-go:\n    runtime: dsh\n    provider: opencode-go\n')
+    control = AgentControl(root, {'dsh': DshDriver(tmp_path, {'executable': str(tmp_path / 'bin' / 'dsh')})})
+
+    listed, failed = call(control, action='models', runtime='dsh')
+    assert failed and listed['error']['code'] == 'invalid-config'
+    created, failed = call(control, action='create', runtime='dsh', provider='opencode-go', instruction='Work.')
+    assert failed and created['error'] == {**listed['error']}
+    assert "Connection 'dsh-go': DSH provider 'opencode-go' needs api_key_env" in listed['error']['message']
+    assert not (root / 'control' / 'agents').exists()
+
+
 def test_models_is_a_discoverable_feature_taking_runtime_and_provider() -> None:
     found = handle_request({'action': 'discover', 'query': 'models'}, lambda request: None).document
     assert 'models' in [item['feature'] for item in found['features']]

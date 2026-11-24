@@ -1051,7 +1051,12 @@ class AgentControl:
         settings = [connections[name] for name in names] or [{"runtime": runtime}]
         listed   = []
         for entry in settings:
-            found  = _discover_models(entry)
+            try:
+                found = _discover_models(entry)
+            except ValueError as error:
+                # A connection discovery refuses (608: a DSH provider it cannot route) is
+                # reported as create reports it from the driver's require_available.
+                raise AgentsError("invalid-config", f"Connection {entry.get('name', '')!r}: {error}") from None
             groups = [{"provider": group["provider"],
                        "models": [{name: value for name, value in model.items() if name != "provider"}
                                   for model in group["models"]]}
