@@ -2490,6 +2490,15 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 0.10.0 is incompatible and raises the minor version (613): a Claude connection with
+  `base_url` and no `api_key_env` is now refused with `invalid-config` at host start,
+  `create`, `models`, `discover_models` and every later launch, including send and
+  resume of an Agent recorded before; that configuration used to start, and its child
+  sent the host's Claude login to the endpoint. Compatible in the same release: the
+  feature `models`, `create`'s optional `provider`, `discover_models`' `groups` and the
+  error code `invalid-provider` (609), and DSH providers other than `deepseek-official`
+  that the installed DSH serves (608). A GraphTraj that uses `provider` or `groups`
+  needs `graftling>=0.10.0,<0.11`.
 - 0.9.0 is incompatible and raises the minor version (591): the MCP tool `agents` is
   renamed `subagents`, with no alias for the old name. `TOOL_NAME` (a public Python
   name) changes value; `tools/list` and `serverInfo.name` say `subagents`; the model sees
