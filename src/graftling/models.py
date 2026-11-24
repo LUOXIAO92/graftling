@@ -42,23 +42,34 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
     ----------
     connection : Mapping
         ``runtime`` (``claude``, ``codex``, ``pi`` or ``dsh``) and optional
-        ``home`` (the native home directory), ``provider`` and ``models``.
-        ``base_url`` and ``api_key_env`` route a DSH query as they route a DSH
-        child; the other Runtimes list models without them. A ``models`` list (strings or mappings with ``id`` and optional
-        ``alias``, ``provider`` and ``supported_efforts``) is the candidate
-        list itself, and the Runtime is not queried. A ``provider`` filters
-        the Pi and DSH catalogs, which span providers; Claude and Codex list
-        the models of their own configured provider, unfiltered.
+        ``home`` (the native home directory), ``provider``, ``base_url``,
+        ``api_key_env`` and ``models``. A ``models`` list (strings or
+        mappings with ``id`` and optional ``alias``, ``provider`` and
+        ``supported_efforts``) is the candidate list itself, and the Runtime
+        is not queried. Otherwise the query uses the connection as a child
+        would (609):
+
+        - ``provider`` filters the Pi and DSH catalogs, which span providers,
+          and names the models of a Claude or Codex connection, whose catalog
+          has one provider (default ``anthropic``, and for Codex the home's
+          effective ``model_provider``).
+        - ``api_key_env`` (a variable name; its value is never returned)
+          authenticates a Claude query as ``ANTHROPIC_API_KEY``, a Pi query
+          for ``provider`` through a private ``auth.json`` naming ``$NAME``,
+          and a DSH query. Codex lists its home's catalog without it.
+        - ``base_url`` routes a Claude and a DSH query. Pi takes none (its
+          driver refuses such a connection) and Codex lists without it.
 
     Returns
     -------
     dict
-        ``{"runtime", "status", "models", "message"}``. ``status`` is
-        ``available`` or ``unknown``; each model is ``{"id", "alias",
+        ``{"runtime", "status", "models", "groups", "message"}``. ``status``
+        is ``available`` or ``unknown``; each model is ``{"id", "alias",
         "provider", "supported_efforts"}`` where ``supported_efforts`` is a
-        list or ``None`` when the Runtime does not enumerate efforts. A DSH
-        result also carries ``provider_status`` (provider id to ``available``
-        or ``unknown``).
+        list or ``None`` when the Runtime does not enumerate efforts.
+        ``groups`` holds the same models by provider, ``[{"provider",
+        "models"}]`` in first-seen order. A DSH result also carries
+        ``provider_status`` (provider id to ``available`` or ``unknown``).
 
     Raises
     ------
@@ -76,8 +87,9 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
         raise ValueError('Choose claude, codex, pi or dsh.')
 
     if connection.get('models') is not None:
+        models = _configured(connection)
         return {'runtime': runtime, 'status': 'available',
-                'models': _configured(connection), 'message': CONFIGURED}
+                'models': models, 'groups': _grouped(models), 'message': CONFIGURED}
 
     query = {'claude': _claude, 'codex': _codex, 'pi': _pi_catalog, 'dsh': _dsh}[runtime]
     try:
@@ -86,11 +98,20 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
             found = query(connection, Path(directory))
     except Exception:
         # Native diagnostics may contain endpoint credentials; disclose none.
-        return {'runtime': runtime, 'status': 'unknown', 'models': [], 'message': UNKNOWN}
+        return {'runtime': runtime, 'status': 'unknown', 'models': [], 'groups': [], 'message': UNKNOWN}
 
     # A successful query keeps the metadata message even when DSH marks every
     # provider unknown; the status carries that outcome.
-    return {'runtime': runtime, 'status': 'available', **found, 'message': AVAILABLE}
+    return {'runtime': runtime, 'status': 'available', **found,
+            'groups': _grouped(found['models']), 'message': AVAILABLE}
+
+
+def _grouped(models: list[dict]) -> list[dict]:
+    """Return ``models`` by provider: ``[{"provider", "models"}]``, providers in first-seen order."""
+    groups: dict[Any, list[dict]] = {}
+    for model in models:
+        groups.setdefault(model['provider'], []).append(model)
+    return [{'provider': provider, 'models': members} for provider, members in groups.items()]
 
 
 def _configured(connection: Mapping[str, Any]) -> list[dict]:
@@ -152,7 +173,11 @@ def _run_async(work: Callable[[], Any]) -> Any:
 
 
 def _codex(connection: Mapping[str, Any], cwd: Path) -> dict:
-    """Read the effective provider and every ``model/list`` page from the selected home."""
+    """Read the effective provider and every ``model/list`` page from the selected home.
+
+    A connection's ``provider`` names the models, as it becomes a child's
+    ``model_provider``; otherwise the home's effective one does.
+    """
     from graftling.codex.app_server import CodexAppServer
 
     environment = {'CODEX_HOME': str(connection['home'])} if connection.get('home') else {}
@@ -165,7 +190,7 @@ def _codex(connection: Mapping[str, Any], cwd: Path) -> dict:
             return await server.read_configuration(cwd), await server.list_models()
 
     configuration, models = _run_async(query)
-    provider = configuration.get('model_provider') or 'openai'
+    provider = connection.get('provider') or configuration.get('model_provider') or 'openai'
     return {'models': [{
         'id': item['model'], 'alias': item.get('displayName') or item['model'],
         'provider': provider,
@@ -178,12 +203,17 @@ def _pi_models(connection: Mapping[str, Any], cwd: Path) -> list[dict]:
     """Return Pi's native ``get_available_models`` records of the connection's home.
 
     The home is the connection's, else ``PI_CODING_AGENT_DIR``, else Pi's own
-    default. No key is passed: Pi lists the models its own login and environment
-    authenticate, so discovery never handles a credential value.
+    default. Pi lists the models its own login and environment authenticate. A
+    connection with ``provider`` and ``api_key_env`` is listed as a child of it
+    starts: a private ``auth.json`` names that variable for the provider, so
+    discovery never handles a credential value.
     """
     chosen = connection.get('home') or os.environ.get('PI_CODING_AGENT_DIR')
     home   = Path(chosen).expanduser() if chosen else Path.home() / '.pi/agent'
-    return _pi_available_models(_executable('pi'), home, cwd)
+    keyed  = connection.get('provider') and connection.get('api_key_env')
+    return _pi_available_models(_executable('pi'), home, cwd,
+                                provider=connection.get('provider') if keyed else None,
+                                api_key_env=connection.get('api_key_env') if keyed else None)
 
 
 def write_key_reference(agent: Path, provider: str, api_key_env: str) -> None:
@@ -416,16 +446,33 @@ def _dsh(connection: Mapping[str, Any], cwd: Path) -> dict:
 
 
 def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
-    """Read the official ``initialize`` model catalog without sending user input."""
+    """Read the official ``initialize`` model catalog without sending user input.
+
+    The connection's endpoint and key reach Claude as they reach a child
+    (``ANTHROPIC_BASE_URL``, ``ANTHROPIC_API_KEY`` from ``api_key_env``), and
+    its ``provider`` names the models; Claude has no native provider setting.
+    """
+    from graftling.runtime import credential_environment
+
     command = [_executable('claude'), '--print', '--verbose', '--input-format', 'stream-json',
                '--output-format', 'stream-json', '--restricted', '--tools', '',
                '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}']
     query   = {'type': 'control_request', 'request_id': 'catalog',
                'request': {'subtype': 'initialize'}}
 
+    environment = _environment(connection, 'CLAUDE_CONFIG_DIR')
+    if connection.get('base_url'):
+        environment['ANTHROPIC_BASE_URL'] = connection['base_url']
+    if connection.get('api_key_env'):
+        for name in ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'):
+            environment.pop(name, None)
+        name = connection['api_key_env']
+        environment['ANTHROPIC_API_KEY'] = credential_environment(name)[name]
+    provider = connection.get('provider') or DEFAULT_PROVIDERS['claude']
+
     response = subprocess.run(
         command, input=json.dumps(query) + '\n', text=True, capture_output=True,
-        timeout=TIMEOUT, env=_environment(connection, 'CLAUDE_CONFIG_DIR'), cwd=cwd, check=True,
+        timeout=TIMEOUT, env=environment, cwd=cwd, check=True,
     )
     for line in response.stdout.splitlines():
         event = json.loads(line)
@@ -436,7 +483,7 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
             # resolved_model: the full id Claude starts for this entry, e.g. haiku -> claude-haiku-5-5 (574).
             return {'models': [{
                 'id': item['value'], 'alias': item.get('displayName', item['value']),
-                'provider': 'anthropic', 'supported_efforts': item.get('supportedEffortLevels'),
+                'provider': provider, 'supported_efforts': item.get('supportedEffortLevels'),
                 **({'resolved_model': item['resolvedModel']} if isinstance(item.get('resolvedModel'), str)
                    and item['resolvedModel'] else {}),
             } for item in reply['response']['models']]}

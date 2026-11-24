@@ -115,7 +115,8 @@ lists the features, `describe` gives one feature's input, and `execute` runs it.
 
 | Feature | What it does |
 | --- | --- |
-| `create` | Starts a child. Requires `runtime` and `instruction`. Optional: `name`, `preset`, `model`, `reasoning_effort`, `workspace`, `extra_fields`, and `configuration`, which every independent host refuses with `invalid-config` |
+| `create` | Starts a child. Requires `runtime` and `instruction`. Optional: `name`, `preset`, `provider`, `model`, `reasoning_effort`, `workspace`, `extra_fields`, and `configuration`, which every independent host refuses with `invalid-config` |
+| `models` | Lists, read only, a Runtime's [connections](#connections) with their providers and models, grouped by provider. Requires `runtime`; `provider` lists only the connections declaring it. Starts nothing and shows a key's variable name, never its value |
 | `status` | Shows one child, or without `agent` every child you can see |
 | `wait` | Waits for a child, up to the `timeout_seconds` you must give. Ends early on an unanswered request |
 | `send` | Sends a message to a child; continues it if it is in standby |
@@ -204,8 +205,39 @@ home), `provider`, `base_url`, `api_key_env` (the name of an environment variabl
 never a key), `review`, and `models` (without it, agents asks the Runtime, which can
 make `create` take up to about 30 seconds).
 
-If several connections declare one Runtime, `create` needs a preset that selects one,
-else it fails with `ambiguous-connection`.
+If several connections declare one Runtime, `create` needs a preset or a `provider`
+that selects one, else it fails with `ambiguous-connection`. `provider` picks the
+Runtime's connection that declares exactly that `provider`; it also tells apart a model
+id two providers offer. It chooses only among what this file declares: a provider no
+connection of the Runtime declares fails with `invalid-provider`, so a request can
+never name a key or an endpoint. With a preset, `provider` must be the one the preset's
+connection declares, else `invalid-provider`. The `models` feature shows what you can
+choose, for example with two Pi connections:
+
+```yaml
+connections:
+  pi-deepseek:
+    runtime: pi
+    provider: deepseek
+    api_key_env: DEEPSEEK_API_KEY
+  pi-openrouter:
+    runtime: pi
+    provider: openrouter
+    api_key_env: OPENROUTER_API_KEY
+```
+
+```json
+{"action": "execute", "feature": "models", "arguments": {"runtime": "pi"}}
+{"action": "execute", "feature": "create",
+ "arguments": {"runtime": "pi", "provider": "openrouter", "model": "your-model",
+               "instruction": "Summarize README.md."}}
+```
+
+`models` asks each connection's Runtime as a child of it would ask: its `home`, its
+`provider` (Pi and DSH list only that provider's models; a Claude or Codex connection's
+models are named after it) and its key variable (Claude, Pi with a `provider`, DSH)
+and `base_url` (Claude, DSH). With no connection for the Runtime it lists the native
+login, as `connection: null`.
 
 #### A DSH child's provider, home and key
 

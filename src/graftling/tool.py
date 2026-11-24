@@ -46,7 +46,8 @@ TOOL_NAME = "subagents"
 ACTION_FIELDS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "create":    (frozenset({"runtime", "instruction"}),
                   frozenset({"name", "configuration", "preset", "model", "reasoning_effort", "extra_fields",
-                             "workspace", "tools", "disallowed_tools"})),
+                             "workspace", "tools", "disallowed_tools", "provider"})),
+    "models":    (frozenset({"runtime"}), frozenset({"provider"})),
     "send":      (frozenset({"agent", "message"}), frozenset({"reports_only"})),
     "status":    (frozenset(), frozenset({"agent"})),
     "wait":      (frozenset({"agent", "timeout_seconds"}), frozenset()),
@@ -65,7 +66,8 @@ INPUT_SCHEMA: dict[str, Any] = {
         "action": {"type": "string", "enum": list(ACTION_FIELDS)},
         "agent": {"type": "string",
                   "description": "Target Agent reference returned by create or status."},
-        "runtime": {"type": "string", "description": "Runtime that executes the new Agent."},
+        "runtime": {"type": "string",
+                    "description": "Runtime that executes the new Agent (create), or whose models are listed (models)."},
         "configuration": {"type": "string",
                           "description": "Existing execution configuration reference resolved by the Runtime driver; grants no identity."},
         "preset": {"type": "string",
@@ -73,6 +75,11 @@ INPUT_SCHEMA: dict[str, Any] = {
                                   "It fills model and reasoning_effort when they are omitted."},
         "model": {"type": "string",
                   "description": "Model id among the Runtime connection's candidates; never replaced by another."},
+        "provider": {"type": "string",
+                     "description": "Provider of a connection already declared for this runtime in the agents "
+                                    "config.yml; it selects that connection (and tells apart a model id two "
+                                    "providers offer). A provider no connection declares is refused; with a "
+                                    "preset it must be the preset connection's. See the models feature."},
         "reasoning_effort": {"type": "string",
                              "description": "Reasoning effort the chosen model supports."},
         "workspace": {"type": "string",
@@ -131,7 +138,8 @@ INPUT_SCHEMA: dict[str, Any] = {
 
 TOOL_DESCRIPTION = (
     "Create child Agents on a Runtime and communicate with them. Actions: create "
-    "(returns the new Agent reference without waiting for its work), send, status "
+    "(returns the new Agent reference without waiting for its work), models (read only: a Runtime's "
+    "configured connections, their providers and models, to choose create's provider and model), send, status "
     "(omit agent for your visible hierarchy), wait (explicit finite timeout_seconds), "
     "interrupt (in standby, the direct parent confirms an ended execution whose "
     "recorded processes are verified gone), resume, requests and reply for native "

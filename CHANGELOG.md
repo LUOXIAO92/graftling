@@ -15,6 +15,27 @@ The numbers in parentheses are the project's Task numbers.
 
 ## Unreleased
 
+Compatible: a new feature, a new optional argument, a new result field and a new error
+code for a new situation (PUBLIC_API section 7).
+
+### Added
+
+- The `subagents` feature `models` lists, read only, a Runtime's connections from
+  `config.yml` with their providers and models, grouped by provider (`runtime`, optional
+  `provider`). It starts nothing and shows a key's variable name, never its value; with
+  no connection it lists the native login (609).
+- `create` takes an optional `provider`: it selects the Runtime's connection that
+  declares that provider, which also tells apart a model id two providers offer. A
+  provider no connection of the Runtime declares, or one other than the preset
+  connection's, fails with the new code `invalid-provider`, so a request still cannot
+  name a key or endpoint. Without `provider` the choice is as before (609).
+- `discover_models` results carry `groups`, the models by provider. The query uses the
+  connection's `provider`, `api_key_env` and `base_url` as its child would: Claude
+  reaches the connection's endpoint with its key, Pi lists a provider with the key the
+  connection names (through `auth.json`, as a child does), and a Claude or Codex
+  connection's `provider` names its models instead of `anthropic` or the home's
+  provider (609).
+
 ### Changed
 
 - The install command has no tag: `uv tool install --managed-python

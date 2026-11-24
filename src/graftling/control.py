@@ -247,6 +247,32 @@ def _discover_models(connection: Mapping[str, Any]) -> dict:
     return discover_models(connection)
 
 
+def _with_provider(
+    connections: Mapping[str, Mapping[str, Any]],
+    runtime: str,
+    provider: str | None,
+    source: Path,
+) -> list[str]:
+    """Return the sorted names of ``runtime``'s declared connections, narrowed to ``provider`` when given.
+
+    A provider only chooses among what ``config.yml`` declares: when no
+    connection of the Runtime declares it, the request is refused with
+    ``invalid-provider`` naming the providers that are declared (609).
+    """
+    matches = sorted(name for name, entry in connections.items() if entry["runtime"] == runtime)
+    if provider is None:
+        return matches
+
+    declared = sorted({connections[name]["provider"] for name in matches if "provider" in connections[name]})
+    matches  = [name for name in matches if connections[name].get("provider") == provider]
+    if not matches:
+        raise AgentsError("invalid-provider",
+                          f"Provider {provider!r} is not declared by any {runtime} connection in {source}; "
+                          f"declared providers: {declared or 'none'}. A request cannot name a key or "
+                          f"endpoint: declare a {runtime} connection with this provider there.")
+    return matches
+
+
 def _named_key(runtime: str, settings: Mapping[str, Any]) -> str | None:
     """Return the variable an Agent's settings name as its key, or ``None`` for a native login.
 
@@ -723,6 +749,7 @@ class AgentControl:
                                configuration=arguments.get("configuration"),
                                preset=arguments.get("preset"), model=arguments.get("model"),
                                reasoning_effort=arguments.get("reasoning_effort"),
+                               provider=arguments.get("provider"),
                                extra_fields=arguments.get("extra_fields"),
                                workspace=arguments.get("workspace"),
                                tools=arguments.get("tools"),
@@ -732,6 +759,8 @@ class AgentControl:
                                    arguments["timeout_seconds"])
         if action == "status" and "agent" not in arguments:
             return Outcome({"agents": self.hierarchy(binding.caller)})
+        if action == "models":
+            return self.models(arguments["runtime"], binding, provider=arguments.get("provider"))
         if action == "session_read":
             return self.session_read(arguments, binding.caller)
         try:
@@ -788,6 +817,7 @@ class AgentControl:
         workspace: str | None = None,
         tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
+        provider: str | None = None,
     ) -> Outcome:
         """Register a new Agent under the caller and start its first execution.
 
@@ -797,8 +827,8 @@ class AgentControl:
         tool settings. A driver that cannot apply them refuses the create.
 
         Returns once the driver has started native work; it never waits for
-        the Agent's result. ``preset``, ``model`` and ``reasoning_effort`` are
-        resolved by :meth:`select`. ``extra_fields`` is a normalized Session
+        the Agent's result. ``preset``, ``model``, ``reasoning_effort`` and
+        ``provider`` are resolved by :meth:`select`. ``extra_fields`` is a normalized Session
         header container keyed by namespace (``{"<namespace>": <JSON>}``); it
         is kept with the Agent and written when its Session is first archived.
         ``workspace`` (layer 1) must lie inside the calling Agent's own
@@ -818,7 +848,8 @@ class AgentControl:
             raise AgentsError("unsupported-runtime", f"No driver is available for Runtime {runtime!r}.")
         caller   = binding.caller
         self._require_root_control(caller)
-        selection = self.select(runtime, preset=preset, model=model, reasoning_effort=reasoning_effort)
+        selection = self.select(runtime, preset=preset, model=model, reasoning_effort=reasoning_effort,
+                                provider=provider)
         options: dict[str, Any] = {}
         if configuration is not None:
             options["configuration"] = configuration
@@ -898,6 +929,7 @@ class AgentControl:
         preset: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
+        provider: str | None = None,
     ) -> dict | None:
         """Resolve ``create``'s choices against ``config.yml``; never substitute.
 
@@ -905,7 +937,12 @@ class AgentControl:
         ``model`` and ``reasoning_effort`` when they are omitted, and an
         explicit value that differs from the preset's is an error. The
         connection is the preset's, else the only one declared for the
-        Runtime; several without a preset are ambiguous. A ``model`` must be
+        Runtime; several without a preset are ambiguous. A ``provider`` (609)
+        narrows that choice to the Runtime's connections declaring exactly
+        this ``provider``: one is selected, several are ambiguous, none is
+        ``invalid-provider``, so a request never reaches a key or endpoint
+        the file does not declare. With a preset, its connection must declare
+        that provider, else ``invalid-provider``. A ``model`` must be
         a candidate ``id`` from :func:`graftling.models.discover_models` (the
         connection's declared ``models``, else the native catalog); a model
         that cannot be verified is an error.
@@ -938,6 +975,11 @@ class AgentControl:
             if uses != runtime:
                 raise AgentsError("invalid-preset", f"Preset {preset!r} uses Runtime {uses!r}, "
                                                     f"not the requested {runtime!r}.")
+            declares = connections[connection].get("provider") if connection else None
+            if connection and provider is not None and provider != declares:
+                raise AgentsError("invalid-provider", f"provider {provider!r} contradicts preset {preset!r}, "
+                                                      f"whose connection {connection!r} declares "
+                                                      f"{declares!r}.")
             for field in chosen:
                 given, configured = chosen[field], entry.get(field)
                 if given is not None and configured is not None and given != configured:
@@ -946,7 +988,7 @@ class AgentControl:
                                       f"which sets {configured!r}.")
                 chosen[field] = configured if given is None else given
         if connection is None:
-            matches = sorted(name for name, entry in connections.items() if entry["runtime"] == runtime)
+            matches = _with_provider(connections, runtime, provider, source)
             if len(matches) > 1:
                 raise AgentsError("ambiguous-connection",
                                   f"{source} declares several {runtime} connections {matches}; "
@@ -976,6 +1018,48 @@ class AgentControl:
         review = declared.get("reviewers", {}).get((settings or {}).get("review"))
         return {"preset": preset, "connection": connection, "provider": provider,
                 "settings": deepcopy(settings), "review": deepcopy(review), **chosen, **alias}
+
+    def models(self, runtime: str, binding: Binding, *, provider: str | None = None) -> Outcome:
+        """List a Runtime's declared connections, their providers and models; read only (609).
+
+        The caller passes the same root control check as ``create``, whose
+        choices this lists. Each connection of ``runtime`` in ``config.yml``
+        (only those declaring ``provider`` when it is given, else
+        ``invalid-provider`` as at ``create``) is queried with
+        :func:`graftling.models.discover_models`; with none declared, the
+        Runtime's native default login is listed as ``connection: null``.
+        Nothing is started and no key value is read into the result: only
+        the ``api_key_env`` name is shown.
+
+        Returns
+        -------
+        Outcome
+            ``{"runtime", "connections": [{"connection", "provider",
+            "base_url"?, "api_key_env"?, "status", "message", "groups":
+            [{"provider", "models": [{"id", "alias", "supported_efforts",
+            "resolved_model"?}]}]}]}``.
+        """
+        if runtime not in self.drivers:
+            raise AgentsError("unsupported-runtime", f"No driver is available for Runtime {runtime!r}.")
+        self._require_root_control(binding.caller)
+        try:
+            connections = read_connections(self.root)["connections"]
+        except ValueError as error:
+            raise AgentsError("invalid-config", str(error)) from None
+
+        names    = _with_provider(connections, runtime, provider, self.root / CONFIG_FILE)
+        settings = [connections[name] for name in names] or [{"runtime": runtime}]
+        listed   = []
+        for entry in settings:
+            found  = _discover_models(entry)
+            groups = [{"provider": group["provider"],
+                       "models": [{name: value for name, value in model.items() if name != "provider"}
+                                  for model in group["models"]]}
+                      for group in found["groups"]]
+            listed.append({"connection": entry.get("name"), "provider": entry.get("provider"),
+                           **{name: entry[name] for name in ("base_url", "api_key_env") if name in entry},
+                           "status": found["status"], "message": found["message"], "groups": groups})
+        return Outcome({"runtime": runtime, "connections": listed})
 
     def _require_held_key(self, caller: Caller, runtime: str, settings: Mapping[str, Any]) -> None:
         """Refuse a child Agent's create whose new Agent names a key the child does not hold.

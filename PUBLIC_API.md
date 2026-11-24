@@ -242,7 +242,8 @@ Features and their arguments (`*` = required):
 
 | Feature | Arguments | Result fields added to the Agent document |
 | --- | --- | --- |
-| `create` | `runtime*`, `instruction*`, `name`, `configuration`, `preset`, `model`, `reasoning_effort`, `workspace` (see 2), `extra_fields` (object, section 5) | none; returns once the Agent is registered, never waits for its work |
+| `create` | `runtime*`, `instruction*`, `name`, `configuration`, `preset`, `provider` (since 609), `model`, `reasoning_effort`, `workspace` (see 2), `extra_fields` (object, section 5) | none; returns once the Agent is registered, never waits for its work |
+| `models` | `runtime*`, `provider` (since 609) | not an Agent document: `{"runtime", "connections": [...]}`, see *`models`* below |
 | `send` | `agent*`, `message*`, `reports_only` | `delivery: {at, delivery: submitted\|rejected\|unknown, error?}` when the Agent runs; in standby it continues the Session |
 | `status` | `agent` | without `agent`: `{"agents": [document + "children": [...]]}`, the caller's visible hierarchy |
 | `wait` | `agent*`, `timeout_seconds*` (finite, > 0) | `timed_out`; also ends early on an unanswered native request |
@@ -271,6 +272,32 @@ The bound is not lengthened by this wait (474).
 `ask_parent` is called by a
 child about itself; a caller without an Agent reference is refused with
 `authority-denied`.
+
+**`models`** (609) lists, read only, what `create` can choose for one Runtime: each
+connection `config.yml` declares for `runtime` (section 3), in name order, and its
+models by provider. With `provider`, only the connections declaring exactly that
+`provider`; none is `invalid-provider`, as at `create` (section 2, rule 4). With no
+connection for the Runtime, the native default login is listed as one entry with
+`connection: null`. A Runtime without a driver in this host is `unsupported-runtime`;
+an invalid `config.yml` is `invalid-config`. The caller passes the same control check as
+`create`. Each entry is queried with `discover_models` (1.3), synchronously, so a native
+query may take up to about 30 seconds per connection; declared `models` avoid it. No
+Agent, Session or execution is created, and the result's `agent`, `session` and
+`execution` are `null`. `result` is:
+
+```json
+{"runtime": "pi", "connections": [
+  {"connection": "pi-deepseek", "provider": "deepseek", "api_key_env": "DEEPSEEK_API_KEY",
+   "status": "available", "message": "...",
+   "groups": [{"provider": "deepseek",
+               "models": [{"id": "deepseek-chat", "alias": "DeepSeek Chat", "supported_efforts": null}]}]}]}
+```
+
+`connection` and `provider` are the declared name and `provider` (`null` when not
+declared); `base_url` and `api_key_env` appear when declared, the key as its variable
+name only: no key value is read into the result. `status` and `message` are
+`discover_models`'; `groups` are its `groups`, each model without the repeated
+`provider` (a Claude entry may add `resolved_model`). An `unknown` status has no groups.
 
 **`session_read`** reads one archived Session (1.5) without a file path.
 `agent` selects that Agent's current native Session; `session` takes an archive
@@ -382,7 +409,8 @@ people and models and may change. Codes in use:
 | `invalid-preset` | `preset` is not declared, or uses another Runtime than `runtime` |
 | `invalid-model` | `model` is not a candidate, cannot be verified, or contradicts the preset |
 | `invalid-reasoning-effort` | `reasoning_effort` is not supported by the model or Runtime, or contradicts the preset |
-| `ambiguous-connection` | several connections declare the Runtime and no preset selects one |
+| `invalid-provider` | `provider` is declared by no connection of `runtime`, or contradicts the preset's connection (since 609) |
+| `ambiguous-connection` | several connections declare the Runtime (and `provider`, when given) and no preset selects one |
 | `workspace-denied` | `workspace` lies outside the caller's own workspace (after resolving links) |
 | `runtime-unavailable` | the selected connection's Runtime is not installed or not logged in on this machine |
 | `review-unavailable` | the connection's reviewer failed the connectivity check at `create` (section 6); the message holds the cause |
@@ -445,9 +473,20 @@ Public: `graftling.__version__` and the names in `graftling.__all__`:
   connection mapping (as `read_connections` returns it, or `{"runtime":
   ...}` for the native default login) and returns `{"runtime", "status":
   "available"|"unknown", "models": [{"id", "alias", "provider",
-  "supported_efforts"}], "message"}`; DSH may add `provider_status`, and a
+  "supported_efforts"}], "groups", "message"}`; DSH may add `provider_status`, and a
   Claude catalog entry may add `resolved_model`, the full id Claude starts
-  for it (section 2, rule 5).
+  for it (section 2, rule 5). `groups` (since 609) holds the same model
+  records by provider, `[{"provider", "models": [...]}]`, providers in the
+  order first seen (`[]` when `unknown`). The query uses the connection as a
+  child of it would: `provider` filters the Pi and DSH catalogs and names a
+  Claude or Codex connection's models (else `anthropic`, and for Codex the
+  home's effective `model_provider`); `api_key_env` (a name) authenticates a
+  Claude query as `ANTHROPIC_API_KEY`, a Pi query for the connection's
+  `provider` through a private `auth.json` holding `$NAME`, and a DSH query;
+  `base_url` routes a Claude and a DSH query. Codex lists its home's catalog
+  without `base_url` or `api_key_env`; a Pi connection takes no `base_url`
+  (section 2, *Drivers*). An unset key variable makes a Claude query
+  `unknown`; Pi lists what it can authenticate without it.
   `supported_efforts` is a list or `null` when the Runtime does not enumerate
   them. A connection with `models` returns those without querying the
   Runtime. It never runs an inference turn and never returns credentials.
@@ -1052,7 +1091,8 @@ line `{"error": {"code", "message"}}` on stderr and exits `1`; the plugin's
 
 `create` takes `runtime` (required), `instruction` (required), optional
 `name`, `configuration`, and since 0.1.1 optional `preset`, `model` and
-`reasoning_effort` (non-empty strings).
+`reasoning_effort`, and since 609 optional `provider` (non-empty strings). The
+`models` feature (1.2) lists the connections, providers and models to choose from.
 
 **Resolution.** agents resolves the choice against its own `config.yml`
 (section 3) before the driver prepares anything. A value is never silently
@@ -1074,6 +1114,17 @@ replaced by another one.
    `ambiguous-connection`. A selected connection whose Runtime is not
    installed or not logged in fails with `runtime-unavailable`, naming the
    Runtime and connection.
+   `provider` (609) chooses only among declared connections. Without a
+   preset (or with a preset naming no connection), the candidates are the
+   Runtime's connections whose `provider` equals it: one is selected, several
+   fail with `ambiguous-connection`, none fails with `invalid-provider`,
+   naming the providers that are declared, so a request can never reach a
+   key or endpoint `config.yml` does not declare. A connection without
+   `provider` is never chosen by one. With a preset's connection, `provider`
+   must equal that connection's `provider`, else `invalid-provider`. Then
+   rule 5 checks `model` against that connection's candidates, which for Pi
+   and DSH are filtered by its provider, so a model id two providers offer is
+   told apart. Without `provider` nothing changes.
 5. `model` (explicit or from the preset) must be the `id` of exactly one
    candidate from `discover_models`: the connection's declared `models`,
    else the native catalog (Pi and DSH catalogs filtered by the connection's
