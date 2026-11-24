@@ -17,9 +17,13 @@ Once, with uv, as in the [README](../../README.md#install). Every host uses this
 installation:
 
 ```sh
-uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
+
+`AGENTS_PYTHON` is only a shell variable for the commands below; graftling never reads
+it. The plugin finds the installation's Python itself; `GRAFTLING_PYTHON` is optional
+([Which Python](#which-python-the-plugin-runs)).
 
 ## Distribution: `dsh plugin add`
 
@@ -53,7 +57,7 @@ it belongs to. Nothing is built or downloaded, and nothing is written under the 
 | `GRAFTLING_PYTHON` set | Used as given, without a check |
 | Not set, plugin added from an installation | That installation's Python: the plugin's real path is `<installation>/lib/pythonX.Y/site-packages/graftling/dsh/`, and it runs `<installation>/bin/pythonX.Y`, else `python3`, else `python` there |
 | Not set, a development checkout | `python3`, else `python`, on `PATH`, when it imports this very checkout (an editable install) |
-| None of these imports the plugin's own graftling | Refused ([A refused start](#a-refused-start)) with `graftling-dsh: no Python that imports this graftling (...) was found; tried ...`, followed by the `uv tool install` command for the plugin's version and `GRAFTLING_PYTHON` as the other way |
+| None of these imports the plugin's own graftling | Refused ([A refused start](#a-refused-start)) with `graftling-dsh: no Python that imports this graftling (...) was found; tried ...`, followed by the README's `uv tool install` command (with the plugin's version as the tag to pin) and `GRAFTLING_PYTHON` as the other way |
 
 A Python counts only when it imports `graftling` from the plugin's own directory, so the
 plugin and the Python package are always one installation. A plugin directory copied away
@@ -219,8 +223,10 @@ not been run with a refused start.
 
 ## Children on other Runtimes
 
-`create`'s `runtime` selects the driver. `dsh` and `claude` need nothing more. The
-sections below set defaults for each:
+`create`'s `runtime` selects the driver. `dsh` and `claude` need nothing more. A DSH
+child always runs the `deepseek-official` provider, on a DSH home of its own, with
+the key from the environment (or a declared `home`); the [README](../../README.md#a-dsh-childs-provider-home-and-key)
+says where each comes from. The sections below set defaults for each:
 
 ```json
 {
@@ -275,7 +281,8 @@ Set a model at `create` to choose another one for one child.
 
 ## Upgrade
 
-1. Install the new version with uv, as in the [README](../../README.md#install). The
+1. Upgrade the uv installation as in the [README](../../README.md#install)
+   (`uv tool upgrade graftling` when installed without a tag). The
    installation stays in the same directory, so the profile's link keeps pointing at it.
 2. Run `dsh plugin add "$DSH_PACKAGE"` again for each profile, so DSH reads the new
    bundle's version and patch; it is required when uv picked another Python minor

@@ -17,9 +17,13 @@ Once, with uv, as in the [README](../../README.md#install). Every host uses this
 installation:
 
 ```sh
-uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
+
+`AGENTS_PYTHON` is only a shell variable for the commands below; graftling never reads
+it. The extension finds the installation's Python itself; `GRAFTLING_PYTHON` is
+optional (see Which Python below).
 
 ## Distribution: `pi install`
 
@@ -235,7 +239,8 @@ Set a model at `create` to choose another one for one child.
 
 ## Upgrade
 
-1. Install the new version with uv, as in the [README](../../README.md#install). The
+1. Upgrade the uv installation as in the [README](../../README.md#install)
+   (`uv tool upgrade graftling` when installed without a tag). The
    installation stays in the same directory.
 2. If you used `pi install`, run it again with the same `$PI_PACKAGE`, so Pi loads the new
    extension (the directory changes only when uv picks another Python minor version).

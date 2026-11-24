@@ -17,9 +17,12 @@ Once, with uv, as in the [README](../../README.md#install). Every host uses this
 installation:
 
 ```sh
-uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
+
+`AGENTS_PYTHON` is only a shell variable for the commands below; graftling never reads
+it. The marketplace plugin reads `GRAFTLING_PYTHON` instead, and needs it (step 1 below).
 
 ## Distribution
 
@@ -112,7 +115,8 @@ project, such as from a shell started in its Claude Code session, is ignored. Ke
 `graftling` server (`agents` before 0.6.0) from `.mcp.json`, the two `GRAFTLING_CLAUDE_HOST_*` entries from
 `.claude/settings.local.json` and `.claude/skills/agents-claude-host/`.
 
-To upgrade, install the new version with uv as in the [README](../../README.md#install),
+To upgrade, upgrade the uv installation as in the [README](../../README.md#install)
+(`uv tool upgrade graftling` when installed without a tag),
 run `claude plugin marketplace update graftling` and `claude plugin update graftling@graftling`,
 then start a new Claude Code process.
 
@@ -284,7 +288,8 @@ and any existing `control/`, `native/` and `sessions/` there. `channel_file` and
 
 ## Upgrade
 
-1. Install the new version with uv, as in the [README](../../README.md#install).
+1. Upgrade the uv installation as in the [README](../../README.md#install)
+   (`uv tool upgrade graftling` when installed without a tag).
 2. Run `configuration --write` again. **This is required:** an earlier copy of the
    plugin never acknowledges a notice, so its pushed notices repeat once per host
    process.

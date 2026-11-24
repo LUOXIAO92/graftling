@@ -15,9 +15,12 @@ Once, with uv, as in the [README](../../README.md#install). Every host uses this
 installation:
 
 ```sh
-uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
+
+`AGENTS_PYTHON` is only a shell variable for the commands below; graftling never reads
+it, so it need not be set permanently.
 
 ## Distribution
 
@@ -192,7 +195,8 @@ readable one, so the host refuses that layout at start with `invalid-config`.
 
 ## Upgrade
 
-Install the new version with uv, as in the [README](../../README.md#install). Nothing else is generated,
+Upgrade the uv installation as in the [README](../../README.md#install) (`uv tool upgrade graftling`
+when installed without a tag). Nothing else is generated,
 so there is nothing to regenerate. Use `--resume` with the same data root to
 continue the parent; its children stay listed by `status`.
 

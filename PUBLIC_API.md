@@ -987,7 +987,8 @@ imports `graftling` under `-I` from the plugin's own installation, as the Pi
 extension does: the interpreters of the environment whose site-packages holds
 the plugin's real path, then `python3` and `python` on `PATH`. Nothing is
 built or written. If none does, the Session's `agent/created` fails with a
-message naming the `uv tool install` command for the plugin's version and
+message naming the README's `uv tool install` command (with the plugin's version as
+the tag to pin it to) and
 `GRAFTLING_PYTHON`. The repository itself is no plugin bundle: it has no root
 `package.json` (removed with 569's build under `$DSH_HOME/graftling-python`).
 

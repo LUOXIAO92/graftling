@@ -41,13 +41,25 @@ another MCP client, every request fails with `authority-denied`, including
 ## Install
 
 Install graftling once, with [uv](https://docs.astral.sh/uv/), straight from GitHub.
-It is not on PyPI. Pin a tag or a commit:
+It is not on PyPI:
 
 ```sh
-uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 "$(uv tool dir --bin)/subagents" --help
 ```
+
+Without a tag uv installs the repository's default branch, `main`, which moves only
+when a version is released, so it is the latest release. To pin a version instead,
+add its tag, for example `"git+https://github.com/LUOXIAO92/graftling.git@v0.9.1"`.
+
+`AGENTS_PYTHON` is only a shell variable for the commands that follow it here and in
+the host notes; set it in the shell where you run them, or write the path out.
+graftling never reads it, so it need not be set permanently. The variable graftling
+does read is `GRAFTLING_PYTHON`, the Python a host plugin runs. The Claude Code
+marketplace plugin needs it: without it the plugin tries `python3` on `PATH`, which
+is not the uv installation. The Pi and DSH plugins find their own installation's
+Python, so for them it is optional; when set, it is used first.
 
 `--managed-python` makes uv build the environment on a Python that uv itself
 manages, downloading a Python 3.12 or later if it has none. Without it, uv takes the
@@ -81,8 +93,10 @@ follow the note for the host you use:
 | Pi | [docs/install/pi.md](docs/install/pi.md) | `pi install` of its `graftling/pi` directory, or `-e` for one invocation |
 | DSH | [docs/install/dsh.md](docs/install/dsh.md) | `dsh plugin add` of its `graftling/dsh` directory, or `--patch` for one invocation. The plugin runs that installation's Python |
 
-To upgrade, install the new tag or commit the same way with `--reinstall`. The
-installation stays where it was, so the DSH and Pi plugins keep pointing at it; the
+To upgrade an installation made without a tag, run `uv tool upgrade graftling`: it
+fetches `main` again and installs its new commit, if any. An installation pinned to a
+tag stays on that tag under `uv tool upgrade` ("Nothing to upgrade"); install another
+tag the same way with `--reinstall`. Either way the installation stays where it was, so the DSH and Pi plugins keep pointing at it; the
 Claude Code notes say what to run again.
 
 Coming from 0.7.0's DSH install from this repository's GitHub address, see
@@ -165,8 +179,11 @@ not logged in stops the start with its own code.
 
 ### Connections
 
-A connection says how to reach a Runtime. Without one, a child uses the host's
-settings and the Runtime's own login.
+A connection says how to reach a Runtime. Connections are optional. Without one, a
+child uses the host's settings and the Runtime's own login; for a DSH child that login
+is the key in the environment, not your DSH home ([below](#a-dsh-childs-provider-home-and-key)).
+`api_key_env` is optional too: without it the child keeps the variables its Runtime
+logs in with, such as `DEEPSEEK_API_KEY` for DSH.
 
 ```yaml
 connections:
@@ -189,6 +206,32 @@ make `create` take up to about 30 seconds).
 
 If several connections declare one Runtime, `create` needs a preset that selects one,
 else it fails with `ambiguous-connection`.
+
+#### A DSH child's provider, home and key
+
+- **Provider.** Always DSH's `deepseek-official` (its `llm-deepseek` row). A
+  `provider` naming anything else is refused with `invalid-config`. Providers you
+  set up in your own DSH, such as OpenRouter, are not used by children.
+- **Home.** Without `home`, each child runs on a DSH home of its own that graftling
+  generates, holding only a profile (DSH's official bundles and graftling's patch)
+  and no login, so your `~/.dsh` and its `.credentials.yaml` are not used. With
+  `home`, `DSH_HOME` is that directory and the same patch applies.
+- **Key.** From the host's environment. Without `api_key_env` the child keeps
+  `DEEPSEEK_API_KEY`; with it, the child gets only that variable, and DSH reads it
+  instead (missing or empty: `RUNTIME_CREDENTIAL_MISSING`). `DEEPSEEK_BASE_URL` and
+  `DEEPSEEK_SEARCH_BASE_URL` are removed from the child.
+- **`base_url`.** Replaces only the address of `deepseek-official`, so the endpoint
+  must serve the same API. It must be `http` or `https` with no user, password,
+  query or fragment, else `ROLE_CONFIG_INVALID`. The model is then announced to DSH
+  instead of read from its catalog. With the default key, web search goes to the
+  same address and the DeepSeek Search and Fetch row is turned off.
+
+These are shown by tests and by graftling's launch preparation against an installed
+DSH 0.2.2-rc.5, without a model turn.
+
+> Not yet walked: a real DSH child's model turn with only these sources. DSH itself
+> may also read a `.env` in the child's working directory, and with `home` that
+> home's `.credentials.yaml` and `.env`; graftling only checks that those files exist.
 
 ### What a child's environment holds
 

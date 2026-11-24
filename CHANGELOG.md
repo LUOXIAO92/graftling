@@ -13,6 +13,31 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+### Changed
+
+- The install command has no tag: `uv tool install --managed-python
+  "git+https://github.com/LUOXIAO92/graftling.git"` installs the default branch
+  `main`, which moves only at a release, so it is the latest release (605). Pinning a
+  tag (`...graftling.git@v0.9.1`) stays optional. The README, every install note, the
+  Claude Code plugin's start-failure message and the DSH plugin's missing-Python
+  message use it; the two messages add the plugin's version as the tag to pin.
+- The README says how to upgrade: `uv tool upgrade graftling` moves an installation
+  made without a tag to `main`'s new commit; one pinned to a tag stays on it
+  (observed with uv 0.12.3 on a local git source whose default branch gained a
+  commit). The install notes' upgrade steps point to it.
+
+### Documentation
+
+- `AGENTS_PYTHON` is explained as a shell variable for the commands that follow it,
+  which graftling never reads, unlike `GRAFTLING_PYTHON`: required by the Claude
+  Code marketplace plugin, optional for Pi and DSH (605).
+- The README says connections and `api_key_env` are optional and what applies
+  without them, and where a DSH child's provider (`deepseek-official` only), home
+  (its own generated one unless `home` is set) and key (the environment) come from,
+  including what `base_url` changes (605).
+
 ## 0.9.1 (compatible)
 
 Only the printed install command and the documentation change; no public name,

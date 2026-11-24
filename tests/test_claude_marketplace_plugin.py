@@ -202,8 +202,8 @@ def test_launcher_names_what_to_install_when_python_cannot_run_graftling(
     for text in (result.stderr, (project / '.agents-control' / 'host.log').read_text()):
         assert 'graftling plugin: the subagents host did not start' in text
         assert f'{named}{executable}' in text
-        assert (f'uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@v{graftling.__version__}"' in text
-                and 'set GRAFTLING_PYTHON' in text)
+        assert ('uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git"' in text
+                and f'append @v{graftling.__version__} to .git' in text and 'set GRAFTLING_PYTHON' in text)
     if python == 'without':
         assert "No module named 'graftling'" in result.stderr
 
