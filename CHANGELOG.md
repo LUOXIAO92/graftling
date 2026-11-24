@@ -23,7 +23,8 @@ The numbers in parentheses are the project's Task numbers.
   environment on a Conda or system Python it finds first, and the environment
   breaks when that interpreter is upgraded or removed. An existing installation
   moves to a uv-managed Python with `uv tool uninstall graftling` and the new
-  command. No code or interface changes.
+  command. Only the printed command text changes (the two messages included); no
+  behavior or interface changes.
 
 ## 0.9.0 (incompatible)
 
