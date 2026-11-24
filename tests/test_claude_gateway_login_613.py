@@ -143,3 +143,38 @@ def test_without_an_endpoint_the_child_keeps_the_native_login_as_before(
         'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS',
         'CLAUDE_CODE_USE_BEDROCK', 'AWS_SECRET_ACCESS_KEY')}
     assert setting_sources(start['argv']) is None
+
+
+def test_a_recorded_agent_with_an_endpoint_but_no_key_is_refused_at_its_next_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An Agent recorded before 613 keeps base_url without api_key_env; send must not relaunch it (613)."""
+    from test_claude_review import Harness, native
+
+    native.__wrapped__(tmp_path, monkeypatch)
+    harness = Harness(tmp_path, reviewed=False)
+    try:
+        created = harness.invoke('create', runtime='claude', instruction='first')
+        agent = created['agent']
+        assert harness.wait(agent)['state'] == 'standby'
+
+        # The record as an older graftling wrote it: the endpoint, no key.
+        path = tmp_path / 'agents' / 'control' / 'agents' / f'{agent}.json'
+        record = json.loads(path.read_text())
+        record['settings'].update(base_url=GATEWAY, api_key_env=None)
+        path.write_text(json.dumps(record))
+        # From here on every start of the native client is logged.
+        binary, started = tmp_path / 'bin' / 'claude', tmp_path / 'started.log'
+        binary.rename(binary.with_name('claude-peer'))
+        binary.write_text(f'#!/bin/sh\necho "$*" >> {started}\nexec {binary.with_name("claude-peer")} "$@"\n')
+        binary.chmod(0o755)
+        monkeypatch.setenv('ANTHROPIC_API_KEY', 'host-anthropic')
+
+        sent = harness.call({'action': 'send', 'agent': agent, 'message': 'second'})
+        # The new execution ends at its start, failed with the refusal.
+        error = sent.document.get('error') or sent.document['result']['last_result']['error']
+        assert sent.failed and error['code'] == 'invalid-config', sent.document
+        assert 'base_url needs api_key_env' in error['message']
+        assert not started.exists()
+    finally:
+        harness.close()

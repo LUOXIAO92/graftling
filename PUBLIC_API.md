@@ -1285,7 +1285,9 @@ Claude driver's own settings, with `base_url` and no `api_key_env` is refused wi
 (`ClaudeDriver.require_available`, message `Connection '<name>': base_url needs
 api_key_env: ...`), by the `models` feature with the same code and message, by
 `discover_models` (`ValueError`) and by `ClaudeDriver.prepare` for settings
-without a connection. Otherwise the child's Claude Code would authenticate to that
+without a connection. `ClaudeDriver.start` refuses it again at every launch, so an Agent
+recorded earlier with such settings fails its next execution (`send`, resume)
+with `invalid-config` before any process starts. Otherwise the child's Claude Code would authenticate to that
 endpoint with the host's login (its login variables, or the keychain or
 `.credentials.json` login). With `api_key_env`, the child (and its model query)
 gets `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` from the connection only: besides

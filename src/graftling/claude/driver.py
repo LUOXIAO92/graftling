@@ -121,6 +121,9 @@ class ClaudeDriver:
             run.events.process(runtime_pid=pid)
 
         settings = dict(run.settings)
+        if settings.get('base_url') and not settings.get('api_key_env'):
+            # 613: also an Agent recorded before 613, at resume or send, before any process.
+            raise AgentsError('invalid-config', 'Claude ' + GATEWAY_KEY_REQUIRED)
         if run.session is not None:
             # A resume runs the current CLI: an update removes the versioned
             # binary that the first execution resolved.

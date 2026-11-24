@@ -65,7 +65,10 @@ rejection); it closes a credential leak, and the release classifies it.
   `ANTHROPIC_CUSTOM_HEADERS` and the `CLAUDE_CODE_USE_BEDROCK`/`_VERTEX`/`_FOUNDRY`
   switches, and start with `--setting-sources ''`, so no user, project or local
   settings file's `env` or `apiKeyHelper` adds a credential; the connection's key is
-  the only one sent there. Without `base_url` nothing changes (613).
+  the only one sent there. Every later launch checks again: an Agent recorded earlier
+  with `base_url` and no `api_key_env` is refused the same way at `send` or resume
+  (its new execution fails `invalid-config`), and nothing starts. Without `base_url`
+  nothing changes (613).
 
 - The install command has no tag: `uv tool install --managed-python
   "git+https://github.com/LUOXIAO92/graftling.git"` installs the default branch
