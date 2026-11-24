@@ -31,7 +31,8 @@ code for a new situation (PUBLIC_API section 7).
   name a key or endpoint. Without `provider` the choice is as before (609).
 - `discover_models` results carry `groups`, the models by provider. The query uses the
   connection's `provider`, `api_key_env` and `base_url` as its child would: Claude
-  reaches the connection's endpoint with its key, Pi lists a provider with the key the
+  reaches the connection's endpoint with its key and no other credential from the
+  environment (no host login reaches a `base_url`), Pi lists a provider with the key the
   connection names (through `auth.json`, as a child does), and a Claude or Codex
   connection's `provider` names its models instead of `anthropic` or the home's
   provider (609).

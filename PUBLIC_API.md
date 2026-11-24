@@ -483,7 +483,9 @@ Public: `graftling.__version__` and the names in `graftling.__all__`:
   home's effective `model_provider`); `api_key_env` (a name) authenticates a
   Claude query as `ANTHROPIC_API_KEY`, a Pi query for the connection's
   `provider` through a private `auth.json` holding `$NAME`, and a DSH query;
-  `base_url` routes a Claude and a DSH query. Codex lists its home's catalog
+  `base_url` routes a Claude and a DSH query. A Claude query with either keeps,
+  like its child, no credential-class variable but `api_key_env` (3.1), so no
+  host login reaches that endpoint. Codex lists its home's catalog
   without `base_url` or `api_key_env`; a Pi connection takes no `base_url`
   (section 2, *Drivers*). An unset key variable makes a Claude query
   `unknown`; Pi lists what it can authenticate without it.

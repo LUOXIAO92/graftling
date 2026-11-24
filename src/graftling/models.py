@@ -451,6 +451,10 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
     The connection's endpoint and key reach Claude as they reach a child
     (``ANTHROPIC_BASE_URL``, ``ANTHROPIC_API_KEY`` from ``api_key_env``), and
     its ``provider`` names the models; Claude has no native provider setting.
+    With either one, the query's environment keeps no credential-class
+    variable but ``api_key_env`` (:func:`graftling.child_env.child_environment`),
+    so no host login reaches that endpoint. Without both it is the caller's
+    environment, for the native login.
     """
     from graftling.runtime import credential_environment
 
@@ -461,6 +465,10 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
                'request': {'subtype': 'initialize'}}
 
     environment = _environment(connection, 'CLAUDE_CONFIG_DIR')
+    if connection.get('base_url') or connection.get('api_key_env'):
+        # Filtered like the connection's child (child_env.py): no host credential,
+        # login or other key reaches the connection's endpoint, only its own key.
+        environment = child_environment(environment, api_key_env=connection.get('api_key_env'))
     if connection.get('base_url'):
         environment['ANTHROPIC_BASE_URL'] = connection['base_url']
     if connection.get('api_key_env'):

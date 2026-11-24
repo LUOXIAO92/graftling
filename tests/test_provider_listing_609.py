@@ -10,6 +10,7 @@ no Agent is started.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -173,6 +174,45 @@ print(json.dumps({reply!r}))
 
     # Without a connection provider the catalog stays Anthropic's.
     assert discover_models({'runtime': 'claude'})['groups'][0]['provider'] == 'anthropic'
+
+
+HOST_CREDENTIALS = {'ANTHROPIC_API_KEY': 'host-anthropic', 'ANTHROPIC_AUTH_TOKEN': 'host-token',
+                    'CLAUDE_CODE_OAUTH_TOKEN': 'host-oauth', 'UNRELATED_API_KEY': 'host-unrelated'}
+
+
+@pytest.mark.parametrize('connection, expected', [
+    # (a) An endpoint without a key: no host login or other key reaches it.
+    ({'base_url': 'https://gw.example/v1'}, {}),
+    # (b) An endpoint with its key: only that key, as Claude's and under its own name.
+    ({'base_url': 'https://gw.example/v1', 'api_key_env': 'GATEWAY_TEST_KEY'},
+     {'ANTHROPIC_API_KEY': SECRET, 'GATEWAY_TEST_KEY': SECRET}),
+    # (c) Neither: the caller's environment for the native login, unchanged.
+    ({}, {**HOST_CREDENTIALS, 'GATEWAY_TEST_KEY': SECRET}),
+])
+def test_a_claude_query_gets_only_the_credentials_its_child_would(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, connection: dict, expected: dict,
+) -> None:
+    from graftling.child_env import is_credential_name
+
+    log = tmp_path / 'claude-env.json'
+    reply = {'type': 'control_response', 'response': {'request_id': 'catalog', 'subtype': 'success',
+                                                      'response': {'models': [{'value': 'claude-opus-5-5'}]}}}
+    fake_client(tmp_path / 'bin', 'claude', f"""
+sys.stdin.readline()
+from graftling.child_env import is_credential_name
+json.dump({{name: value for name, value in os.environ.items() if is_credential_name(name)}},
+          open({str(log)!r}, 'w'))
+print(json.dumps({reply!r}))
+""")
+    monkeypatch.setenv('PATH', f"{tmp_path / 'bin'}:/usr/bin:/bin")
+    for name in [name for name in os.environ if is_credential_name(name)]:
+        monkeypatch.delenv(name)
+    for name, value in {**HOST_CREDENTIALS, 'GATEWAY_TEST_KEY': SECRET}.items():
+        monkeypatch.setenv(name, value)
+
+    found = discover_models({'runtime': 'claude', **connection})
+    assert found['status'] == 'available'
+    assert json.loads(log.read_text()) == expected
 
 
 def test_codex_names_its_models_by_the_connection_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

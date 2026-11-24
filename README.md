@@ -236,8 +236,9 @@ connections:
 `models` asks each connection's Runtime as a child of it would ask: its `home`, its
 `provider` (Pi and DSH list only that provider's models; a Claude or Codex connection's
 models are named after it) and its key variable (Claude, Pi with a `provider`, DSH)
-and `base_url` (Claude, DSH). With no connection for the Runtime it lists the native
-login, as `connection: null`.
+and `base_url` (Claude, DSH). A Claude query with a `base_url` or key variable gets no
+other credential from your environment, so your own login never reaches that endpoint.
+With no connection for the Runtime it lists the native login, as `connection: null`.
 
 #### A DSH child's provider, home and key
 
