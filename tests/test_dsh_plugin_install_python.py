@@ -142,7 +142,7 @@ def test_a_python_of_another_graftling_is_refused_with_the_uv_command(installati
     shown = start(tmp_path, linked(tmp_path, copy))
     assert shown['attached'] == [] and shown['host'] == []
     version = json.loads((copy / 'package.json').read_text())['version']
-    assert re.search(r'uv tool install "git\+https://github\.com/LUOXIAO92/graftling\.git@v'
+    assert re.search(r'uv tool install --managed-python "git\+https://github\.com/LUOXIAO92/graftling\.git@v'
                      + re.escape(version) + '"', shown['error']), shown['error']
     assert 'GRAFTLING_PYTHON' in shown['error']
 

@@ -65,7 +65,7 @@ function graftlingPython(environment) {
     let version = '<version>';
     try { version = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).version; } catch {}
     throw new Error(`graftling-dsh: no Python that imports this graftling (${pkg}) was found; tried ${
-      candidates.join(', ')}. Install graftling once with uv: uv tool install ` +
+      candidates.join(', ')}. Install graftling once with uv: uv tool install --managed-python ` +
       `"git+https://github.com/LUOXIAO92/graftling.git@v${version}", then add graftling-dsh from that install ` +
       '(docs/install/dsh.md). Or set GRAFTLING_PYTHON to the Python graftling is installed in.');
   })();

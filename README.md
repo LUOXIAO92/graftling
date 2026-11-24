@@ -44,12 +44,20 @@ Install graftling once, with [uv](https://docs.astral.sh/uv/), straight from Git
 It is not on PyPI. Pin a tag or a commit:
 
 ```sh
-uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 "$(uv tool dir --bin)/subagents" --help
 ```
 
-uv gets a Python 3.12 or later when it needs one, installs graftling with its only
+`--managed-python` makes uv build the environment on a Python that uv itself
+manages, downloading a Python 3.12 or later if it has none. Without it, uv takes the
+first suitable Python it finds, such as a Conda base or the system Python; the tool
+environment then depends on that interpreter and breaks when it is upgraded or
+removed. Activating Conda later does not matter either way: graftling always runs on
+its own environment's `bin/python`. If you installed without the option, move to a
+uv-managed Python with `uv tool uninstall graftling` and then the command above.
+
+uv installs graftling with its only
 dependencies, PyYAML and websockets, in its own environment under `uv tool dir`, and
 puts the `subagents` and `subagents-mcp` commands on its tool bin directory
 (`uv tool dir --bin`). This one installation serves every host: each host's MCP

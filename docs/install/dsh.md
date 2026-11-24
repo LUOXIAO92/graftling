@@ -17,7 +17,7 @@ Once, with uv, as in the [README](../../README.md#install). Every host uses this
 installation:
 
 ```sh
-uv tool install "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
+uv tool install --managed-python "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"
 AGENTS_PYTHON="$(uv tool dir)/graftling/bin/python"
 ```
 

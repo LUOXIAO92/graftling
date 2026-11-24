@@ -12,6 +12,19 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+### Changed
+
+- The install command is `uv tool install --managed-python
+  "git+https://github.com/LUOXIAO92/graftling.git@<tag-or-commit>"` (597) in the
+  README, every install note, the Claude Code plugin's start-failure message and the
+  DSH plugin's missing-Python message. Without the option uv may build the tool
+  environment on a Conda or system Python it finds first, and the environment
+  breaks when that interpreter is upgraded or removed. An existing installation
+  moves to a uv-managed Python with `uv tool uninstall graftling` and the new
+  command. No code or interface changes.
+
 ## 0.9.0 (incompatible)
 
 The MCP tool `agents` is renamed `subagents`, a rename section 7 lists as
