@@ -75,7 +75,9 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
     ------
     ValueError
         The connection names no supported Runtime or its ``models`` list is
-        malformed; these are configuration errors, not discovery failures.
+        malformed, or a DSH connection's provider other than
+        ``deepseek-official`` names no ``api_key_env`` or is not served by the
+        installed DSH; these are configuration errors, not discovery failures.
 
     Examples
     --------
@@ -92,6 +94,9 @@ def discover_models(connection: Mapping[str, Any]) -> dict:
                 'models': models, 'groups': _grouped(models), 'message': CONFIGURED}
 
     query = {'claude': _claude, 'codex': _codex, 'pi': _pi_catalog, 'dsh': _dsh}[runtime]
+    if runtime == 'dsh':
+        # A provider DSH cannot serve on the connection's own key is a configuration error.
+        _dsh_route(connection)
     try:
         # No project resources, extensions or task prompt enter a discovery query.
         with tempfile.TemporaryDirectory(prefix='agents-models-') as directory:
@@ -406,12 +411,39 @@ def _pi_catalog(connection: Mapping[str, Any], cwd: Path) -> dict:
     } for model in _pi_models(connection, cwd)])}
 
 
+def _dsh_route(connection: Mapping[str, Any]) -> list[dict]:
+    """Return the patch rows that route a DSH query as the connection routes a child.
+
+    Raises ``ValueError`` for a provider other than ``deepseek-official`` that
+    names no ``api_key_env`` or that the installed DSH does not serve (608).
+    """
+    from graftling.dsh.errors import DshError
+    from graftling.dsh.settings import DEFAULT_PROVIDER, pi_ai_patch, pi_ai_route
+
+    provider = connection.get('provider') or DEFAULT_PROVIDER
+    if provider == DEFAULT_PROVIDER:
+        route = {name: connection[field] for name, field in (('baseURL', 'base_url'), ('apiKeyEnv', 'api_key_env'))
+                 if connection.get(field)}
+        return [{'id': 'llm-deepseek', 'config': route}] if route else []
+    executable = shutil.which('dsh')
+    try:
+        if executable is not None or not connection.get('api_key_env'):
+            # Without DSH the query itself reports the Runtime unavailable.
+            pi_ai_route(provider, connection.get('api_key_env'),
+                        Path(executable or '.').resolve().parent.parent / 'package.json')
+    except DshError as error:
+        raise ValueError(error.message) from None
+    return [pi_ai_patch(provider, connection['api_key_env'], connection.get('base_url'))]
+
+
 def _dsh(connection: Mapping[str, Any], cwd: Path) -> dict:
     """Read the host-generation catalog of an owned ``dsh web``; never create a Session.
 
     As for a child, the endpoint and key are the connection's: the parent's
     endpoint variables are removed, and what the connection declares reaches DSH
-    through a patch in ``cwd``, so the connection's home gains nothing.
+    through a patch in ``cwd``, so the connection's home gains nothing. A
+    provider other than ``deepseek-official`` gets the child's llm-pi-ai route
+    (608), and is refused as a child's would be.
     """
     from graftling.dsh.service import DshService
     from graftling.dsh.settings import AMBIENT_ENDPOINTS
@@ -419,12 +451,11 @@ def _dsh(connection: Mapping[str, Any], cwd: Path) -> dict:
     environment = _environment(connection, 'DSH_HOME')
     for ambient in AMBIENT_ENDPOINTS:
         environment.pop(ambient, None)
-    route = {name: connection[field] for name, field in (('baseURL', 'base_url'), ('apiKeyEnv', 'api_key_env'))
-             if connection.get(field)}
+    rows    = _dsh_route(connection)
     options = {}
-    if route:
+    if rows:
         options['profile_patch'] = cwd / 'discovery.patch.yml'
-        options['profile_patch'].write_text(json.dumps([{'id': 'llm-deepseek', 'config': route}]), encoding='utf-8')
+        options['profile_patch'].write_text(json.dumps(rows), encoding='utf-8')
     service = DshService(_executable('dsh'), cwd, environment, **options)
     try:
         service.start()

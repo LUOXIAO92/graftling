@@ -1,11 +1,13 @@
 """Explicit DSH launch settings; no Task, Git or GraphTraj role discovery."""
 
 from copy import deepcopy
+import functools
 import json
 import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 from typing import Mapping, Any
 from urllib.parse import urlsplit
 
@@ -21,6 +23,18 @@ AMBIENT_ENDPOINTS = ('DEEPSEEK_BASE_URL', 'DEEPSEEK_SEARCH_BASE_URL')
 
 # The variable DSH's Messages route and its web rows read when none is named.
 _DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
+
+# DSH's own DeepSeek route (its llm-deepseek row); every other provider is an llm-pi-ai route (608).
+DEFAULT_PROVIDER = 'deepseek-official'
+
+# The chat providers DSH's llm-pi-ai serves from the installed pi-ai catalog, as its
+# catalogProviders() selects them (dsh-llm-pi-ai lib/index.js, servesChat).
+_CATALOG_SCRIPT = """
+const m = await import('@earendil-works/pi-ai/providers/all');
+const ids = m.builtinProviders().map((p) => p.id)
+  .filter((id) => m.getBuiltinModels(id).length > 0 || m.getAllBuiltinModels(id).length === 0);
+process.stdout.write(JSON.stringify(ids));
+"""
 
 
 def version_order(version: str) -> tuple:
@@ -86,6 +100,56 @@ def credential_environment(name: str | None) -> dict[str, str]:
     return {name: value}
 
 
+@functools.lru_cache(maxsize=8)
+def catalog_providers(package: str) -> tuple[str, ...] | None:
+    """Return the provider ids the DSH with this ``package.json`` routes through llm-pi-ai.
+
+    Node imports pi-ai from the DSH install, as DSH does; ``None`` when that
+    cannot be read (no Node, or a DSH without pi-ai).
+    """
+    node = shutil.which('node')
+    if node is None:
+        return None
+    try:
+        result = subprocess.run([node, '--input-type=module', '-e', _CATALOG_SCRIPT], cwd=Path(package).parent,
+                                capture_output=True, text=True, timeout=30)
+        return tuple(json.loads(result.stdout)) if result.returncode == 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def pi_ai_route(provider: str, api_key_env: str | None, package: str | Path) -> None:
+    """Refuse a provider other than ``deepseek-official`` that DSH cannot serve on its named key.
+
+    Such a provider runs on DSH's llm-pi-ai row, keyed only by ``api_key_env``:
+    without it DSH would look for a key itself (pi-ai's ambient variables), so
+    the key must be named. The provider must be one the installed DSH ships in
+    its pi-ai catalog.
+    """
+    if not api_key_env:
+        raise DshError('ROLE_CONFIG_INVALID',
+                       f'DSH provider {provider!r} needs api_key_env on its connection: graftling does not let '
+                       'DSH look for that provider\'s key itself.')
+    served = catalog_providers(str(package))
+    if served is None:
+        raise DshError('ROLE_CONFIG_UNSUPPORTED',
+                       f'The installed DSH\'s provider catalog cannot be read, so provider {provider!r} cannot be '
+                       f'confirmed; only {DEFAULT_PROVIDER!r} runs without it.')
+    if provider not in served:
+        raise DshError('ROLE_CONFIG_UNSUPPORTED',
+                       f'The installed DSH does not serve provider {provider!r}. It serves {DEFAULT_PROVIDER!r} '
+                       f'and: {", ".join(served)}.')
+
+
+def pi_ai_patch(provider: str, api_key_env: str, base_url: str | None = None,
+                model: str | None = None) -> dict:
+    """The llm-pi-ai row that activates one provider route, keyed by the variable's name only."""
+    return {'id': 'llm-pi-ai', 'config': {'providers': {provider: {
+        'apiKeyEnv': api_key_env, **({'baseURL': base_url} if base_url else {}),
+        **({'models': [{'id': model}]} if model else {}),
+    }}}}
+
+
 def _refuse_key_held_by_reviewer(settings: Mapping[str, Any], cwd: Path) -> None:
     """Refuse a child left with no key because its reviewer holds DSH's default one.
 
@@ -141,11 +205,16 @@ def prepare(configuration: Mapping[str, Any], cwd: Path) -> dict:
         if (parsed.scheme not in {'https', 'http'} or not parsed.netloc or parsed.username
                 or parsed.password or parsed.query or parsed.fragment):
             raise DshError('ROLE_CONFIG_INVALID', 'Supply a credential-free native provider endpoint.')
+    provider = settings.get('provider') or DEFAULT_PROVIDER
+    if not isinstance(provider, str):
+        raise DshError('ROLE_CONFIG_INVALID', 'provider must name a DSH provider.')
+    if provider != DEFAULT_PROVIDER:
+        pi_ai_route(provider, settings.get('api_key_env'), package)
     credential_environment(settings.get('api_key_env'))
     _refuse_key_held_by_reviewer(settings, cwd)
     return {
         **settings, 'executable': str(executable), 'package': str(package),
-        'worktree_path': str(Path(cwd).resolve()), 'provider': 'deepseek-official',
+        'worktree_path': str(Path(cwd).resolve()), 'provider': provider,
         'reasoning_effort': settings.get('reasoning_effort'),
         'instructions': settings.get('instructions', ''), 'connection': True,
     }

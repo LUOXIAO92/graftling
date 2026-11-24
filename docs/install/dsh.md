@@ -224,7 +224,8 @@ not been run with a refused start.
 ## Children on other Runtimes
 
 `create`'s `runtime` selects the driver. `dsh` and `claude` need nothing more. A DSH
-child always runs the `deepseek-official` provider, on a DSH home of its own unless
+child runs the `deepseek-official` provider unless its connection names another one
+DSH serves (such as `opencode-go` or `openrouter`, with that connection's `api_key_env`), on a DSH home of its own unless
 the connection declares `home`, with the key from the environment; the
 [README](../../README.md#a-dsh-childs-provider-home-and-key) says where each comes from
 and what is not yet walked. The sections below set defaults for each:
@@ -327,7 +328,11 @@ The data root is unchanged, so held notices and children's records stay.
   stderr, the host exits non-zero, and the plugin writes that text to the DSH logger.
   The Session does not show it; read the state through `status` on the next host.
 - `subagents` calls run one at a time on this host.
-- The DSH driver runs the `deepseek-official` provider only.
+- The DSH driver runs `deepseek-official`, or another provider the installed DSH serves
+  from its pi-ai catalog when the connection names it and its `api_key_env`; a provider
+  without `api_key_env`, or one DSH does not serve, is refused. Such a child has no
+  `DEEPSEEK_API_KEY`, so DSH's web search fails unless the connection's `pass_env`
+  adds it; web fetch works ([README](../../README.md#a-dsh-childs-provider-home-and-key)).
 - `DEEPSEEK_BASE_URL` and `DEEPSEEK_SEARCH_BASE_URL` do not route a DSH child. Declare
   `base_url` on the connection or the DSH settings. With `DEEPSEEK_API_KEY` as that
   connection's key at another origin, web search goes to the same endpoint and DSH's

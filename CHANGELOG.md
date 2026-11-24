@@ -16,7 +16,8 @@ The numbers in parentheses are the project's Task numbers.
 ## Unreleased
 
 Compatible: a new feature, a new optional argument, a new result field and a new error
-code for a new situation (PUBLIC_API section 7).
+code for a new situation (609), and DSH providers accepted that were refused before
+(608) (PUBLIC_API section 7).
 
 ### Added
 
@@ -36,8 +37,22 @@ code for a new situation (PUBLIC_API section 7).
   connection names (through `auth.json`, as a child does), and a Claude or Codex
   connection's `provider` names its models instead of `anthropic` or the home's
   provider (609).
+- A DSH connection may name a `provider` other than `deepseek-official` that the
+  installed DSH serves from its pi-ai catalog, such as `openrouter`, `opencode-go`
+  or `opencode` (608). The child, and `discover_models` for that connection, get
+  DSH's `llm-pi-ai` route for that provider keyed only by the connection's
+  `api_key_env` (with `base_url` and a declared model when given), and
+  `session/selectModel` names that provider. The child keeps only that key
+  variable, so DSH's web search, which uses `DEEPSEEK_API_KEY`, fails unless
+  `pass_env` adds it.
 
 ### Changed
+
+- A DSH `provider` other than `deepseek-official` was refused with
+  `invalid-config`; now it is refused only without `api_key_env` (DSH would
+  otherwise look for that provider's key itself) or when the installed DSH does not
+  serve it, checked with Node against DSH's own catalog by `create`, the host's
+  start (`require_connections`) and `discover_models` (`ValueError`) (608).
 
 - The install command has no tag: `uv tool install --managed-python
   "git+https://github.com/LUOXIAO92/graftling.git"` installs the default branch
@@ -56,7 +71,7 @@ code for a new situation (PUBLIC_API section 7).
   which graftling never reads, unlike `GRAFTLING_PYTHON`: required by the Claude
   Code marketplace plugin, optional for Pi and DSH (605).
 - The README says connections and `api_key_env` are optional and what applies
-  without them, and where a DSH child's provider (`deepseek-official` only), home
+  without them, and where a DSH child's provider (`deepseek-official`; others since 608), home
   (its own generated one unless `home` is set) and key (the environment) come from,
   including what `base_url` changes (605).
 
