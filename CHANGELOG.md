@@ -12,7 +12,12 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.9.1 (compatible)
+
+Only the printed install command and the documentation change; no public name,
+result, archive format or behavior changes (the wording of error messages is internal
+by the preamble of the public interface), so the release is compatible by section 7
+and raises the patch version. GraphTraj's range `graftling>=0.9.0,<0.10` includes it.
 
 ### Changed
 
