@@ -454,7 +454,11 @@ Public: `graftling.__version__` and the names in `graftling.__all__`:
   A DSH query drops `DEEPSEEK_BASE_URL` and `DEEPSEEK_SEARCH_BASE_URL` and takes
   `base_url` and `api_key_env` from the connection, as a child does; DSH asks an
   endpoint for its list only at the official origin, so a custom `base_url`
-  lists DSH's built-in models. A Pi query reads the home (the connection's, else
+  lists DSH's built-in models. A DSH connection whose `provider` is not
+  `deepseek-official` gets the child's `llm-pi-ai` route (section 2, Drivers)
+  and lists that provider's models from DSH's installed catalog, each with that
+  `provider`; without `api_key_env`, or for a provider the installed DSH does not
+  serve, `discover_models` raises `ValueError`. A Pi query reads the home (the connection's, else
   `PI_CODING_AGENT_DIR`, else Pi's default) from a private directory, so the
   home gains no file and its configured packages are not installed;
 - the normalized Session archive (section 1.5): `read_session(path)` returns
@@ -1193,9 +1197,20 @@ that connection names (section 3) or `null`. A selected connection replaces the
 host's native home, endpoint and key variable together, so a host key never
 reaches another endpoint. A driver whose `prepare` does not accept
 `selection` makes such a create fail with `invalid-config`. The agents
-drivers apply `model` and `reasoning_effort` for all four Runtimes; current
-limits, each failing with `invalid-config`: the DSH driver runs the
-`deepseek-official` provider only; the Pi driver takes no `base_url`;
+drivers apply `model` and `reasoning_effort` for all four Runtimes. The DSH
+driver runs `deepseek-official` (DSH's `llm-deepseek` row) when no provider is
+selected; another provider must be one the installed DSH serves from its pi-ai
+catalog (`builtinProviders` with a chat model, read with Node from the DSH
+install; 0.2.2-rc.5 has `openrouter`, `opencode-go`, `opencode` and others) and
+its connection must name `api_key_env`. The child's profile then gets the row
+`{id: llm-pi-ai, config: {providers: {<provider>: {apiKeyEnv: <api_key_env>,
+baseURL?, models?}}}}` (`baseURL` from `base_url`, `models: [{id: <model>}]` for a
+declared model) instead of the `llm-deepseek` patch, `session/selectModel` names
+that provider, and no web search row is patched. `require_available` (so `create`
+and `require_connections`) refuses either with `invalid-config`; `prepare` with
+`ROLE_CONFIG_INVALID` (no `api_key_env`) or `ROLE_CONFIG_UNSUPPORTED` (not served,
+or the catalog unreadable). Current limits, each failing with `invalid-config`:
+the Pi driver takes no `base_url`;
 declare such an endpoint as a provider in Pi's own `models.json` in the
 connection's home. When a Pi selection changes the provider, model, home or
 key, the driver reads the model's network destination from Pi's catalog in
@@ -1476,7 +1491,7 @@ Runtime's own login variables:
 | Claude | `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`; the `AWS_*` credentials with `CLAUDE_CODE_USE_BEDROCK`, the `GOOGLE_*`, `GCLOUD_*` and `CLOUDSDK_*` credentials with `CLAUDE_CODE_USE_VERTEX`, the `ANTHROPIC_FOUNDRY_*` credentials with `CLAUDE_CODE_USE_FOUNDRY` |
 | Codex | `OPENAI_API_KEY`, `CODEX_API_KEY`, and the `env_key` of the selected provider in the Session's settings or the home's `config.toml` |
 | Pi | A set variable the home's `models.json` `apiKey` or `auth.json` `key` names for the selected provider, as `$NAME`, `${NAME}` or plain text; a `!command` is ignored. Otherwise whatever Pi itself needs: agents asks `get_available_models` with variables kept to a candidate set, on each launch. If Pi offers it under none, none is added |
-| DSH | `DEEPSEEK_API_KEY`, which 430's refusal still covers when a reviewer holds it |
+| DSH | `DEEPSEEK_API_KEY`, which 430's refusal still covers when a reviewer holds it. A provider other than `deepseek-official` requires `api_key_env` (section 2, Drivers) |
 
 A Runtime's native login (`auth.json`, the Claude keychain, `$DSH_HOME/.credentials.yaml`)
 needs no variable and is untouched. Pi 1.4.0 lists a `models.json` provider with a plain

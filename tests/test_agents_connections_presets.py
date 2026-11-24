@@ -516,7 +516,8 @@ def test_dsh_driver_applies_connection_model_and_effort(tmp_path: Path, monkeypa
         'model': 'deepseek-v5', 'reasoning_effort': 'max', 'provider': None})
     assert (settings['model'], settings['reasoning_effort'], settings['runtime_home'], settings['api_key_env'],
             settings['model_source']) == ('deepseek-v5', 'max', '/native/dsh', 'WORK_KEY', 'manual')
-    for selection, code in (({'provider': 'opencode-go'}, 'invalid-config'),
+    # 608: another provider needs DSH's pi-ai catalog, which this stand-in DSH lacks (test_dsh_providers_608).
+    for selection, code in (({'provider': 'opencode-go'}, 'ROLE_CONFIG_UNSUPPORTED'),
                             ({'reasoning_effort': 'medium'}, 'invalid-reasoning-effort')):
         with pytest.raises(AgentsError) as caught:
             driver.prepare('dsh', CALLER, selection=selection)

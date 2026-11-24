@@ -24,7 +24,8 @@ from graftling.connection import CONNECTION_ENV
 from graftling.extra_tools import EXTRA_TOOLS_ENV, descriptor_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
-from .settings import _DEFAULT_KEY_ENV, AMBIENT_ENDPOINTS, credential_environment, resumes_by_address
+from .settings import (_DEFAULT_KEY_ENV, AMBIENT_ENDPOINTS, DEFAULT_PROVIDER, credential_environment, pi_ai_patch,
+                       resumes_by_address)
 
 
 # DSH's shipped profile patches carry `!!js` expressions (for example the
@@ -302,6 +303,23 @@ class DshExecution:
         }}}
         (profile / 'package.json').write_text(json.dumps(manifest), encoding='utf-8')
         mode = self.request['sandbox']
+        provider = self.request.get('provider') or DEFAULT_PROVIDER
+        declared = bool(self.request.get('connection')) and (
+            self.request.get('model_source') == 'manual' or bool(self.request.get('base_url')))
+        if provider == DEFAULT_PROVIDER:
+            route = {'id': 'llm-deepseek', 'config': {
+                **({'baseURL': self.request['base_url']} if self.request.get('base_url') else {}),
+                **({'apiKeyEnv': self.request['api_key_env']} if self.request.get('api_key_env') else {}),
+                **({'models': [{'id': self.request['model']}]} if declared else {}),
+                **({'reasoningEffort': self.request['reasoning_effort']}
+                   if self.request['reasoning_effort'] is not None else {}),
+            }}
+        else:
+            # 608: another provider is DSH's llm-pi-ai route, keyed only by the connection's
+            # variable (prepare refused it without one); llm-deepseek keeps its default key,
+            # which this child does not hold. Effort travels with session/selectModel.
+            route = pi_ai_patch(provider, self.request['api_key_env'], self.request.get('base_url'),
+                                self.request['model'] if declared else None)
         patches = [
             {'id': 'hmr', 'disabled': True},
             {'id': 'session-persistence-jsonl', 'config': {'root': str(self.logs), 'compression': 'none'}},
@@ -313,19 +331,11 @@ class DshExecution:
             {'id': 'permission', 'config': {
                 'presets': {mode: {'sandbox': mode, 'approval': 'ask'}}, 'defaultPreset': mode,
             }},
-            {'id': 'llm-deepseek', 'config': {
-                **({'baseURL': self.request['base_url']} if self.request.get('base_url') else {}),
-                **({'apiKeyEnv': self.request['api_key_env']} if self.request.get('api_key_env') else {}),
-                **({'models': [{'id': self.request['model']}]}
-                   if self.request.get('connection') and (
-                       self.request.get('model_source') == 'manual' or self.request.get('base_url')
-                   ) else {}),
-                **({'reasoningEffort': self.request['reasoning_effort']}
-                   if self.request['reasoning_effort'] is not None else {}),
-            }},
+            route,
             {'id': 'system-prompt', 'config': {'personaSuffix': self.request['instructions']}},
         ]
-        if self.request.get('base_url') and (self.request.get('api_key_env') or _DEFAULT_KEY_ENV) == _DEFAULT_KEY_ENV:
+        if (provider == DEFAULT_PROVIDER and self.request.get('base_url')
+                and (self.request.get('api_key_env') or _DEFAULT_KEY_ENV) == _DEFAULT_KEY_ENV):
             patches.extend(_search_rows(self.request['base_url']))
         if self.request.get('plugin'):
             patches.append({'insert': [{'id': 'agents', 'name': self.request['plugin']}]})

@@ -197,6 +197,10 @@ connections:
     runtime: dsh
     provider: deepseek-official
     api_key_env: DEEPSEEK_API_KEY
+  openrouter-dsh:
+    runtime: dsh
+    provider: openrouter          # a provider DSH routes through its pi-ai catalog
+    api_key_env: OPENROUTER_API_KEY
 ```
 
 `runtime` is required: `claude`, `codex`, `pi` or `dsh`. Optional: `home` (the native
@@ -209,9 +213,17 @@ else it fails with `ambiguous-connection`.
 
 #### A DSH child's provider, home and key
 
-- **Provider.** Always DSH's `deepseek-official` (its `llm-deepseek` row). A
-  `provider` naming anything else is refused with `invalid-config`. Providers you
-  set up in your own DSH, such as OpenRouter, are not used by children.
+- **Provider.** Without `provider`, DSH's `deepseek-official` (its `llm-deepseek`
+  row). Another `provider` must be one the installed DSH serves from its pi-ai
+  catalog, such as `openrouter`, `opencode-go` or `opencode` (DSH 0.2.2-rc.5 lists
+  about forty); graftling asks the installed DSH with Node. The child then runs on
+  that DSH `llm-pi-ai` route, keyed only by the connection's `api_key_env`, which
+  such a connection must name: without it, or for a provider that DSH does not serve,
+  `create`, the host's start and `discover_models` refuse it (`invalid-config`, or
+  a `ValueError` from `discover_models`), so DSH never looks for that provider's key
+  in your environment on its own. Its `models` are that provider's ids, such as
+  `openai/gpt-4.1-nano`. Providers you set up in your own DSH are used only through
+  a connection that names them.
 - **Home.** Without `home`, each child runs on a DSH home of its own that graftling
   generates, holding only a profile (DSH's official bundles and graftling's patch)
   and no login, so your `~/.dsh` and its `.credentials.yaml` are not used. With
@@ -220,8 +232,13 @@ else it fails with `ambiguous-connection`.
   `DEEPSEEK_API_KEY`; with it, the child gets only that variable, and DSH reads it
   instead (missing or empty: `RUNTIME_CREDENTIAL_MISSING`). `DEEPSEEK_BASE_URL` and
   `DEEPSEEK_SEARCH_BASE_URL` are removed from the child.
-- **`base_url`.** Replaces only the address of `deepseek-official`, so the endpoint
-  must serve the same API. It must be `http` or `https` with no user, password,
+- **Web search on another provider.** DSH searches through its DeepSeek route with
+  `DEEPSEEK_API_KEY`, which such a child does not hold, so its web search fails for
+  want of that key unless you add `DEEPSEEK_API_KEY` to the connection's `pass_env`;
+  web fetch needs no key and works.
+- **`base_url`.** On another provider it replaces that provider's address in DSH's
+  catalog (its protocol stays the catalog's). On `deepseek-official` it replaces
+  only that address, so the endpoint must serve the same API. It must be `http` or `https` with no user, password,
   query or fragment, else `ROLE_CONFIG_INVALID`. The model is then announced to DSH
   instead of read from its catalog. With the default key, web search goes to the
   same address and the DeepSeek Search and Fetch row is turned off.
@@ -229,9 +246,12 @@ else it fails with `ambiguous-connection`.
 These are shown by tests and by graftling's launch preparation against an installed
 DSH 0.2.2-rc.5, without a model turn.
 
-> Not yet walked: a real DSH child's model turn with only these sources. DSH itself
-> may also read a `.env` in the child's working directory, and with `home` that
-> home's `.credentials.yaml` and `.env`; graftling only checks that those files exist.
+> Not yet walked: a real DSH child's model turn with only these sources, on any
+> provider, and web search on another provider with `DEEPSEEK_API_KEY` in `pass_env`
+> (DSH's own profile describes that path). DSH itself may also read a `.env` in the
+> child's working directory, and with `home` that home's `.credentials.yaml` and
+> `.env`, and a provider signed in there through DSH's credential store; graftling
+> only checks that those files exist.
 
 ### What a child's environment holds
 
