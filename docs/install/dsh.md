@@ -224,9 +224,10 @@ not been run with a refused start.
 ## Children on other Runtimes
 
 `create`'s `runtime` selects the driver. `dsh` and `claude` need nothing more. A DSH
-child always runs the `deepseek-official` provider, on a DSH home of its own, with
-the key from the environment (or a declared `home`); the [README](../../README.md#a-dsh-childs-provider-home-and-key)
-says where each comes from. The sections below set defaults for each:
+child always runs the `deepseek-official` provider, on a DSH home of its own unless
+the connection declares `home`, with the key from the environment; the
+[README](../../README.md#a-dsh-childs-provider-home-and-key) says where each comes from
+and what is not yet walked. The sections below set defaults for each:
 
 ```json
 {
