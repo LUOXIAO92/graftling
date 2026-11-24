@@ -4,8 +4,9 @@
 section 7 there holds the rules. Each version is marked compatible or incompatible
 with the version before it.
 
-**Nothing has been published yet.** There is no tag and no PyPI release. The version
-numbers mark points in the repository's `dev` history. Before 0.2.4 several fixes
+Releases are git tags on GitHub, from `v0.5.2` on; install one as the
+[README](README.md) shows. There is no PyPI release. Before 0.5.2 the version
+numbers only mark points in the repository's `dev` history. Before 0.2.4 several fixes
 merged without raising the number, so two commits with the same number can differ. A
 wheel names only a version, so build it from a commit you know. 0.2.4 is the first
 version that identifies everything listed under it.
