@@ -13,13 +13,16 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.10.0 (incompatible)
 
-Compatible: a new feature, a new optional argument, a new result field and a new error
-code for a new situation (609), and DSH providers accepted that were refused before
-(608) (PUBLIC_API section 7). 613 refuses a configuration that used to start, a Claude
-`base_url` without `api_key_env`, which section 7 lists as incompatible (a new
-rejection); it closes a credential leak, and the release classifies it.
+One change is incompatible by section 7 of the public interface, so the minor version
+rises: 613 refuses a configuration that used to start, a Claude `base_url` without
+`api_key_env` (a new rejection of a request that used to succeed). It closes a
+credential leak: such a child sent the host's Claude login to that endpoint. Compatible
+in the same release: a new feature, a new optional argument, a new result field and a
+new error code for a new situation (609), and DSH providers accepted that were refused
+before (608). A GraphTraj that uses `create`'s `provider` or `discover_models`'
+`groups` needs `graftling>=0.10.0,<0.11`.
 
 ### Added
 
