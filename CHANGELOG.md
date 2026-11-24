@@ -26,6 +26,16 @@ The numbers in parentheses are the project's Task numbers.
   command. Only the printed command text changes (the two messages included); no
   behavior or interface changes.
 
+### Documentation
+
+- PUBLIC_API, section 1.2, *Retired Agents* (599): `state` says only whether an
+  execution is running, so a retired Agent reports `standby` with `retired_at`
+  set. `retired: true` appears only in the `retire` result, not in `status` or
+  `wait`. Retired Agents are left out of listings, and `send`, `resume`,
+  `interrupt`, `requests` and `reply` on them fail with `retired` (except an
+  `interrupt` that confirms an unconfirmed end). This describes 0.9.0 behavior;
+  no code changes.
+
 ## 0.9.0 (incompatible)
 
 The MCP tool `agents` is renamed `subagents`, a rename section 7 lists as
