@@ -45,8 +45,8 @@ class End:
 
 
 class Instance:
-    def __init__(self, name: str) -> None:
-        self.name = name
+    def __init__(self, name: str, owner: str) -> None:
+        self.name, self.owner = name, owner
         self.server = End(self, True)
         self.client: End | None = None
         self.to_server: collections.deque = collections.deque()
@@ -59,7 +59,14 @@ class FakePipes:
     ERROR_ACCESS_DENIED = _win32.ERROR_ACCESS_DENIED
     ERROR_FILE_NOT_FOUND = _win32.ERROR_FILE_NOT_FOUND
     ERROR_PIPE_BUSY = _win32.ERROR_PIPE_BUSY
+    ERROR_OPERATION_ABORTED = _win32.ERROR_OPERATION_ABORTED
     PIPE_GONE = _win32.PIPE_GONE
+    USER, OTHER = 'S-1-5-21-me', 'S-1-5-21-other'
+    # A message larger than this waits until the reader takes it, as one over the pipe's buffer does.
+    BUFFER_BYTES = 65536
+
+    def current_user_sid(self) -> str:
+        return self.USER
 
     def __init__(self) -> None:
         self.lock = threading.Condition()
@@ -78,11 +85,14 @@ class FakePipes:
         return [end.instance for end in self.handles.values()
                 if isinstance(end, End) and end.server and not end.closed and end.instance.name == name]
 
-    def create_pipe(self, name: str, first: bool) -> int:
+    def create_pipe(self, name: str, first: bool, owner: str | None = None) -> int:
         with self.lock:
             if first and self._instances(name):
                 raise PipeError(_win32.ERROR_ACCESS_DENIED)
-            return self._new(Instance(name).server)
+            return self._new(Instance(name, owner or self.USER).server)
+
+    def pipe_owner_sid(self, handle: int) -> str:
+        return self.handles[handle].instance.owner
 
     def connect_pipe(self, handle: int, stopped) -> bool:
         end = self.handles[handle]
@@ -117,7 +127,7 @@ class FakePipes:
                 thing.closed = True
             self.lock.notify_all()
 
-    def open_pipe(self, name: str) -> int:
+    def open_pipe(self, name: str, exchange: bool = True) -> int:
         with self.lock:
             instances = self._instances(name)
             if not instances:
@@ -148,17 +158,26 @@ class FakePipes:
             inbox = self._live(handle).inbox()
             return len(inbox[0]) if inbox else 0
 
-    def read_message(self, handle: int, overlapped_io: bool) -> bytes:
+    def read_message(self, handle: int, limit: float, stopped=None) -> bytes:
         with self.lock:
-            return self._live(handle).inbox().popleft()
+            message = self._live(handle).inbox().popleft()
+            self.lock.notify_all()
+            return message
 
-    def write_message(self, handle: int, data: bytes, overlapped_io: bool) -> None:
+    def write_message(self, handle: int, data: bytes, limit: float, stopped=None) -> None:
         with self.lock:
             end = self.handles[handle]
             peer = end.peer()
             if peer is None or peer.closed:
                 raise PipeError(_win32.ERROR_NO_DATA)
-            peer.inbox().append(bytes(data))
+            message = bytes(data)
+            peer.inbox().append(message)
+            # Over the buffer the write ends only when the reader has taken it, or is cancelled at the bound.
+            while len(message) > self.BUFFER_BYTES and any(item is message for item in peer.inbox()):
+                if time.monotonic() >= limit or (stopped is not None and stopped()):
+                    peer.inbox().remove(message)
+                    raise PipeError(_win32.ERROR_OPERATION_ABORTED)
+                self.lock.wait(0.01)
 
     def kill_host(self, address: str) -> None:
         """What the host's death does to its pipe: every server end closes."""
@@ -283,10 +302,10 @@ def test_a_withdraw_that_crosses_the_acceptance_keeps_the_accepted_behaviour(
         time.sleep(0.3)
         return {'ran': True}
 
-    def admit_before_the_withdraw(handle: int) -> bool:
+    def admit_before_the_withdraw(handle: int, stop: threading.Event) -> bool:
         while not pipes.peek_pipe(handle):  # the withdraw is on its way; the host's check came first
             time.sleep(0.01)
-        pipes.write_message(handle, b'{"accepted": true}', True)
+        pipes.write_message(handle, b'{"accepted": true}', time.monotonic() + 10)
         return True
 
     monkeypatch.setattr(_channel_windows, '_admit', admit_before_the_withdraw)
@@ -389,6 +408,41 @@ def test_a_removed_control_directory_stops_the_pipe_service(pipes: FakePipes, tm
         assert not host_alive(address)
     err = capfd.readouterr().err
     assert err.count('no longer exists; its connection service stopped.') == 1
+
+
+def test_a_pipe_another_account_created_gets_no_request_and_is_no_live_host(
+        pipes: FakePipes, tmp_path: Path) -> None:
+    """After a host died, another account creates its pipe name: callers refuse it before sending."""
+    address = tmp_path / 'control-dead'
+    address.mkdir()
+    name = _channel_windows.pipe_name(str(address))
+    squatters = [pipes.create_pipe(name, first, owner=pipes.OTHER) for first in (True, False)]
+    assert not host_alive(str(address))
+    with pytest.raises(AgentsError) as error:
+        connection_operation(str(address), {'secret': 'request'}, authenticate=True)
+    assert error.value.code == 'authority-denied'
+    assert 'another account' in error.value.message
+    # Both were connected to, and the squatter received nothing.
+    assert [pipes.handles[handle].instance.client is not None for handle in squatters] == [True, True]
+    assert [list(pipes.handles[handle].instance.to_server) for handle in squatters] == [[], []]
+
+
+def test_a_caller_that_never_reads_a_large_reply_does_not_hold_the_close(
+        pipes: FakePipes, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_channel_windows, 'OPERATION_TIMEOUT_SECONDS', 0.5)
+    replied = threading.Event()
+
+    def large(request: dict) -> dict:
+        replied.set()
+        return {'blob': 'x' * (4 * FakePipes.BUFFER_BYTES)}
+
+    with worker_connection(tmp_path, large) as address:
+        stuck = pipes.open_pipe(_channel_windows.pipe_name(address))
+        pipes.write_message(stuck, b'{"request": {}}', time.monotonic() + 5)
+        assert replied.wait(5)
+        closing = time.monotonic()
+    assert time.monotonic() - closing < 3  # the unread reply's write gave up at its bound
+    pipes.close(stuck)
 
 
 class Tree:

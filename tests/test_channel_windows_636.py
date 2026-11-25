@@ -84,14 +84,70 @@ with worker_connection(Path(sys.argv[1]), operate) as address:
     time.sleep(600)
 '''
 
-# Opens the pipe as a client with no graftling import (another account may not read the checkout);
-# the exit code is the Windows error, 0 when it connected.
+# Opens the pipe as a client with no graftling import (another account may not read the checkout).
+# CreateFileW itself, not open(): the CRT's OSError carries errno only, and the Win32 error is the
+# observable. The exit code is GetLastError(), 0 when it connected.
 PROBE = '''
-import sys
-try:
-    open(sys.argv[1], "r+b", buffering=0).close()
-except OSError as error:
-    sys.exit(getattr(error, "winerror", None) or 99)
+import ctypes, sys
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                 ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+kernel32.CreateFileW.restype = ctypes.c_void_p
+kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+handle = kernel32.CreateFileW(sys.argv[1], 0x80000000 | 0x40000000, 0, None, 3, 0, None)
+if handle in (None, ctypes.c_void_p(-1).value):
+    sys.exit(ctypes.get_last_error() or 99)
+kernel32.CloseHandle(handle)
+'''
+
+# Another account's squatter: creates the named pipe with a DACL open to Everyone (two instances,
+# the first with FILE_FLAG_FIRST_PIPE_INSTANCE), serves every connection and logs to sys.argv[2]
+# whether a client connected and whether it sent anything. No graftling import.
+SQUATTER = '''
+import ctypes, sys, threading, time
+k = ctypes.WinDLL("kernel32", use_last_error=True)
+a = ctypes.WinDLL("advapi32", use_last_error=True)
+V, D = ctypes.c_void_p, ctypes.c_uint32
+class SA(ctypes.Structure):
+    _fields_ = [("n", D), ("sd", V), ("inherit", ctypes.c_int)]
+a.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [ctypes.c_wchar_p, D, ctypes.POINTER(V), V]
+k.CreateNamedPipeW.argtypes = [ctypes.c_wchar_p, D, D, D, D, D, D, ctypes.POINTER(SA)]
+k.CreateNamedPipeW.restype = V
+k.ConnectNamedPipe.argtypes = [V, V]
+k.DisconnectNamedPipe.argtypes = [V]
+k.PeekNamedPipe.argtypes = [V, V, D, V, ctypes.POINTER(D), V]
+name, log = sys.argv[1], sys.argv[2]
+lock = threading.Lock()
+def note(line):
+    with lock, open(log, "a", encoding="utf-8") as stream:
+        stream.write(line + "\\n")
+sd = V()
+assert a.ConvertStringSecurityDescriptorToSecurityDescriptorW("D:(A;;GA;;;WD)", 1, ctypes.byref(sd), None)
+sa = SA(ctypes.sizeof(SA), sd, 0)
+pipes = []
+for first in (True, False):
+    pipe = k.CreateNamedPipeW(name, 0x3 | (0x00080000 if first else 0), 0x4 | 0x2, 255, 65536, 65536, 0, ctypes.byref(sa))
+    if pipe in (None, V(-1).value):
+        note("create failed %d" % ctypes.get_last_error())
+        sys.exit(1)
+    pipes.append(pipe)
+def serve(pipe):
+    while True:
+        k.ConnectNamedPipe(pipe, None)
+        note("connected")
+        for _ in range(60):
+            waiting = D(0)
+            if not k.PeekNamedPipe(pipe, None, 0, None, ctypes.byref(waiting), None):
+                break
+            if waiting.value:
+                note("read %d" % waiting.value)
+                break
+            time.sleep(0.05)
+        k.DisconnectNamedPipe(pipe)
+for pipe in pipes:
+    threading.Thread(target=serve, args=(pipe,), daemon=True).start()
+note("ready")
+time.sleep(600)
 '''
 
 
@@ -160,24 +216,31 @@ class PROCESS_INFORMATION(ctypes.Structure):
                 ('dwProcessId', ctypes.c_uint32), ('dwThreadId', ctypes.c_uint32)]
 
 
-def run_as(user: str, password: str, command: list[str]) -> int:
-    """Run ``command`` as the local account ``user`` (CreateProcessWithLogonW); return its exit code.
+def _kernel32() -> ctypes.WinDLL:
+    """kernel32 with the test-only process calls declared."""
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    for name, argtypes, restype in (
+            ('WaitForSingleObject', [ctypes.c_void_p, ctypes.c_uint32], ctypes.c_uint32),
+            ('GetExitCodeProcess', [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)], ctypes.c_int),
+            ('TerminateProcess', [ctypes.c_void_p, ctypes.c_uint], ctypes.c_int),
+            ('CloseHandle', [ctypes.c_void_p], ctypes.c_int)):
+        function = getattr(kernel32, name)
+        function.argtypes, function.restype = argtypes, restype
+    return kernel32
+
+
+def start_as(user: str, password: str, command: list[str]) -> PROCESS_INFORMATION:
+    """Start ``command`` as the local account ``user`` (CreateProcessWithLogonW).
 
     Test-only Win32 declarations: graftling itself never starts a process as another account.
+    The caller closes both handles of the returned PROCESS_INFORMATION.
     """
     advapi32 = ctypes.WinDLL('advapi32', use_last_error=True)
-    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
     advapi32.CreateProcessWithLogonW.argtypes = [
         ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_wchar_p, ctypes.c_wchar_p,
         ctypes.c_uint32, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.POINTER(STARTUPINFOW),
         ctypes.POINTER(PROCESS_INFORMATION)]
     advapi32.CreateProcessWithLogonW.restype = ctypes.c_int
-    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
-    kernel32.WaitForSingleObject.restype = ctypes.c_uint32
-    kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
-    kernel32.GetExitCodeProcess.restype = ctypes.c_int
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    kernel32.CloseHandle.restype = ctypes.c_int
     startup = STARTUPINFOW(cb=ctypes.sizeof(STARTUPINFOW))
     information = PROCESS_INFORMATION()
     line = ctypes.create_unicode_buffer(subprocess.list2cmdline(command))
@@ -188,6 +251,13 @@ def run_as(user: str, password: str, command: list[str]) -> int:
         error = ctypes.get_last_error()
         pytest.fail(f'CreateProcessWithLogonW as {user} failed on this runner: {ctypes.FormatError(error)} '
                     f'({error}); the other-account case did not run')
+    return information
+
+
+def run_as(user: str, password: str, command: list[str]) -> int:
+    """Run ``command`` as the local account ``user`` to its end; return its exit code."""
+    kernel32 = _kernel32()
+    information = start_as(user, password, command)
     try:
         assert kernel32.WaitForSingleObject(information.hProcess, 120_000) == 0, 'the other-account probe hung'
         code = ctypes.c_uint32()
@@ -198,7 +268,9 @@ def run_as(user: str, password: str, command: list[str]) -> int:
         kernel32.CloseHandle(information.hProcess)
 
 
-def test_another_local_account_cannot_connect(tmp_path: Path) -> None:
+@pytest.fixture
+def other_account():
+    """A temporary local account (name, password), deleted afterwards."""
     user = 'g636' + secrets.token_hex(4)
     # 14 characters: net asks for confirmation above that; complexity: upper, lower, digit, symbol.
     password = 'Aa1!' + secrets.token_hex(5)
@@ -207,15 +279,78 @@ def test_another_local_account_cannot_connect(tmp_path: Path) -> None:
     if added.returncode != 0:
         pytest.skip(f'Requires the right to create a temporary local account: {added.stdout} {added.stderr}'.strip())
     try:
-        with worker_connection(tmp_path, lambda request: {}) as address:
-            name = _channel_windows.pipe_name(address)
-            # The probe works: the same account connects.
-            mine = subprocess.run(child(PROBE, name), timeout=60)
-            assert mine.returncode == 0
-            # Another account is refused by the pipe's DACL.
-            assert run_as(user, password, child(PROBE, name)) == _win32.ERROR_ACCESS_DENIED
+        yield user, password
     finally:
         subprocess.run(['net', 'user', user, '/delete'], capture_output=True, stdin=subprocess.DEVNULL)
+
+
+def test_another_local_account_cannot_connect(tmp_path: Path, other_account: tuple[str, str]) -> None:
+    with worker_connection(tmp_path, lambda request: {}) as address:
+        name = _channel_windows.pipe_name(address)
+        # The probe works: the same account connects.
+        mine = subprocess.run(child(PROBE, name), timeout=60)
+        assert mine.returncode == 0
+        # Another account is refused by the pipe's DACL: the Win32 error itself.
+        assert run_as(*other_account, child(PROBE, name)) == _win32.ERROR_ACCESS_DENIED
+
+
+def test_a_pipe_another_account_created_for_a_dead_hosts_address_gets_nothing(
+        tmp_path: Path, other_account: tuple[str, str]) -> None:
+    """After a host died, another account takes its pipe name with an open DACL (Spec review F1)."""
+    address = tmp_path / 'control-dead'
+    address.mkdir()
+    shared = tmp_path / 'squatter-log'
+    shared.mkdir()
+    # The other account may write its log here (Everyone: full control, inherited by the file).
+    granted = subprocess.run(['icacls', str(shared), '/grant', '*S-1-1-0:(OI)(CI)F'], capture_output=True,
+                             encoding='utf-8', errors='replace')
+    assert granted.returncode == 0, granted.stdout + granted.stderr
+    log = shared / 'log.txt'
+    kernel32 = _kernel32()
+    squatter = start_as(*other_account, child(SQUATTER, _channel_windows.pipe_name(str(address)), str(log)))
+    try:
+        deadline = time.monotonic() + 120
+        while not (log.exists() and 'ready' in log.read_text(encoding='utf-8')):
+            assert time.monotonic() < deadline, 'the squatter never became ready'
+            assert kernel32.WaitForSingleObject(squatter.hProcess, 0) != 0, \
+                f'the squatter ended: {log.read_text(encoding="utf-8") if log.exists() else "no log"}'
+            time.sleep(0.1)
+        assert not host_alive(str(address))
+        with pytest.raises(AgentsError) as error:
+            connection_operation(str(address), {'secret': 'request'}, authenticate=True, response_timeout=5)
+        assert error.value.code == 'authority-denied', error.value.message
+        time.sleep(3.5)  # the squatter checks each connection for 3 s
+        lines = log.read_text(encoding='utf-8').splitlines()
+        assert 'connected' in lines  # the caller reached the squatter's pipe ...
+        assert not [line for line in lines if line.startswith('read')]  # ... and sent it nothing
+    finally:
+        kernel32.TerminateProcess(squatter.hProcess, 1)
+        kernel32.WaitForSingleObject(squatter.hProcess, 30_000)
+        kernel32.CloseHandle(squatter.hThread)
+        kernel32.CloseHandle(squatter.hProcess)
+
+
+def test_a_caller_that_never_reads_a_large_reply_does_not_hold_the_close(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reply write is bounded (Spec review F2): close with no close_seconds still ends."""
+    monkeypatch.setattr(_channel_windows, 'OPERATION_TIMEOUT_SECONDS', 2.0)
+    replied = threading.Event()
+
+    def large(request: dict) -> dict:
+        replied.set()
+        return {'blob': 'x' * (4 * _win32.PIPE_BUFFER_BYTES)}
+
+    stuck = None
+    try:
+        with worker_connection(tmp_path, large) as address:
+            stuck = _win32.open_pipe(_channel_windows.pipe_name(address))
+            _win32.write_message(stuck, b'{"request": {}}', time.monotonic() + 10)
+            assert replied.wait(10)
+            closing = time.monotonic()
+        assert time.monotonic() - closing < 10  # the unread reply's write gave up at its 2 s bound
+    finally:
+        if stuck is not None:
+            _win32.close(stuck)
 
 
 class STARTUPINFOEXW(ctypes.Structure):

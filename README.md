@@ -580,7 +580,8 @@ After upgrading:
 - Native Sessions are not interchangeable between Runtimes. A child continues only on
   the Runtime it started on.
 - On Windows the owner connection is a named pipe that only the host's own user account
-  can open, so other local users are kept out as on POSIX. Which process may send a
+  can open, and a caller sends a request only to a pipe its own account owns, so other
+  local users can neither reach a host nor pose as one, as on POSIX. Which process may send a
   request is decided by its parent-process chain (and, for a Runtime the host started,
   by the Runtime's process tree), and on Windows that check is weaker than on POSIX
   against a deliberately hostile process of the same user: Windows lets such a process

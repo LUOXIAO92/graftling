@@ -18,6 +18,7 @@ raise :class:`OSError` carrying the Windows error.
 from __future__ import annotations
 
 import ctypes
+import time
 from typing import Any, Callable
 
 DWORD = ctypes.c_uint32
@@ -69,7 +70,11 @@ ERROR_PIPE_CONNECTED = 535
 ERROR_OPERATION_ABORTED = 995
 ERROR_IO_PENDING = 997
 # The pipe's other end is closed, or was never connected.
-PIPE_GONE = (ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_NOT_CONNECTED)
+PIPE_GONE = (ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_NOT_CONNECTED, ERROR_OPERATION_ABORTED)
+# Reading a pipe's owner (winnt.h READ_CONTROL, accctrl.h SE_KERNEL_OBJECT, winnt.h OWNER_SECURITY_INFORMATION).
+READ_CONTROL = 0x00020000
+SE_KERNEL_OBJECT = 6
+OWNER_SECURITY_INFORMATION = 0x1
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 # The calling process's token and its user (winnt.h TOKEN_QUERY, TOKEN_INFORMATION_CLASS TokenUser).
 TOKEN_QUERY = 0x8
@@ -271,6 +276,8 @@ def _api() -> Any:
             (advapi32.ConvertSidToStringSidW, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)], BOOL),
             (advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW,
              [ctypes.c_wchar_p, DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ULONG)], BOOL),
+            (advapi32.GetSecurityInfo,
+             [HANDLE, ctypes.c_int, DWORD] + [ctypes.POINTER(ctypes.c_void_p)] * 5, DWORD),
             # Job objects (635).
             (kernel32.CreateJobObjectW, [ctypes.c_void_p, ctypes.c_wchar_p], HANDLE),
             (kernel32.OpenJobObjectW, [DWORD, BOOL, ctypes.c_wchar_p], HANDLE),
@@ -682,16 +689,22 @@ def current_user_sid() -> str:
 def create_pipe(name: str, first: bool) -> int:
     """Create one instance of the pipe ``name`` and return its handle.
 
-    Duplex, message mode, overlapped, remote clients rejected, and a protected
-    DACL whose one entry admits this process's user: no other account can
-    connect. With ``first`` the call fails (ERROR_ACCESS_DENIED) when a pipe of
-    this name already exists in any process, so nobody can pre-empt the host.
+    Duplex, message mode, overlapped, remote clients rejected, owned by this
+    process's user, and a protected DACL whose one entry admits that user: no
+    other account can connect, and a client can check the owner
+    (:func:`pipe_owner_sid`). With ``first`` the call fails
+    (ERROR_ACCESS_DENIED) when a pipe of this name already exists in any
+    process, so no other process can pre-empt the host. A process of the same
+    user can still add instances to the host's pipe: the same-user trust the
+    owner connection already assumes.
     """
     kernel32, _, _, advapi32 = _api()
     descriptor = ctypes.c_void_p()
+    sid = current_user_sid()
+    # O:SID: this user owns it (not the Administrators group an elevated token would set);
     # D:P: a protected DACL (nothing inherited); (A;;GA;;;SID): all access for this user only.
     if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            f"D:P(A;;GA;;;{current_user_sid()})", SDDL_REVISION_1, ctypes.byref(descriptor), None):
+            f"O:{sid}D:P(A;;GA;;;{sid})", SDDL_REVISION_1, ctypes.byref(descriptor), None):
         _raise_last_error()
     try:
         attributes = SECURITY_ATTRIBUTES(ctypes.sizeof(SECURITY_ATTRIBUTES), descriptor.value, False)
@@ -756,25 +769,55 @@ def disconnect_pipe(handle: int) -> None:
         _raise_last_error()
 
 
-def open_pipe(name: str) -> int:
-    """Connect to the pipe ``name`` as a client in message read mode; return the handle.
+def open_pipe(name: str, exchange: bool = True) -> int:
+    """Connect to the pipe ``name`` as a client (overlapped); return the handle.
 
-    The server may identify this client, never impersonate it. The OSError's
-    ``winerror`` is ERROR_FILE_NOT_FOUND when there is no such pipe,
+    With ``exchange`` the handle reads and writes in message mode; without it
+    the handle may only read the pipe's security (READ_CONTROL), to learn its
+    owner. The server may identify this client, never impersonate it. The
+    OSError's ``winerror`` is ERROR_FILE_NOT_FOUND when there is no such pipe,
     ERROR_PIPE_BUSY when no instance is free and ERROR_ACCESS_DENIED when the
     pipe's DACL refuses this account.
     """
     kernel32 = _api()[0]
-    handle = kernel32.CreateFileW(name, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING,
-                                  SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, None)
+    access = GENERIC_READ | GENERIC_WRITE if exchange else READ_CONTROL
+    handle = kernel32.CreateFileW(name, access, 0, None, OPEN_EXISTING,
+                                  FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, None)
     if handle in (None, INVALID_HANDLE_VALUE):
         _raise_last_error()
     mode = DWORD(PIPE_READMODE_MESSAGE)
-    if not kernel32.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None):
+    if exchange and not kernel32.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None):
         error = ctypes.get_last_error()
         _close(handle)
         raise ctypes.WinError(error)
     return handle
+
+
+def pipe_owner_sid(handle: int) -> str:
+    """Return the owner of the pipe ``handle`` is connected to, as a SID string.
+
+    The host's pipe is owned by its user (:func:`create_pipe`); a pipe another
+    account created is owned by that account (or its Administrators group).
+    Raises OSError when the owner cannot be read.
+    """
+    kernel32, _, _, advapi32 = _api()
+    owner, descriptor = ctypes.c_void_p(), ctypes.c_void_p()
+    error = advapi32.GetSecurityInfo(handle, SE_KERNEL_OBJECT, OWNER_SECURITY_INFORMATION, ctypes.byref(owner),
+                                     None, None, None, ctypes.byref(descriptor))
+    if error:
+        raise ctypes.WinError(error)
+    try:
+        if not owner.value:
+            raise OSError("The pipe has no owner")
+        text = ctypes.c_void_p()
+        if not advapi32.ConvertSidToStringSidW(owner, ctypes.byref(text)):
+            _raise_last_error()
+        try:
+            return ctypes.wstring_at(text.value)
+        finally:
+            kernel32.LocalFree(text)
+    finally:
+        kernel32.LocalFree(descriptor)
 
 
 def wait_pipe(name: str, milliseconds: int) -> int:
@@ -799,23 +842,32 @@ def peek_pipe(handle: int) -> int:
     return left.value or available.value
 
 
-def _transfer(function: Any, handle: int, buffer: Any, size: int, overlapped_io: bool) -> tuple[int, bool]:
-    """Run ReadFile or WriteFile on ``handle`` to its end: (bytes moved, whether the message has more)."""
+def _transfer(function: Any, handle: int, buffer: Any, size: int, limit: float,
+              stopped: Callable[[], bool] | None) -> tuple[int, bool]:
+    """Run overlapped ReadFile or WriteFile on ``handle``: (bytes moved, whether the message has more).
+
+    The wait ends at ``limit`` (a ``time.monotonic()`` value) or when
+    ``stopped()`` turns true: the operation is then cancelled and OSError
+    ERROR_OPERATION_ABORTED (in ``PIPE_GONE``) raised, so a peer that never
+    reads or writes cannot hold the caller.
+    """
+    kernel32 = _api()[0]
     done = DWORD(0)
-    if not overlapped_io:
-        if function(handle, buffer, size, ctypes.byref(done), None):
-            return done.value, False
-        error = ctypes.get_last_error()
-        if error == ERROR_MORE_DATA:
-            return done.value, True
-        raise ctypes.WinError(error)
     overlapped = OVERLAPPED(hEvent=_event())
     try:
         if not function(handle, buffer, size, None, ctypes.byref(overlapped)):
             error = ctypes.get_last_error()
             if error not in (ERROR_IO_PENDING, ERROR_MORE_DATA):
                 raise ctypes.WinError(error)
-        if _api()[0].GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(done), True):
+        while True:
+            waited = kernel32.WaitForSingleObject(overlapped.hEvent, 50)
+            if waited == WAIT_OBJECT_0:
+                break
+            if waited != WAIT_TIMEOUT or time.monotonic() >= limit or (stopped is not None and stopped()):
+                kernel32.CancelIoEx(handle, ctypes.byref(overlapped))
+                break
+        # Waiting here also after a cancel: the OVERLAPPED and buffer must outlive the operation.
+        if kernel32.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(done), True):
             return done.value, False
         error = ctypes.get_last_error()
         if error == ERROR_MORE_DATA:
@@ -825,22 +877,22 @@ def _transfer(function: Any, handle: int, buffer: Any, size: int, overlapped_io:
         _close(overlapped.hEvent)
 
 
-def read_message(handle: int, overlapped_io: bool) -> bytes:
-    """Read one whole message from ``handle``; ``overlapped_io`` for a server instance."""
+def read_message(handle: int, limit: float, stopped: Callable[[], bool] | None = None) -> bytes:
+    """Read one whole message from the overlapped ``handle``, by ``limit`` (see :func:`_transfer`)."""
     parts = []
     size = max(peek_pipe(handle), 4096)
     while True:
         buffer = ctypes.create_string_buffer(size)
-        count, more = _transfer(_api()[0].ReadFile, handle, buffer, size, overlapped_io)
+        count, more = _transfer(_api()[0].ReadFile, handle, buffer, size, limit, stopped)
         parts.append(buffer.raw[:count])
         if not more:
             return b"".join(parts)
 
 
-def write_message(handle: int, data: bytes, overlapped_io: bool) -> None:
-    """Write ``data`` to ``handle`` as one message; ``overlapped_io`` for a server instance."""
+def write_message(handle: int, data: bytes, limit: float, stopped: Callable[[], bool] | None = None) -> None:
+    """Write ``data`` to the overlapped ``handle`` as one message, by ``limit`` (see :func:`_transfer`)."""
     count, _ = _transfer(_api()[0].WriteFile, handle, ctypes.create_string_buffer(data, len(data)), len(data),
-                         overlapped_io)
+                         limit, stopped)
     if count != len(data):
         raise OSError(f"Wrote {count} of {len(data)} bytes of a pipe message")
 

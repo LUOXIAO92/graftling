@@ -25,6 +25,15 @@ that withdrew reads the verdict: ``withdrawn`` is ``request-not-accepted``,
 kernel closes its pipe, so a caller waiting on an accepted request learns it at
 once (broken pipe) instead of polling whether the host lives.
 
+Host identity: the host's pipe is owned by its user. A caller reads the
+owner of the pipe it opened and sends nothing unless it is its own user, and
+:func:`host_alive` counts only such a pipe, so another account that creates
+the name after a host died cannot read or answer requests.
+
+Bounds: every read and write on a pipe waits at most OPERATION_TIMEOUT_SECONDS
+(a caller's request write: its response deadline; the host also stops at
+close), so a peer that never reads cannot hold a thread.
+
 Caller identity: the host reads the client's PID from the pipe
 (GetNamedPipeClientProcessId), opens that process and keeps it open until the
 exchange ends, so the PID cannot name another process while ``authenticate``
@@ -221,7 +230,7 @@ def _answer_request(
                 raise ValueError('A control connection must start with one request.')
             if authenticate is not None:
                 authenticate(pid)
-            if not _admit(handle):
+            if not _admit(handle, stop):
                 _await_disconnect(handle, stop)  # Let a caller that withdrew read the verdict.
                 return
             result = operate(body['request'])
@@ -240,7 +249,8 @@ def _answer_request(
         except BaseException as error:  # noqa: BLE001 - this reply must still be written
             reply = json.dumps({'reply': _unexpected(error)})
         try:
-            _win32.write_message(handle, reply.encode('utf-8'), True)
+            # Bounded: a caller that never reads a reply larger than the pipe's buffer cannot hold this thread.
+            _win32.write_message(handle, reply.encode('utf-8'), _bound(), stop.is_set)
         except OSError as error:
             if not _gone(error):
                 # The caller cannot be told; the host keeps why it was left waiting.
@@ -252,13 +262,18 @@ def _answer_request(
             _win32.close(process)
 
 
+def _bound() -> float:
+    """How long one host read or write may wait for its caller: OPERATION_TIMEOUT_SECONDS from now."""
+    return time.monotonic() + OPERATION_TIMEOUT_SECONDS
+
+
 def _receive(handle: int, stop: threading.Event) -> dict | None:
     """Return the caller's first message, or None when it leaves or sends nothing in time."""
-    deadline = time.monotonic() + OPERATION_TIMEOUT_SECONDS
+    deadline = _bound()
     while not stop.is_set() and time.monotonic() < deadline:
         try:
             if _win32.peek_pipe(handle):
-                return _decode(_win32.read_message(handle, True))
+                return _decode(_win32.read_message(handle, _bound(), stop.is_set))
         except OSError as error:
             if _gone(error):
                 return None
@@ -267,15 +282,15 @@ def _receive(handle: int, stop: threading.Event) -> dict | None:
     return None
 
 
-def _admit(handle: int) -> bool:
+def _admit(handle: int, stop: threading.Event) -> bool:
     """The admission point: accept unless the caller withdrew or left, and tell it which."""
     try:
         if _win32.peek_pipe(handle):
             # Only a withdraw may follow the request; whatever it is, nothing runs.
-            _win32.read_message(handle, True)
-            _win32.write_message(handle, json.dumps({'withdrawn': True}).encode('utf-8'), True)
+            _win32.read_message(handle, _bound(), stop.is_set)
+            _win32.write_message(handle, json.dumps({'withdrawn': True}).encode('utf-8'), _bound(), stop.is_set)
             return False
-        _win32.write_message(handle, json.dumps({'accepted': True}).encode('utf-8'), True)
+        _win32.write_message(handle, json.dumps({'accepted': True}).encode('utf-8'), _bound(), stop.is_set)
         return True
     except OSError as error:
         if _gone(error):
@@ -285,11 +300,12 @@ def _admit(handle: int) -> bool:
 
 def _await_disconnect(handle: int, stop: threading.Event) -> None:
     """Keep the instance until the caller has taken the reply and closed its end, bounded."""
-    deadline = time.monotonic() + OPERATION_TIMEOUT_SECONDS
+    deadline = _bound()
     while not stop.is_set() and time.monotonic() < deadline:
         try:
             if _win32.peek_pipe(handle):
-                _win32.read_message(handle, True)  # A late withdraw: the verdict was already sent.
+                # A late withdraw: the verdict was already sent.
+                _win32.read_message(handle, _bound(), stop.is_set)
         except OSError:
             return
         stop.wait(POLL_SECONDS)
@@ -304,7 +320,12 @@ def _decode(message: bytes) -> dict:
 
 
 def host_alive(address: str) -> bool:
-    """Whether the host's pipe exists; unobservable counts as alive."""
+    """Whether a pipe this user owns serves ``address``; unobservable counts as alive.
+
+    A pipe of the name that another account created, or whose DACL refuses
+    this user, is no host of this user's. Every instance busy, or an owner
+    that cannot be read, is unobservable.
+    """
     try:
         if not stat.S_ISDIR(os.stat(address).st_mode):
             return False
@@ -312,7 +333,27 @@ def host_alive(address: str) -> bool:
         return False
     except OSError:
         return True  # Unobservable here: never take a live host for a dead one.
-    return _win32.wait_pipe(pipe_name(address), 1) != _win32.ERROR_FILE_NOT_FOUND
+    try:
+        handle = _win32.open_pipe(pipe_name(address), exchange=False)
+    except OSError as error:
+        return getattr(error, 'winerror', None) not in (_win32.ERROR_FILE_NOT_FOUND, _win32.ERROR_ACCESS_DENIED)
+    try:
+        return _win32.pipe_owner_sid(handle) == _win32.current_user_sid()
+    except OSError:
+        return True  # Unobservable owner: never take a live host for a dead one.
+    finally:
+        _win32.close(handle)
+
+
+def _require_own_pipe(handle: int, address: str) -> None:
+    """Refuse a pipe this user does not own, or whose owner cannot be read, before sending anything."""
+    try:
+        owner = _win32.pipe_owner_sid(handle)
+    except OSError as error:
+        raise AgentsError('authority-denied',
+                          f'The control pipe of {address} cannot be verified as this user\'s.') from error
+    if owner != _win32.current_user_sid():
+        raise AgentsError('authority-denied', f'The control pipe of {address} belongs to another account.')
 
 
 def _connect(address: str, deadline: float) -> int:
@@ -354,9 +395,14 @@ def exchange(
     deadline = time.monotonic() + response_timeout
     handle = _connect(address, deadline)
     try:
+        # Only this user's host may read the request: after a host died, or in the
+        # moment its pipe closes, another account could have created the name.
+        _require_own_pipe(handle, address)
         try:
-            _win32.write_message(handle, json.dumps({'request': document}).encode('utf-8'), False)
+            _win32.write_message(handle, json.dumps({'request': document}).encode('utf-8'), deadline)
         except OSError as error:
+            if getattr(error, 'winerror', None) == _win32.ERROR_OPERATION_ABORTED:
+                raise AgentsError('request-not-accepted', 'The Session host did not accept the request.') from error
             if _gone(error):
                 raise AgentsError('request-not-accepted',
                                   'The Session control channel closed before the request.') from error
@@ -365,7 +411,8 @@ def exchange(
         withdraw_by = None
         while True:
             try:
-                body = _decode(_win32.read_message(handle, False)) if _win32.peek_pipe(handle) else None
+                body = (_decode(_win32.read_message(handle, time.monotonic() + OPERATION_TIMEOUT_SECONDS))
+                        if _win32.peek_pipe(handle) else None)
             except OSError as error:
                 if not _gone(error):
                     raise
@@ -389,7 +436,8 @@ def exchange(
                         raise TimeoutError('Session control timed out; delivery is unconfirmed.')
                 elif withdraw_by is None:
                     try:
-                        _win32.write_message(handle, json.dumps({'withdraw': True}).encode('utf-8'), False)
+                        _win32.write_message(handle, json.dumps({'withdraw': True}).encode('utf-8'),
+                                             now + WITHDRAW_SECONDS)
                     except OSError as error:
                         if not _gone(error):
                             raise
