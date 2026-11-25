@@ -9,6 +9,7 @@ import shutil
 import threading
 from typing import Any, Callable, Mapping
 
+from graftling.process_tree import tree_facts
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from graftling.runtime import RuntimeAdapterError
@@ -118,7 +119,7 @@ class ClaudeDriver:
         def created(session: str, pid: int) -> None:
             """Publish the exact native Session before model work begins."""
             run.events.session(session)
-            run.events.process(runtime_pid=pid)
+            run.events.process(runtime_pid=pid, **tree_facts(pid))
 
         settings = dict(run.settings)
         if settings.get('base_url') and not settings.get('api_key_env'):

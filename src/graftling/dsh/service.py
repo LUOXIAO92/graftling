@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 import queue
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -22,6 +21,7 @@ from typing import Iterable, Mapping
 from websockets.sync.client import connect
 
 from graftling.dsh.errors import DshError
+from graftling.process_tree import INTERRUPT, KILL, TERMINATE, OwnedTree, windows
 
 
 # The Gateway forwards Agent-scoped approval waterfalls over this one internal
@@ -74,6 +74,9 @@ class DshService:
         self.environment = environment
         self.profile_patch = profile_patch
         self.process: subprocess.Popen | None = None
+        # ``process``'s tree: a POSIX process group, or a Windows job that ends
+        # with this owner (kill-on-close, decision 3), which replaces the watcher there.
+        self.tree: OwnedTree | None = None
         self.watcher: subprocess.Popen | None = None
         self.watcher_pipe: int | None = None
         self.origin = ''
@@ -94,15 +97,19 @@ class DshService:
             argv = [self.executable, 'web']
             if self.profile_patch is not None:
                 argv = [self.executable, '--profile', 'web', '--patch', str(self.profile_patch)]
-            self.process = subprocess.Popen(
+            self.tree = OwnedTree(kill_on_close=True)
+            self.process = self.tree.start(
                 [*argv, '--no-open', '--port', '0'],
                 cwd=self.cwd, env=self.environment,
                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, start_new_session=True,
-                text=True, bufsize=1,
+                stderr=subprocess.STDOUT,
+                text=True, encoding='utf-8', bufsize=1,
             )
-            self._start_watcher()
+            if not windows():
+                self._start_watcher()
         except OSError as error:
+            if self.tree is not None and self.process is None:
+                self.tree.close()
             raise self.error_type('RUNTIME_START_FAILED', 'Cannot start DSH.') from error
 
         def drain() -> None:
@@ -146,18 +153,19 @@ class DshService:
             raise self.error_type('RUNTIME_CONNECTION_FAILED', 'DSH launch/authentication failed.') from None
 
     def _start_watcher(self) -> None:
-        """Start the process that stops this service's group if this process dies first.
+        """Start the process that stops this service's group if this process dies first (POSIX).
 
         ``close`` runs on a thread of this process, so a host killed before it
         finishes would otherwise leave ``dsh web`` running with nothing to stop
         it. Only this service holds the pipe's write end: it closes on exec, so
         no child inherits it, and it ends when this process does, however it ends.
+        Windows has no watcher: the service's job is killed on close (M15).
         """
         read_end, self.watcher_pipe = os.pipe()
         try:
-            self.watcher = subprocess.Popen(
+            self.watcher = OwnedTree().start(
                 [sys.executable, '-I', '-S', str(WATCHER), str(self.process.pid)],
-                cwd='/', env={}, stdin=read_end, stdout=subprocess.DEVNULL, start_new_session=True,
+                cwd='/', env={}, stdin=read_end, stdout=subprocess.DEVNULL,
             )
         finally:
             os.close(read_end)
@@ -342,11 +350,11 @@ class DshService:
         if self.socket is not None:
             self.socket.close()
         if self.process is not None:
-            for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGKILL):
+            for step in (INTERRUPT, TERMINATE, KILL):
                 if self.process.poll() is not None:
                     break
                 try:
-                    os.killpg(self.process.pid, sig)
+                    self.tree.signal(step)
                 except ProcessLookupError:
                     break
                 try:
@@ -356,5 +364,8 @@ class DshService:
             if self.process.poll() is None:
                 raise self.error_type('RUNTIME_SHUTDOWN_FAILED', 'Owned DSH service did not stop.',
                                           terminal_confirmed=False)
+        if self.tree is not None:
+            # Windows: kill-on-close ends any process the service left behind.
+            self.tree.close()
         self._dismiss_watcher()
         self.cookie = ''

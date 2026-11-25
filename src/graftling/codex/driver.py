@@ -8,6 +8,7 @@ import shutil
 import threading
 from typing import Any, Callable, Mapping, Sequence
 
+from graftling.process_tree import tree_facts
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from graftling.extra_tools import ExtraTool
@@ -205,7 +206,7 @@ class CodexDriver:
         def created(session: str, pid: int) -> None:
             """Record native identity before any model input can run."""
             run.events.session(session)
-            run.events.process(runtime_pid=pid)
+            run.events.process(runtime_pid=pid, **tree_facts(pid))
 
         options = {'connection': run.settings.get('connection', {}), 'agent_call': run.call,
                    'archive': run.archive, 'extra_fields': run.extra_fields}

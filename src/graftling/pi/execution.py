@@ -15,7 +15,6 @@ import os
 from pathlib import Path
 import queue
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -29,6 +28,7 @@ from graftling.approval import REVIEW_METHOD, review_failed
 from graftling.review import build_request, record_decision, review_call
 from graftling.child_env import child_environment, consumer_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
+from graftling.process_tree import KILL, TERMINATE, OwnedTree
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from graftling.runtime import RuntimeAdapterError, SessionStarted, credential_environment
 from graftling.tool import TOOL_NAME
@@ -156,6 +156,8 @@ class PiExecution:
         self.tool_descendants = directory / f'tool-descendants-{self._execution_id}.json'
         self.descendants = DescendantSampler(self.tool_descendants, self.member_marker)
         self.proc: subprocess.Popen | None = None
+        # The process tree of ``proc``: a POSIX process group or a Windows job (635).
+        self.tree: OwnedTree | None = None
         self.events: queue.Queue = queue.Queue()
         self.responses: dict[str, queue.Queue] = {}
         self.pending: dict[str, dict] = {}
@@ -572,9 +574,10 @@ class PiExecution:
             stderr_offset = stderr.tell()
             try:
                 self.descendants.prepare()
-                self.proc = subprocess.Popen(argv, cwd=self.request['worktree_path'], env=env,
-                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                             text=True, bufsize=1, start_new_session=True)
+                self.tree = resources.enter_context(OwnedTree())
+                self.proc = self.tree.start(argv, cwd=self.request['worktree_path'], env=env,
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            text=True, encoding='utf-8', bufsize=1)
                 self.record_process(self.proc.pid)
                 self.descendants.start(self.proc.pid)
 
@@ -694,11 +697,11 @@ class PiExecution:
                         try:
                             self.proc.wait(timeout=5)
                         except subprocess.TimeoutExpired:
-                            os.killpg(self.proc.pid, signal.SIGTERM)
+                            self.tree.signal(TERMINATE)
                             try:
                                 self.proc.wait(timeout=5)
                             except subprocess.TimeoutExpired:
-                                os.killpg(self.proc.pid, signal.SIGKILL)
+                                self.tree.signal(KILL)
                                 self.proc.wait(timeout=5)
                     if self.proc is not None and not native_idle:
                         raise self._shutdown_failure(original_error, stderr_offset)
@@ -755,13 +758,9 @@ class PiExecution:
         group_exited = None
         if code is not None:
             try:
-                os.killpg(self.proc.pid, 0)
-            except ProcessLookupError:
-                group_exited = True
+                group_exited = self.tree.gone()
             except OSError:
                 pass
-            else:
-                group_exited = False
         return {
             'terminal_confirmed': bool(native_idle and code is not None),
             'runtime_exit_code': code,
