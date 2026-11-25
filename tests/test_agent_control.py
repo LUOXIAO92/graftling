@@ -213,8 +213,17 @@ def test_repeated_controls_never_run_one_session_twice(root: Path) -> None:
     driver.start_gate = threading.Event()
     with ThreadPoolExecutor(max_workers=1) as pool:
         first = pool.submit(call, control, main, action='send', agent=agent, message='first')
+        # Bounded (632): a send that returns without recording its execution fails here with its
+        # own result instead of spinning until the run's timeout.
+        deadline = time.monotonic() + 10
         while len(json.loads((root / 'control/agents' / f'{agent}.json').read_text())['executions']) < 2:
-            pass
+            if first.done() or time.monotonic() >= deadline:
+                driver.start_gate.set()
+                try:
+                    outcome = first.result(timeout=5)
+                except Exception as error:  # the send's own exception, or the wait for it timing out
+                    outcome = error
+                pytest.fail(f'the background send recorded no second execution within 10 s: {outcome!r}')
         starting, failed = call(control, main, action='send', agent=agent, message='early')
         assert failed and starting['error']['code'] == 'starting'
         early_stop, failed = call(control, main, action='interrupt', agent=agent)

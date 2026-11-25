@@ -1,7 +1,7 @@
 # graftling's whole test suite on a GitHub-hosted Windows x64 runner (632, W0).
 # Tests that exercise a POSIX mechanism by design skip on Windows with a reason that
-# starts "POSIX-only: " (tests/posix_only.py); every other test runs. The JUnit file
-# and the job log are the evidence. No secret is used: this is a public repository.
+# starts "POSIX-only: " (tests/posix_only.py); every other test runs. The per-file JUnit
+# files, logs and records (files.json) and the job log are the evidence. No secret is used: this is a public repository.
 # Step names are stable: later Windows tasks and their step scripts judge them by name.
 name: Windows tests
 on:
@@ -72,20 +72,23 @@ jobs:
             node=(node --version); git=(git --version); codepage=(Get-Culture).TextInfo.ANSICodePage }
           $facts | ConvertTo-Json | Set-Content -Encoding utf8 test-results/windows/environment.json
           $facts | Format-Table -AutoSize | Out-String -Width 200
-      # The whole suite, never stopping at the first failure. -v names each test as it
-      # starts, so a hang shows which; faulthandler dumps every thread of a test that
-      # runs over 300 s; the step and job timeouts end anything longer. -rfEsxX lists
-      # every failure, error and skip with its reason. xunit1 keeps each test's file and
-      # line in the JUnit file. The exit code is kept beside it: 0 or 1 means the suite
-      # ran, anything else that it did not.
+      # The whole suite, one test file per pytest process (.github/run_test_files.py), so a
+      # hung file cannot take the run with it. Each file runs `pytest -u -p no:cacheprovider
+      # -v -rfEsxX --tb=short -o faulthandler_timeout=120 -o junit_family=xunit1` with its own
+      # JUnit file; -v names each test as it starts and faulthandler dumps every thread of a
+      # test running over 120 s. A file still running after 360 s is stopped with taskkill /T /F
+      # and recorded as hung with its last started test; the next file runs. 360 s is 3.5 times
+      # the slowest file on macOS (tests/test_host_shutdown_stop.py, 103 s; the whole suite
+      # takes 247 s there), leaving room for slower process starts on Windows while letting
+      # about ten hung files fit in the 70-minute total the driver keeps under the step bound.
+      # The driver's exit code is kept beside the results: 0 or 1 means it finished.
       - name: Run the graftling test suite
-        # macOS runs the suite in about 4 minutes; failing waits on Windows can take far longer.
         timeout-minutes: 75
         run: |
-          python -m pytest -p no:cacheprovider -v -rfEsxX --tb=short --durations=25 -o faulthandler_timeout=300 -o junit_family=xunit1 --junitxml=test-results/windows/junit.xml
+          python .github/run_test_files.py --out test-results/windows --file-limit 360 --total-limit 4200
           $code = $LASTEXITCODE
-          "$code" | Set-Content -Encoding ascii test-results/windows/pytest-exit-code.txt
-          "pytest exit code: $code"
+          "$code" | Set-Content -Encoding ascii test-results/windows/run-exit-code.txt
+          "run_test_files exit code: $code"
           exit $code
       - name: Retain JUnit results
         if: always()
