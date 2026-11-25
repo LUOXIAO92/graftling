@@ -3,10 +3,10 @@ from __future__ import annotations
 import copy
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import Any
 import yaml
+from graftling.durable import replace_durably
 from graftling.runtime import RuntimeAdapterError
 
 _SECRET = re.compile(
@@ -76,13 +76,5 @@ def yaml_sections(value: dict, known: dict) -> str:
 
 
 def write_text_durably(path: Path, text: str) -> None:
-    """Atomically replace one owner's nonsecret document with ``text``."""
-    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as stream:
-        temporary = Path(stream.name)
-        try:
-            stream.write(text)
-            stream.flush()
-            os.fsync(stream.fileno())
-            os.replace(temporary, path)
-        finally:
-            temporary.unlink(missing_ok=True)
+    """Atomically replace one owner's nonsecret document with ``text`` (UTF-8)."""
+    replace_durably(path, text.encode('utf-8'), sync_file=True, sync_directory=False)

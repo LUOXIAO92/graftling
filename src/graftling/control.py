@@ -55,7 +55,6 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import os
-import tempfile
 import threading
 import time
 import uuid
@@ -67,6 +66,7 @@ from typing import Any, Callable, Iterator, Mapping, Protocol
 from graftling.approval import DECISION_METHOD, check_reply
 from graftling.calls import pause
 from graftling.config import CONFIG_FILE, read_config, read_connections
+from graftling.durable import read_published, replace_durably
 from graftling.locks import exclusive, ignore_in_git
 from graftling.notices import needs_parent, notice_id
 from graftling.review import check_reviewer
@@ -207,23 +207,17 @@ def _alive(pid: object) -> bool:
     alive (496). A dead owner's Runtime is reparented, and its new parent may
     reap it late.
 
-    ponytail: PID reuse is not distinguished; the owned_at fact is kept for a
-    consumer that needs to compare process start times.
-    """
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    if os.name == "nt":
-        # ponytail: os.kill(pid, 0) would signal on Windows; assume alive.
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    from graftling.tool_descendants import has_exited
+    :func:`graftling.process.process_alive` answers on every platform; it
+    never uses ``os.kill(pid, 0)`` on Windows, where that terminates the
+    target (M12).
 
-    return not has_exited(pid)
+    ponytail: PID reuse is not distinguished; the owned_at fact is kept for a
+    consumer that needs to compare process start times (``process_alive``'s
+    ``started``).
+    """
+    from graftling.process import process_alive
+
+    return process_alive(pid, None)
 
 
 def _group_alive(pid: int) -> bool:
@@ -1734,7 +1728,7 @@ class AgentControl:
         found = []
         for path in sorted((self.root / "control" / "agents").glob("*.json")):
             try:
-                current = _running(json.loads(path.read_text(encoding="utf-8")))
+                current = _running(json.loads(read_published(path)))
                 if (current is not None and not _alive(current["process"].get("worker_pid"))
                         and _alive(current["process"].get("runtime_pid"))):
                     found.append(path.stem)
@@ -1873,7 +1867,7 @@ class AgentControl:
         found = []
         for path in (self.root / "control" / "agents").glob("*.json"):
             try:
-                summary = json.loads(path.read_text(encoding="utf-8"))
+                summary = json.loads(read_published(path))
             except (OSError, ValueError):
                 continue
             if summary.get("parent") != parent:
@@ -2026,10 +2020,8 @@ class AgentControl:
             path = self._path(agent)
             path.parent.mkdir(parents=True, exist_ok=True)
             self._ignore_in_git()
-            descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix='.import-')
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-                json.dump(dict(record), stream, ensure_ascii=False, indent=2, sort_keys=True)
-            os.replace(temporary, path)
+            text = json.dumps(dict(record), ensure_ascii=False, indent=2, sort_keys=True)
+            replace_durably(path, text.encode('utf-8'), sync_file=False, sync_directory=False)
         return self._document(record)
 
     def configure_stopped(self, agent: str, settings: Mapping[str, Any], caller: Caller) -> dict:
@@ -2055,7 +2047,7 @@ class AgentControl:
         count = 0
         for path in (self.root / 'control' / 'agents').glob('*.json'):
             try:
-                record = json.loads(path.read_text(encoding='utf-8'))
+                record = json.loads(read_published(path))
             except (OSError, ValueError):
                 continue
             if record.get('parent') == agent and _running(record) is not None:
@@ -2065,7 +2057,7 @@ class AgentControl:
     def _load(self, agent: str) -> dict | None:
         """Read one record without the lock, or ``None`` when absent."""
         try:
-            return json.loads(self._path(agent).read_text(encoding="utf-8"))
+            return json.loads(read_published(self._path(agent)))
         except (AgentsError, FileNotFoundError):
             return None
 
@@ -2108,10 +2100,7 @@ class AgentControl:
                     if text != before:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         self._ignore_in_git()
-                        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".record-")
-                        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                            stream.write(text)
-                        os.replace(temporary, path)
+                        replace_durably(path, text.encode("utf-8"), sync_file=False, sync_directory=False)
         finally:
             if outermost:
                 self._deliver_lost()

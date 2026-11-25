@@ -2,6 +2,11 @@
 
 Data files are never locked themselves; they are replaced atomically, so
 readers on any platform see either the old or the new document.
+
+A lock belongs to one open handle of the lock file: separate threads of one
+process exclude each other just like separate processes, and the kernel
+releases the lock when its holder ends. POSIX uses ``flock``; Windows uses
+``LockFileEx`` on byte 0, which waits without a time limit.
 """
 
 from __future__ import annotations
@@ -16,31 +21,69 @@ if os.name != "nt":
 else:
     import msvcrt
 
+    from graftling import _win32
+
 
 @contextmanager
 def exclusive(path: Path) -> Iterator[None]:
     """Hold an exclusive lock on ``path`` (created if missing) for the block.
 
-    POSIX ``flock`` locks belong to the open file, so separate threads of one
-    process exclude each other just like separate processes.
+    Waits as long as another holder keeps it.
     """
+    with _locked(path, wait=True):
+        yield
+
+
+@contextmanager
+def try_exclusive(path: Path) -> Iterator[bool]:
+    """Take an exclusive lock on ``path`` (created if missing) only if it is free.
+
+    Yields ``True`` while this block holds the lock, ``False`` at once when
+    another holder has it (nothing is held then).
+
+    Examples
+    --------
+    >>> with try_exclusive(directory / 'owner.lock') as owned:
+    ...     if not owned:
+    ...         raise RuntimeError('another owner is running')
+    """
+    with _locked(path, wait=False) as held:
+        yield held
+
+
+@contextmanager
+def _locked(path: Path, wait: bool) -> Iterator[bool]:
+    """Open ``path`` and lock it through this handle; yield whether it is held."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a+b") as stream:
-        if os.name != "nt":
-            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
-        else:
-            # ponytail: msvcrt.locking retries for about 10 s and then raises;
-            # no Windows host uses this core yet.
-            stream.seek(0)
-            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+        descriptor = stream.fileno()
+        if not _acquire(descriptor, wait):
+            yield False
+            return
         try:
-            yield
+            yield True
         finally:
-            if os.name != "nt":
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
-            else:
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+            _release(descriptor)
+
+
+def _acquire(descriptor: int, wait: bool) -> bool:
+    """Lock the open file; ``False`` only when ``wait`` is off and it is held elsewhere."""
+    if os.name == "nt":
+        return _win32.lock_file(msvcrt.get_osfhandle(descriptor), wait)
+
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    return True
+
+
+def _release(descriptor: int) -> None:
+    """Unlock the open file before it is closed."""
+    if os.name == "nt":
+        _win32.unlock_file(msvcrt.get_osfhandle(descriptor))
+    else:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
 
 
 def ignore_in_git(*directories: Path) -> None:

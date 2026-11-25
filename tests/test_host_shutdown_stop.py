@@ -319,6 +319,7 @@ import contextlib, importlib, json, os, subprocess, sys, threading, time
 from pathlib import Path
 import graftling
 from graftling import AgentsResult, Caller, bind, shutdown
+from graftling.durable import read_published
 
 kind, where, stubborn = os.environ['TEST_KIND'], Path(os.environ['TEST_WHERE']), os.environ['TEST_STUBBORN']
 host = importlib.import_module(f'graftling.{kind}.host')
@@ -387,7 +388,7 @@ def acknowledgements(notices, agent):
     identity = next(iter(notices.waiting))
     yield json.dumps({'ack': identity, 'queued': True})
     record = where / 'data' / 'control' / 'agents' / f'{agent}.json'
-    while json.loads(record.read_text())['executions'][-1].get('notification') != 'held':
+    while json.loads(read_published(record))['executions'][-1].get('notification') != 'held':
         time.sleep(0.01)
     facts['acknowledged'] = agent
     (where / 'facts.json').write_text(json.dumps(facts))
@@ -443,7 +444,7 @@ def started(*arguments):
     third = bind(control, Caller('runtime-mcp', first))({'action': 'create', 'runtime': 'claude', 'instruction': 'three'}).document['agent']
     for agent in (first, second, third):
         record = where / 'data' / 'control' / 'agents' / f'{agent}.json'
-        while not json.loads(record.read_text())['executions'][-1]['started']:
+        while not json.loads(read_published(record))['executions'][-1]['started']:
             time.sleep(0.01)
     pending, owned = list(operate({'action': 'status'}).document['result']['agents']), []
     while pending:

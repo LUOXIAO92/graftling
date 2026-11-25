@@ -14,6 +14,7 @@ import pytest
 
 import graftling
 from graftling import AgentControl, AgentsError, Caller, ExecutionEvents
+from graftling.durable import read_published
 from posix_only import require_posix
 
 
@@ -214,9 +215,12 @@ def test_repeated_controls_never_run_one_session_twice(root: Path) -> None:
     with ThreadPoolExecutor(max_workers=1) as pool:
         first = pool.submit(call, control, main, action='send', agent=agent, message='first')
         # Bounded (632): a send that returns without recording its execution fails here with its
-        # own result instead of spinning until the run's timeout.
+        # own result instead of spinning until the run's timeout. The record is read as graftling's
+        # lock-free readers read it (634: Windows may refuse an open while the record is renamed
+        # over), and the poll pauses so it does not starve the writer.
         deadline = time.monotonic() + 10
-        while len(json.loads((root / 'control/agents' / f'{agent}.json').read_text())['executions']) < 2:
+        while len(json.loads(read_published(root / 'control/agents' / f'{agent}.json'))['executions']) < 2:
+            time.sleep(0.01)
             if first.done() or time.monotonic() >= deadline:
                 driver.start_gate.set()
                 try:

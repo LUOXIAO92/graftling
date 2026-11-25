@@ -15,11 +15,11 @@ import json
 import operator
 import os
 from pathlib import Path
-import tempfile
 import threading
 from typing import Callable, Iterator
 
 from graftling.config import read_config
+from graftling.durable import open_published, read_published, replace_durably, require_change_detection
 from graftling.locks import exclusive, ignore_in_git
 
 from .protocol import (
@@ -51,7 +51,7 @@ def native_session_files(root: Path) -> list[Path]:
     files = set()
     for path in root.glob('native/*/session.yml'):
         try:
-            record = yaml.safe_load(path.read_text(encoding='utf-8'))
+            record = yaml.safe_load(read_published(path))
             if not isinstance(record, dict) or not record.get('session'):
                 continue
             activity = record.get('activity')
@@ -92,23 +92,8 @@ def _encode(value: object) -> str:
 
 
 def _replace(path: Path, content: bytes) -> None:
-    """Publish a fully synchronized file atomically on supported POSIX hosts."""
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    """Publish a fully synchronized file atomically, its directory entry included."""
+    replace_durably(path, content, sync_file=True, sync_directory=True)
 
 
 # How every first line this module writes begins (``_encode`` is compact, ``archiveVersion`` and ``header`` lead).
@@ -124,7 +109,7 @@ def _archived_header(path: Path) -> dict:
     shape, or a header that does not decode from its prefix, is read whole as
     before, with the same errors. Opening the archive itself still reads it all.
     """
-    with path.open('rb') as stream:
+    with open_published(path) as stream:
         data = stream.read(_HEADER_READ)
         while data.startswith(_HEADER_PREFIX):
             line, newline, _ = data.partition(b'\n')
@@ -267,8 +252,10 @@ class JsonlSessionStore:
         """
         self.path = Path(path)
         self.event_fields = event_fields
-        # The file this snapshot was read from or written as, kept open so
-        # its identity cannot be reused, and its (inode, size, mtime) then.
+        require_change_detection(self.path.parent)
+        # The file this snapshot was read from or written as, kept open on
+        # POSIX so its identity cannot be reused, and its (inode, size, mtime)
+        # then. Windows holds nothing (see ``_hold``).
         self._held = None
         self._identity: tuple | None = None
         self._depth = 0
@@ -286,6 +273,7 @@ class JsonlSessionStore:
         header = _redacted(header)
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        require_change_detection(path.parent)
         if path.parent.parent.name == 'sessions':  # the archive_path layout
             ignore_in_git(path.parent.parent)
         with exclusive(path.with_suffix('.lock')):
@@ -300,7 +288,7 @@ class JsonlSessionStore:
 
     def _load(self) -> None:
         """Read one atomic snapshot and validate its protocol and identities."""
-        stream = self.path.open('rb')
+        stream = open_published(self.path)
         try:
             lines = stream.read().decode('utf-8').split('\n')
             identity = _identity(os.fstat(stream.fileno()))
@@ -332,9 +320,18 @@ class JsonlSessionStore:
             held.close()
 
     def _hold(self, stream, identity: tuple) -> None:
-        """Keep the file the snapshot matches open, so its inode is not reused."""
+        """Keep the file the snapshot matches open, so its inode is not reused.
+
+        Windows cannot replace a file another handle holds open, so there the
+        stream is closed at once: NTFS and ReFS file identifiers carry a reuse
+        sequence, so the identity stays sound without pinning, and other
+        volumes are refused (``require_change_detection``).
+        """
         if self._held is not None:
             self._held.close()
+        if os.name == 'nt':
+            stream.close()
+            stream = None
         self._held, self._identity = stream, identity
 
     def _current(self) -> bool:
@@ -727,7 +724,8 @@ class JsonlSessionStore:
             c not in '0123456789abcdef' for c in digest
         ):
             raise ValueError('Invalid attachment digest.')
-        content = (self.path.parent / 'attachments' / digest).read_bytes()
+        with open_published(self.path.parent / 'attachments' / digest) as stream:
+            content = stream.read()
         if sha256(content).hexdigest() != digest:
             raise ValueError('Attachment digest mismatch.')
         return content

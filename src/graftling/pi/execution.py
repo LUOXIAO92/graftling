@@ -19,12 +19,12 @@ import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import uuid
 
-import tempfile
-
 from graftling.links import require_symbolic_links
+from graftling.durable import replace_durably
 from graftling.models import pi_default_keys, write_key_reference
 from graftling.approval import REVIEW_METHOD, review_failed
 from graftling.review import build_request, record_decision, review_call
@@ -1022,16 +1022,8 @@ def _write_yaml(path: Path, document: dict) -> None:
     """Atomically replace one YAML record so a reader never sees a partial file."""
     import yaml
 
-    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix='.' + path.name + '.', suffix='.tmp')
-    try:
-        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-            yaml.safe_dump(document, stream, sort_keys=False, allow_unicode=True)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    text = yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
+    replace_durably(path, text.encode('utf-8'), sync_file=True, sync_directory=False)
 
 
 def _git_identity(worktree: Path) -> dict[str, str]:

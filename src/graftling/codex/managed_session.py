@@ -26,6 +26,7 @@ from graftling.runtime import RuntimeAdapterError
 from .app_server import CodexAppServer, CodexExecution, CodexServerRequest
 from graftling.child_env import child_environment, consumer_environment, is_credential_name
 from graftling.connection import CONNECTION_ENV
+from graftling.durable import replace_durably
 from graftling.extra_tools import ExtraTool, descriptor_environment, extra_tool_table
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
@@ -855,25 +856,8 @@ class CodexManagedExecution:
 
     def _write_session(self, document: dict) -> None:
         """Atomically retain native identity before reporting Session creation."""
-        import tempfile
-
-        path = self.directory / 'session.yml'
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(yaml.safe_dump(document).encode())
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            descriptor = os.open(self.directory, os.O_RDONLY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        replace_durably(self.directory / 'session.yml', yaml.safe_dump(document).encode(),
+                        sync_file=True, sync_directory=True)
 
     def session_archive(self, session: object) -> object | None:
         """Collect the native rollout into the bound archive, if any."""
