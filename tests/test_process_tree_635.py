@@ -519,3 +519,24 @@ def test_the_windows_branch_with_a_stand_in_job_api(monkeypatch) -> None:
     service.adopt(me)
     assert jobs.shared[me] is False
     service.close()
+
+
+def test_the_codex_service_is_killed_when_its_tree_cannot_adopt_it(tmp_path: Path, monkeypatch) -> None:
+    """codex/app_server.py: a failed adopt kills the started service before waiting for it, so the
+    start fails at once instead of waiting on a suspended (Windows) or running (POSIX) process."""
+    import asyncio
+
+    from graftling.codex.app_server import CodexAppServer
+    from graftling.codex.context import CodexAdapterError
+
+    def refuse(self, pid: int) -> None:
+        raise OSError('stand-in: the process cannot be opened')
+
+    monkeypatch.setattr(OwnedTree, 'adopt', refuse)
+    service = CodexAppServer(cwd=tmp_path, command=[sys.executable, '-c', 'import time; time.sleep(60)'],
+                             environment={'CODEX_HOME': str(tmp_path / 'codex-home')})
+    started = time.monotonic()
+    with pytest.raises(CodexAdapterError) as failed:
+        asyncio.run(asyncio.wait_for(service.__aenter__(), 30))
+    assert failed.value.code == 'RUNTIME_START_FAILED' and 'cannot be opened' in str(failed.value)
+    assert time.monotonic() - started < 20

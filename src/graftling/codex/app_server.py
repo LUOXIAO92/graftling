@@ -244,8 +244,13 @@ class CodexAppServer:
             )
             try:
                 tree.adopt(process.pid)
-            except OSError:
-                await process.wait()  # adopt terminated it
+            except BaseException:
+                # As OwnedTree.start: adopt may fail before it could terminate the suspended child.
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
                 raise
         except (OSError, ValueError) as error:
             if tree is not None:
