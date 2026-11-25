@@ -11,6 +11,7 @@ import shutil
 import threading
 from typing import Any, Mapping
 
+from graftling.process_tree import tree_facts
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from graftling.models import pi_destination, pi_named_keys, pi_offers
@@ -229,7 +230,7 @@ class PiDriver:
         def created(session: str, pid: int) -> None:
             """Publish the exact native Session before model work begins."""
             run.events.session(session)
-            run.events.process(runtime_pid=pid)
+            run.events.process(runtime_pid=pid, **tree_facts(pid))
 
         def framed(notice: Mapping[str, Any]) -> str:
             """Name the child and this parent, as the Claude and Codex bindings do."""
@@ -257,7 +258,7 @@ class PiDriver:
         turn.agent_call = run.call
         turn.parent_notice = lambda message, details: (run.events.request(details), {'delivery': 'retained'})[1]
         turn.record_process = lambda pid, outcome=None: (
-            run.events.process(runtime_pid=pid) if outcome is None else run.events.process(runtime_exit=outcome))
+            run.events.process(runtime_pid=pid, **tree_facts(pid)) if outcome is None else run.events.process(runtime_exit=outcome))
         if notice:
             turn.unseen.append({'text': prompt, 'notice': notice})
 

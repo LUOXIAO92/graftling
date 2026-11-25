@@ -10,9 +10,7 @@ import json
 import os
 from pathlib import Path
 import queue
-import select
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -32,6 +30,7 @@ from graftling import SessionArchive
 from graftling.sessions.claude_history import read_records
 from graftling.child_env import child_environment, consumer_environment
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
+from graftling.process_tree import KILL, TERMINATE, OwnedTree
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from graftling.connection import CONNECTION_ENV
 from .settings import GATEWAY_EXCLUDED, GATEWAY_SETTING_SOURCES, login_variables
@@ -95,55 +94,81 @@ def tool_probe_environment(environment: dict, config_dir: Path) -> dict:
     return probe
 
 
+def _pump(stream, chunks: queue.Queue) -> None:
+    """Forward ``stream``'s output to ``chunks`` as ``(stream, bytes)``; empty bytes mark its end."""
+    try:
+        while True:
+            chunk = os.read(stream.fileno(), 65536)
+            chunks.put((stream, chunk))
+            if not chunk:
+                return
+    except (OSError, ValueError):
+        chunks.put((stream, b''))
+
+
 def read_init_tools(argv: list[str], environment: dict, cwd: Path,
                     timeout: float = TOOL_PROBE_TIMEOUT_SECONDS) -> tuple[list[str] | None, str]:
-    """Start ``argv``, send one message, return (system-init tools, cause); stop the group at init.
+    """Start ``argv``, send one message, return (system-init tools, cause); stop the tree at init.
 
     No model call is made: the init event precedes the request, the process is
     stopped once it arrives, and the probe has no credential and a closed base URL.
+    One reader thread per pipe, since ``select`` waits on pipes only on POSIX (M2).
     """
+    tree = None
     try:
-        proc = subprocess.Popen(argv, cwd=cwd, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, start_new_session=True)
+        tree = OwnedTree()
+        proc = tree.start(argv, cwd=cwd, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE)
     except OSError as error:
+        if tree is not None:
+            tree.close()
         return None, f'could not start {argv[0]}: {type(error).__name__}'
     deadline, buffer, err, init = time.monotonic() + timeout, b'', b'', None
+    chunks: queue.Queue = queue.Queue()
+    readers = [threading.Thread(target=_pump, args=(stream, chunks), daemon=True)
+               for stream in (proc.stdout, proc.stderr)]
+    for reader in readers:
+        reader.start()
     try:
         try:
             proc.stdin.write(b'{"type": "user", "message": {"role": "user", "content": "."}}\n')
             proc.stdin.flush()
         except OSError:
             pass
-        streams = [proc.stdout, proc.stderr]
-        while streams and init is None and time.monotonic() < deadline:
-            ready, _, _ = select.select(streams, [], [], min(0.5, max(0.0, deadline - time.monotonic())))
-            for stream in ready:
-                chunk = os.read(stream.fileno(), 65536)
-                if not chunk:
-                    streams.remove(stream)
-                elif stream is proc.stderr:
-                    err = (err + chunk)[-2000:]
-                else:
-                    buffer += chunk
-                    while init is None and b'\n' in buffer:
-                        line, buffer = buffer.split(b'\n', 1)
-                        try:
-                            event = json.loads(line)
-                        except ValueError:
-                            continue
-                        if isinstance(event, dict) and event.get('type') == 'system' and event.get('subtype') == 'init':
-                            init = event
-    finally:
-        for sig in (signal.SIGTERM, signal.SIGKILL):
+        open_streams = len(readers)
+        while open_streams and init is None and time.monotonic() < deadline:
             try:
-                os.killpg(proc.pid, sig)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                proc.wait(5)
-                break
-            except subprocess.TimeoutExpired:
+                stream, chunk = chunks.get(timeout=min(0.5, max(0.0, deadline - time.monotonic())))
+            except queue.Empty:
                 continue
+            if not chunk:
+                open_streams -= 1
+            elif stream is proc.stderr:
+                err = (err + chunk)[-2000:]
+            else:
+                buffer += chunk
+                while init is None and b'\n' in buffer:
+                    line, buffer = buffer.split(b'\n', 1)
+                    try:
+                        event = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(event, dict) and event.get('type') == 'system' and event.get('subtype') == 'init':
+                        init = event
+    finally:
+        with tree:
+            for step in (TERMINATE, KILL):
+                try:
+                    tree.signal(step)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                try:
+                    proc.wait(5)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        for reader in readers:
+            reader.join(5)
         for stream in (proc.stdin, proc.stdout, proc.stderr):
             stream.close()
     if init is None:
@@ -265,6 +290,8 @@ class ClaudeExecution:
         self.tool_descendants = directory / f'tool-descendants-{self._execution_id}.json'
         self.descendants = DescendantSampler(self.tool_descendants, self.member_marker)
         self.proc: subprocess.Popen | None = None
+        # The process tree of ``proc``: a POSIX process group or a Windows job (635).
+        self.tree: OwnedTree | None = None
         self.events: queue.Queue = queue.Queue()
         # Native control requests in arrival order, answered ahead of the
         # collection backlog; ``events`` still archives them in native order.
@@ -1158,9 +1185,10 @@ class ClaudeExecution:
                 self.diagnostics['launch'] = launch_projection(argv)
                 self._save_diagnostics()
                 self.descendants.prepare()
-                self.proc = subprocess.Popen(argv, cwd=self.request['worktree_path'], env=environment,
-                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                             text=True, bufsize=1, start_new_session=True)
+                self.tree = resources.enter_context(OwnedTree())
+                self.proc = self.tree.start(argv, cwd=self.request['worktree_path'], env=environment,
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                            text=True, encoding='utf-8', bufsize=1)
                 self.diagnostics['popen_returned'] = True
                 self._save_diagnostics()
                 self.record_process(self.proc.pid)
@@ -1547,10 +1575,10 @@ class ClaudeExecution:
             except subprocess.TimeoutExpired:
                 pass
             # A normal CLI exit may leave a background Bash child. The entire
-            # owned group must disappear before Runner may release the Worker.
-            for sig in (signal.SIGTERM, signal.SIGKILL):
+            # owned tree must disappear before Runner may release the Worker.
+            for step in (TERMINATE, KILL):
                 try:
-                    os.killpg(self.proc.pid, sig)
+                    self.tree.signal(step)
                 except ProcessLookupError:
                     break
                 try:
@@ -1559,16 +1587,12 @@ class ClaudeExecution:
                     continue
                 deadline = time.monotonic() + 2
                 while time.monotonic() < deadline:
-                    try:
-                        os.killpg(self.proc.pid, 0)
-                    except ProcessLookupError:
+                    if self.tree.gone():
                         self.terminal_confirmed = True
                         return
                     time.sleep(0.02)
             self.proc.wait(timeout=5)
-            try:
-                os.killpg(self.proc.pid, 0)
-            except ProcessLookupError:
+            if self.tree.gone():
                 self.terminal_confirmed = True
             if not self.terminal_confirmed:
                 raise OSError('owned process group remains')

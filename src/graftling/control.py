@@ -220,18 +220,50 @@ def _alive(pid: object) -> bool:
     return process_alive(pid, None)
 
 
-def _group_alive(pid: int) -> bool:
-    """Return whether the process group led by Runtime ``pid`` still has a member.
+def _group_alive(process: Mapping[str, Any]) -> bool:
+    """Return whether the Runtime's process tree, from an execution's ``process`` facts, has a member.
 
-    The Runtime runs as a process-group leader, so its children may outlive it.
+    The Runtime leads its tree, so its children may outlive it. POSIX: the
+    process group led by ``runtime_pid``. Windows: the job named by
+    ``runtime_job``, opened by name (635); when no job is recorded or none is
+    open under that name, the recorded Runtime itself (``process_alive``).
     """
+    from graftling.process_tree import OwnedTree, windows
+
+    if not windows():
+        try:
+            return not OwnedTree.open(pid=process["runtime_pid"]).gone()
+        except PermissionError:
+            return True
+    job = process.get("runtime_job")
+    if isinstance(job, str) and job:
+        try:
+            with OwnedTree.open(pid=process.get("runtime_pid"), name=job) as tree:
+                return not tree.gone()
+        except OSError:
+            pass
+    return _alive(process.get("runtime_pid"))
+
+
+def _runtime_alive(process: Mapping[str, Any]) -> bool:
+    """Return whether the recorded Runtime process lives, from an execution's ``process`` facts.
+
+    POSIX, or no recorded ``runtime_job``: ``_alive(runtime_pid)``. Windows with
+    a job open under the recorded name: the PID must also be in that job, so a
+    reused PID is not taken for the Runtime (635).
+    """
+    from graftling.process_tree import OwnedTree, windows
+
+    pid = process.get("runtime_pid")
+    job = process.get("runtime_job")
+    alive = _alive(pid)
+    if not alive or not windows() or not isinstance(job, str) or not job:
+        return alive
     try:
-        os.killpg(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
+        with OwnedTree.open(pid=pid, name=job) as tree:
+            return tree.contains(pid)
+    except OSError:
         return True
-    return True
 
 
 def _discover_models(connection: Mapping[str, Any]) -> dict:
@@ -408,6 +440,10 @@ class ExecutionEvents:
     def process(self, **facts: Any) -> None:
         """Record process facts such as ``runtime_pid`` and ``owned_at``.
 
+        ``runtime_job`` names the Windows job holding the Runtime's process tree
+        (``graftling.process_tree``, 635); a later host opens it by name to probe
+        or stop a Runtime its owner left running. POSIX records have no such
+        field: the group is named by ``runtime_pid``.
         ``tool_marker`` is the execution's ``GRAFTLING_MEMBER_RUN`` value; tool
         processes that left the Runtime's group carry it (457).
         ``tool_descendants`` is the absolute path of the owner's record of the
@@ -419,7 +455,7 @@ class ExecutionEvents:
         reported than requested, which the run went on under (578); ``status``
         shows it only while it is the latest execution's report.
         """
-        allowed = {"worker_pid", "runtime_pid", "owned_at", "runtime_exit", "tool_marker",
+        allowed = {"worker_pid", "runtime_pid", "runtime_job", "owned_at", "runtime_exit", "tool_marker",
                    "tool_descendants", "tool_check", "resolved_model", "permission_mode"}
         if set(facts) - allowed:
             raise ValueError("unknown process fact")
@@ -1654,7 +1690,7 @@ class AgentControl:
                 raise AgentsError("termination-unconfirmed",
                                   f"Execution {execution['id']} lacks a recorded worker or Runtime process; "
                                   "its end cannot be verified.")
-            if any(_alive(pid) for pid in facts.values()) or _group_alive(facts["runtime_pid"]):
+            if any(_alive(pid) for pid in facts.values()) or _group_alive(process):
                 raise AgentsError("termination-unconfirmed",
                                   f"A recorded process of execution {execution['id']} is still running.")
             evidence[execution["id"]] = {**facts, "worker_alive": False, "runtime_alive": False}
@@ -1730,7 +1766,7 @@ class AgentControl:
             try:
                 current = _running(json.loads(read_published(path)))
                 if (current is not None and not _alive(current["process"].get("worker_pid"))
-                        and _alive(current["process"].get("runtime_pid"))):
+                        and _runtime_alive(current["process"])):
                     found.append(path.stem)
             except (OSError, ValueError, KeyError, TypeError):
                 continue
@@ -2128,7 +2164,7 @@ class AgentControl:
         current = _running(record)
         if current is None or _alive(current["process"].get("worker_pid")):
             return
-        if _alive(current["process"].get("runtime_pid")):
+        if _runtime_alive(current["process"]):
             current["diagnostic"] = "owner-exited; the Runtime process is still running"
             return
         current.update(

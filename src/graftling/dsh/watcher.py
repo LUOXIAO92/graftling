@@ -9,6 +9,9 @@ would stop the group, since the owner's own stop was a thread in that process.
 Standard library only, no inherited environment, and stderr is the owner's. In a
 Claude host that is ``host.log``, so these lines are the record a killed host
 cannot write.
+
+POSIX only. On Windows the service's job is killed when its owner's handle
+closes, so the kernel does this script's work and it is never started (M15, 635).
 """
 from __future__ import annotations
 
@@ -66,6 +69,8 @@ def stop_group(pid: int) -> bool:
 
 def main() -> None:
     """Wait for the owner's word or its death, and exit 1 only if the group could not be stopped."""
+    if os.name == 'nt':
+        sys.exit('agents DSH watcher: POSIX only; on Windows the service job is killed on close')
     pid = int(sys.argv[1])
     if os.read(0, 1) or not group_exists(pid):
         return

@@ -9,9 +9,11 @@ paths reach. Types are spelled with fixed sizes (``DWORD`` is 32 bits) because
 The process functions (633, W1) open the process with limited query rights,
 close the handle on every path, and raise :class:`OSError` or return ``None``
 as documented. The file functions (634, W2) lock a lock file through an open
-handle, rename with write-through, and describe a volume. The pipe functions
-(636, W4) create, connect, read and write the owner connection's named pipe and
-pin its client process; they raise :class:`OSError` carrying the Windows error.
+handle, rename with write-through, and describe a volume. The job functions
+(635, W3) create, open, fill, list, probe and terminate the Job Objects behind
+``graftling.process_tree``. The pipe functions (636, W4) create, connect, read
+and write the owner connection's named pipe and pin its client process; they
+raise :class:`OSError` carrying the Windows error.
 """
 from __future__ import annotations
 
@@ -140,6 +142,80 @@ class UNICODE_STRING(ctypes.Structure):
                 ("Buffer", ctypes.c_void_p)]
 
 
+# Job objects (635, 629 advice 3.3): access rights (winnt.h), limits, information
+# classes (JOBOBJECTINFOCLASS) and process creation flags (winbase.h).
+JOB_OBJECT_ASSIGN_PROCESS = 0x0001
+JOB_OBJECT_SET_ATTRIBUTES = 0x0002
+JOB_OBJECT_QUERY = 0x0004
+JOB_OBJECT_TERMINATE = 0x0008
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION = 1
+JOB_OBJECT_BASIC_PROCESS_ID_LIST = 3
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+PROCESS_TERMINATE = 0x0001
+PROCESS_DUP_HANDLE = 0x0040
+PROCESS_SET_QUOTA = 0x0100
+PROCESS_SUSPEND_RESUME = 0x0800
+CREATE_SUSPENDED = 0x00000004
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+CREATE_NO_WINDOW = 0x08000000
+ERROR_FILE_NOT_FOUND = 2
+ERROR_ALREADY_EXISTS = 183
+ERROR_MORE_DATA = 234
+
+
+class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+    """``JOBOBJECT_BASIC_LIMIT_INFORMATION``; 64 bytes on 64-bit Windows."""
+
+    _fields_ = [
+        ("PerProcessUserTimeLimit", ctypes.c_int64),
+        ("PerJobUserTimeLimit", ctypes.c_int64),
+        ("LimitFlags", DWORD),
+        ("MinimumWorkingSetSize", ctypes.c_size_t),
+        ("MaximumWorkingSetSize", ctypes.c_size_t),
+        ("ActiveProcessLimit", DWORD),
+        ("Affinity", ctypes.c_size_t),
+        ("PriorityClass", DWORD),
+        ("SchedulingClass", DWORD),
+    ]
+
+
+class IO_COUNTERS(ctypes.Structure):
+    """``IO_COUNTERS``: six 64-bit counters."""
+
+    _fields_ = [(name, ctypes.c_uint64) for name in (
+        "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+        "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+
+class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    """``JOBOBJECT_EXTENDED_LIMIT_INFORMATION``; 144 bytes on 64-bit Windows."""
+
+    _fields_ = [
+        ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+        ("IoInfo", IO_COUNTERS),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+
+class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
+    """``JOBOBJECT_BASIC_ACCOUNTING_INFORMATION``; 48 bytes."""
+
+    _fields_ = [
+        ("TotalUserTime", ctypes.c_int64),
+        ("TotalKernelTime", ctypes.c_int64),
+        ("ThisPeriodTotalUserTime", ctypes.c_int64),
+        ("ThisPeriodTotalKernelTime", ctypes.c_int64),
+        ("TotalPageFaultCount", DWORD),
+        ("TotalProcesses", DWORD),
+        ("ActiveProcesses", DWORD),
+        ("TotalTerminatedProcesses", DWORD),
+    ]
+
+
 def _api() -> Any:
     """Load kernel32, shell32, ntdll and advapi32 once and declare the functions used here."""
     if not hasattr(_api, "loaded"):
@@ -188,7 +264,6 @@ def _api() -> Any:
             (kernel32.CreateEventW, [ctypes.c_void_p, BOOL, BOOL, ctypes.c_wchar_p], HANDLE),
             (kernel32.GetOverlappedResult, [HANDLE, overlapped, ctypes.POINTER(DWORD), BOOL], BOOL),
             (kernel32.CancelIoEx, [HANDLE, overlapped], BOOL),
-            (kernel32.GetCurrentProcess, [], HANDLE),
             (kernel32.GetSystemTimePreciseAsFileTime, [ctypes.POINTER(FILETIME)], None),
             (advapi32.OpenProcessToken, [HANDLE, DWORD, ctypes.POINTER(HANDLE)], BOOL),
             (advapi32.GetTokenInformation,
@@ -196,6 +271,20 @@ def _api() -> Any:
             (advapi32.ConvertSidToStringSidW, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)], BOOL),
             (advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW,
              [ctypes.c_wchar_p, DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ULONG)], BOOL),
+            # Job objects (635).
+            (kernel32.CreateJobObjectW, [ctypes.c_void_p, ctypes.c_wchar_p], HANDLE),
+            (kernel32.OpenJobObjectW, [DWORD, BOOL, ctypes.c_wchar_p], HANDLE),
+            (kernel32.SetInformationJobObject, [HANDLE, ctypes.c_int, ctypes.c_void_p, DWORD], BOOL),
+            (kernel32.QueryInformationJobObject,
+             [HANDLE, ctypes.c_int, ctypes.c_void_p, DWORD, ctypes.POINTER(DWORD)], BOOL),
+            (kernel32.AssignProcessToJobObject, [HANDLE, HANDLE], BOOL),
+            (kernel32.TerminateJobObject, [HANDLE, ctypes.c_uint], BOOL),
+            (kernel32.IsProcessInJob, [HANDLE, HANDLE, ctypes.POINTER(BOOL)], BOOL),
+            (kernel32.TerminateProcess, [HANDLE, ctypes.c_uint], BOOL),
+            (kernel32.GetCurrentProcess, [], HANDLE),
+            (kernel32.DuplicateHandle,
+             [HANDLE, HANDLE, HANDLE, ctypes.POINTER(HANDLE), DWORD, BOOL, DWORD], BOOL),
+            (ntdll.NtResumeProcess, [HANDLE], NTSTATUS),
         )
         for function, argtypes, restype in declarations:
             function.argtypes, function.restype = argtypes, restype
@@ -344,6 +433,141 @@ def process_running(pid: int) -> bool:
         return _api()[0].WaitForSingleObject(handle, 0) != WAIT_OBJECT_0
     finally:
         _close(handle)
+
+
+# -- Job objects (635) --------------------------------------------------------
+#
+# graftling's owned process trees on Windows (graftling.process_tree). Handles
+# returned here are the caller's to close with close_handle.
+
+
+def close_handle(handle: int) -> None:
+    """Close a handle returned by this module."""
+    _api()[0].CloseHandle(handle)
+
+
+def create_job(name: str, kill_on_close: bool) -> int:
+    """Create the job ``name`` and return its handle; refuse a name that already exists.
+
+    No limit allows breakaway, so ``CREATE_BREAKAWAY_FROM_JOB`` fails inside it
+    and no process leaves it silently. ``kill_on_close`` ends every process in
+    the job when its last handle closes. The handle is not inheritable.
+    """
+    kernel32 = _api()[0]
+    ctypes.set_last_error(0)
+    handle = kernel32.CreateJobObjectW(None, name)
+    error = ctypes.get_last_error()
+    if not handle:
+        raise ctypes.WinError(error)
+    try:
+        if error == ERROR_ALREADY_EXISTS:
+            # Another process made this name first; it is not ours to fill.
+            raise FileExistsError(error, f"A job named {name!r} already exists")
+        limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE if kill_on_close else 0
+        if not kernel32.SetInformationJobObject(handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,
+                                                ctypes.byref(limits), ctypes.sizeof(limits)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    except BaseException:
+        close_handle(handle)
+        raise
+    return handle
+
+
+def open_job(name: str) -> int:
+    """Open the existing job ``name`` to query and terminate it; OSError when there is none."""
+    handle = _api()[0].OpenJobObjectW(JOB_OBJECT_QUERY | JOB_OBJECT_TERMINATE, False, name)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    return handle
+
+
+def adopt_suspended(job: int, pid: int, share: bool) -> None:
+    """Assign the suspended process ``pid`` to ``job``, then resume it.
+
+    The process was created with ``CREATE_SUSPENDED``, so it has run no
+    instruction and started no child before it is in the job. ``share`` gives
+    the process an inheritable query-only handle to the job: a named object
+    keeps its name only while some handle to it is open, so the name outlives
+    the owner while the Runtime lives (inference from the object manager's
+    rules; checked by the Windows tests). On any failure the process is
+    terminated and OSError raised.
+    """
+    kernel32, ntdll = _api()[0], _api()[2]
+    handle = _open(pid, PROCESS_SET_QUOTA | PROCESS_TERMINATE | PROCESS_SUSPEND_RESUME
+                   | PROCESS_DUP_HANDLE | PROCESS_QUERY_LIMITED_INFORMATION)
+    try:
+        try:
+            if not kernel32.AssignProcessToJobObject(job, handle):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if share:
+                shared = HANDLE()
+                if not kernel32.DuplicateHandle(kernel32.GetCurrentProcess(), job, handle,
+                                                ctypes.byref(shared), JOB_OBJECT_QUERY, True, 0):
+                    raise ctypes.WinError(ctypes.get_last_error())
+            status = ntdll.NtResumeProcess(handle)
+            if status < 0:
+                raise OSError(f"Cannot resume process {pid} (NTSTATUS 0x{status & 0xFFFFFFFF:08X})")
+        except BaseException:
+            kernel32.TerminateProcess(handle, 1)
+            raise
+    finally:
+        close_handle(handle)
+
+
+def terminate_job(job: int, exit_code: int = 1) -> None:
+    """End every process in ``job`` (TerminateJobObject); OSError on failure."""
+    if not _api()[0].TerminateJobObject(job, exit_code):
+        raise ctypes.WinError(ctypes.get_last_error())
+
+
+def job_active_processes(job: int) -> int:
+    """Return the number of processes in ``job`` that have not ended."""
+    information = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
+    if not _api()[0].QueryInformationJobObject(job, JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,
+                                               ctypes.byref(information), ctypes.sizeof(information), None):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return int(information.ActiveProcesses)
+
+
+def job_process_ids(job: int) -> list[int]:
+    """Return the PIDs of the processes in ``job`` (JobObjectBasicProcessIdList).
+
+    The list is ``{DWORD assigned; DWORD listed; ULONG_PTR ids[]}``; the ids
+    start at byte 8 on 32-bit and 64-bit Windows alike.
+    """
+    word = ctypes.sizeof(ctypes.c_size_t)
+    header = 8 // word
+    wanted = 64
+    for _ in range(4):
+        buffer = (ctypes.c_size_t * (header + wanted))()
+        ok = _api()[0].QueryInformationJobObject(job, JOB_OBJECT_BASIC_PROCESS_ID_LIST, buffer,
+                                                 ctypes.sizeof(buffer), None)
+        counts = ctypes.cast(buffer, ctypes.POINTER(DWORD))
+        # A short buffer either fails with ERROR_MORE_DATA or lists fewer than assigned.
+        if ok and counts[1] >= counts[0]:
+            return [int(buffer[header + index]) for index in range(counts[1])]
+        error = ERROR_MORE_DATA if ok else ctypes.get_last_error()
+        if error != ERROR_MORE_DATA:
+            raise ctypes.WinError(error)
+        wanted = max(wanted * 2, int(counts[0]) + 16)
+    raise OSError("The job's process list kept growing")
+
+
+def process_in_job(pid: int, job: int) -> bool:
+    """Return whether ``pid`` is in ``job`` or one of its child jobs (IsProcessInJob).
+
+    Raises OSError when the process cannot be opened; ``winerror`` 87 means
+    there is no such process.
+    """
+    handle = _open(pid)
+    try:
+        result = BOOL(0)
+        if not _api()[0].IsProcessInJob(handle, job, ctypes.byref(result)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return bool(result.value)
+    finally:
+        close_handle(handle)
 
 
 # --- Lock files, replacement and volumes (634, W2) ---

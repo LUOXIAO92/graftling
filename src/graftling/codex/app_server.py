@@ -6,7 +6,6 @@ import asyncio
 import json
 import math
 import os
-import signal
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -20,6 +19,7 @@ from graftling import __version__
 from graftling.runtime import RuntimeContext, RuntimeExecutionResult
 from graftling.codex.websocket import CodexWebSocket
 from graftling.member_processes import MEMBER_RUN_ENV
+from graftling.process_tree import KILL, TERMINATE, OwnedTree
 
 
 _DEFAULT_TIMEOUT = object()
@@ -186,6 +186,8 @@ class CodexAppServer:
         self._on_request = on_request
         self._handlers: dict[int | str, asyncio.Task[None]] = {}
         self._process: asyncio.subprocess.Process | None = None
+        # The process tree of ``_process``: a POSIX process group or a Windows job (635).
+        self._tree: OwnedTree | None = None
         self._websocket: CodexWebSocket | None = None
         self._reader: asyncio.Task[None] | None = None
         self._stderr_reader: asyncio.Task[None] | None = None
@@ -228,17 +230,33 @@ class CodexAppServer:
                 Path(self._environment.get('CODEX_HOME', Path.home() / '.codex'))
             )
         self._opened = True
+        tree = None
         try:
-            self._process = await asyncio.create_subprocess_exec(
+            # A process group on POSIX, a job on Windows (635).
+            tree = OwnedTree()
+            process = await asyncio.create_subprocess_exec(
                 *self._command, cwd=self._cwd, env=self._environment,
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
+                **tree.popen_options(),
                 # Native history and tool records exceed asyncio's 64 KiB default.
                 limit=16 * 1024 * 1024,
             )
+            try:
+                tree.adopt(process.pid)
+            except BaseException:
+                # As OwnedTree.start: adopt may fail before it could terminate the suspended child.
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                await process.wait()
+                raise
         except (OSError, ValueError) as error:
+            if tree is not None:
+                tree.close()
             raise CodexAdapterError('RUNTIME_START_FAILED', f'Cannot open Codex stdio: {error}') from error
+        self._process, self._tree = process, tree
         self._stderr_reader = asyncio.create_task(self._read_stderr())
         try:
             if self._command[1:3] == ('app-server', 'proxy'):
@@ -345,9 +363,9 @@ class CodexAppServer:
             try:
                 await asyncio.wait_for(self._process.wait(), self._timeout)
             except TimeoutError:
-                for sig in (signal.SIGTERM, signal.SIGKILL):
+                for step in (TERMINATE, KILL):
                     try:
-                        os.killpg(self._process.pid, sig)
+                        self._tree.signal(step)
                     except ProcessLookupError:
                         pass
                     try:
@@ -356,10 +374,12 @@ class CodexAppServer:
                     except TimeoutError:
                         continue
                 else:
+                    self._tree.close()
                     raise CodexAdapterError(
                         'RUNTIME_SHUTDOWN_FAILED', 'Codex service did not exit after explicit close.',
                         terminal_confirmed=False,
                     )
+            self._tree.close()
             if self._reader is not None:
                 await self._reader
             if self._stderr_reader is not None:

@@ -16,7 +16,6 @@ from functools import cache
 import json
 import os
 from pathlib import Path
-import signal
 import subprocess
 import threading
 import time
@@ -30,6 +29,7 @@ from graftling.approval import parse_decision, review_failed
 from graftling.config import is_loopback
 from graftling.child_env import consumer_environment
 from graftling.connection import CONNECTION_ENV
+from graftling.process_tree import OwnedTree
 from graftling.tool import TOOL_NAME, AgentsError
 
 
@@ -263,17 +263,22 @@ def _ask_process(reviewer: Mapping[str, Any], request: Mapping[str, Any]) -> byt
     # A reviewer judges calls; it holds no way to control Agents.
     withheld = {CONNECTION_ENV, *consumer_environment()[0]}
     environment = {name: value for name, value in os.environ.items() if name not in withheld}
+    tree = None
     try:
-        process = subprocess.Popen(reviewer["command"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE, env=environment, start_new_session=True)
+        tree = OwnedTree()
+        process = tree.start(reviewer["command"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, env=environment)
     except OSError as error:
+        if tree is not None:
+            tree.close()
         raise _Unavailable(f"cannot start {reviewer['command'][0]}: "
                            f"{error.strerror or type(error).__name__}") from None
-    try:
-        answer, errors = process.communicate(document, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _kill(process)
-        raise _Unavailable(f"no answer within {timeout} seconds; the process was killed") from None
+    with tree:
+        try:
+            answer, errors = process.communicate(document, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill(process, tree)
+            raise _Unavailable(f"no answer within {timeout} seconds; the process was killed") from None
     if process.returncode != 0:
         text = _plain(errors.decode("utf-8", "replace")[-DETAIL_LIMIT:], reviewer)
         raise _Unavailable(f"the process exited with status {process.returncode}"
@@ -281,10 +286,10 @@ def _ask_process(reviewer: Mapping[str, Any], request: Mapping[str, Any]) -> byt
     return answer
 
 
-def _kill(process: subprocess.Popen) -> None:
-    """Kill the reviewer's whole session; a child that escaped it is abandoned."""
+def _kill(process: subprocess.Popen, tree: OwnedTree) -> None:
+    """Kill the reviewer's whole tree; a child that escaped it (POSIX ``setsid``) is abandoned."""
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        tree.kill()
     except ProcessLookupError:
         pass
     try:

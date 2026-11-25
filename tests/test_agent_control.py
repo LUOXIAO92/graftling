@@ -2,7 +2,6 @@
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import threading
@@ -15,7 +14,7 @@ import pytest
 import graftling
 from graftling import AgentControl, AgentsError, Caller, ExecutionEvents
 from graftling.durable import read_published
-from posix_only import require_posix
+from graftling.process_tree import OwnedTree, tree_facts
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -525,28 +524,30 @@ def test_direct_parent_confirms_an_ended_execution_whose_processes_are_gone(root
     assert not failed and resumed['session'] == child['session']
     driver.release(resumed['execution'])
 
-    # A Runtime group member that outlived the recorded Runtime blocks confirmation.
-    require_posix('from here the test uses a process group (start_new_session, os.killpg, SIGKILL)')
-    group  = subprocess.Popen([sys.executable, '-c', 'import subprocess, sys; subprocess.Popen('
-                               '[sys.executable, "-c", "import time; time.sleep(60)"])'], start_new_session=True)
-    group.wait()
-    path   = root / 'control/agents' / f"{grouped['agent']}.json"
-    record = json.loads(path.read_text())
-    record['executions'][-1]['process'].update(worker_pid=worker.pid, runtime_pid=group.pid)
-    path.write_text(json.dumps(record))
-    refused, failed = call(control, lead, action='interrupt', agent=grouped['agent'])
-    assert failed and refused['error']['code'] == 'termination-unconfirmed'
-    assert 'termination_confirmation' not in json.loads(path.read_text())['executions'][-1]
-    os.killpg(group.pid, signal.SIGKILL)
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        try:
-            os.killpg(group.pid, 0)
-        except ProcessLookupError:
-            break
-        time.sleep(0.05)
-    confirmed, failed = call(control, lead, action='interrupt', agent=grouped['agent'])
-    assert not failed and confirmed['result']['interrupt'] == 'stopped'
+    # A Runtime tree member that outlived the recorded Runtime blocks confirmation (635): a
+    # process group on POSIX (start_new_session, killpg probe, SIGKILL), a job on Windows,
+    # probed by the recorded runtime_job. The owner's handle stays open until confirmation:
+    # the root has exited and its child inherits no handle, so only that handle keeps the
+    # job's name openable on Windows.
+    with OwnedTree() as tree:
+        group  = tree.start([sys.executable, '-c', 'import subprocess, sys; subprocess.Popen('
+                             '[sys.executable, "-c", "import time; time.sleep(60)"])'])
+        group.wait()
+        path   = root / 'control/agents' / f"{grouped['agent']}.json"
+        record = json.loads(path.read_text())
+        record['executions'][-1]['process'].update(worker_pid=worker.pid, runtime_pid=group.pid,
+                                                   **tree_facts(group.pid))
+        path.write_text(json.dumps(record))
+        assert ('runtime_job' in record['executions'][-1]['process']) == (sys.platform == 'win32')
+        refused, failed = call(control, lead, action='interrupt', agent=grouped['agent'])
+        assert failed and refused['error']['code'] == 'termination-unconfirmed'
+        assert 'termination_confirmation' not in json.loads(path.read_text())['executions'][-1]
+        tree.kill()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not tree.gone():
+            time.sleep(0.05)
+        confirmed, failed = call(control, lead, action='interrupt', agent=grouped['agent'])
+        assert not failed and confirmed['result']['interrupt'] == 'stopped'
 
     # An execution without a recorded Runtime process cannot be verified.
     path   = root / 'control/agents' / f"{unknown['agent']}.json"

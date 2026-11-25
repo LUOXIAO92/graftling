@@ -8,13 +8,12 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-import os
-import signal
 import subprocess
 import threading
 import time
 from typing import Callable, Iterator
 
+from graftling.process_tree import KILL, TERMINATE, OwnedTree
 from graftling.tool import AgentsError
 
 TERMINATION_SECONDS = 2.0
@@ -80,26 +79,28 @@ def on_discard(callback: Callable[[], None]) -> None:
 
 
 def run_stoppable(command: tuple[str, ...] | list[str], **options) -> subprocess.CompletedProcess:
-    """Run ``command`` to its end, or end its whole process group when told to stop.
+    """Run ``command`` to its end, or end its whole process tree when told to stop.
 
-    Only for a command whose interruption leaves nothing half-applied.
+    Only for a command whose interruption leaves nothing half-applied. The tree
+    is a process group on POSIX and a job on Windows (:mod:`graftling.process_tree`).
     """
     call = _current.get()
     if call is None:
         return subprocess.run(command, check=False, **options)
-    process = subprocess.Popen(command, start_new_session=True, **options)
-    while process.poll() is None:
-        if call.stop.wait(POLL_SECONDS):
-            _end_group(process)
-            raise CallCancelled()
+    with OwnedTree() as tree:
+        process = tree.start(command, **options)
+        while process.poll() is None:
+            if call.stop.wait(POLL_SECONDS):
+                _end_group(process, tree)
+                raise CallCancelled()
     return subprocess.CompletedProcess(command, process.returncode)
 
 
-def _end_group(process: subprocess.Popen) -> None:
-    """Ask the command's process group to end, then force it after a short bound."""
-    for signum, seconds in ((signal.SIGTERM, TERMINATION_SECONDS), (signal.SIGKILL, None)):
+def _end_group(process: subprocess.Popen, tree: OwnedTree) -> None:
+    """Ask the command's process tree to end, then force it after a short bound."""
+    for step, seconds in ((TERMINATE, TERMINATION_SECONDS), (KILL, None)):
         try:
-            os.killpg(process.pid, signum)
+            tree.signal(step)
         except ProcessLookupError:
             pass
         try:
