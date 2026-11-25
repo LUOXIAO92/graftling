@@ -19,6 +19,7 @@ from typing import Callable
 from graftling.connection import CONNECTION_ENV, call_owner
 from graftling.discovery import handle_request
 from graftling.tool import AgentsError, AgentsResult
+from graftling.stdio import use_utf8_stdio
 
 
 def host_dispatch() -> Callable[[dict], AgentsResult] | None:
@@ -34,6 +35,7 @@ def host_dispatch() -> Callable[[dict], AgentsResult] | None:
 
 def main() -> None:
     """Print one structured result and exit nonzero on a rejected request."""
+    use_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('request', help='One discover, describe or execute JSON object.')
     arguments = parser.parse_args()

@@ -20,6 +20,7 @@ import tempfile
 from typing import Any, Callable, Iterable, Mapping
 
 from graftling.child_env import child_environment, is_credential_name
+from graftling.links import require_symbolic_links
 
 
 RUNTIMES = ('claude', 'codex', 'pi', 'dsh')
@@ -161,8 +162,10 @@ def _executable(name: str) -> str:
     """Resolve an installed Runtime client on PATH, or fail without naming anything else."""
     found = shutil.which(name)
     if found is None and name == 'claude':
+        from graftling.claude.settings import native_claude
+
         # Claude Code's documented native installation path.
-        native = Path.home() / '.local/bin/claude'
+        native = native_claude()
         found  = str(native) if native.is_file() and os.access(native, os.X_OK) else None
     if found is None:
         raise ValueError('The Runtime client is not installed.')
@@ -269,6 +272,8 @@ def _pi_available_models(executable: str, home: Path, cwd: Path, *selection: str
     removed from Pi's environment for this listing; ``only`` names the sole
     credential-class variables left in it.
     """
+    # The private agent directory links the native login and models (Windows: Developer Mode).
+    require_symbolic_links('Pi')
     agent = cwd / 'agent'
     agent.mkdir()
     if api_key_env:
@@ -286,7 +291,7 @@ def _pi_available_models(executable: str, home: Path, cwd: Path, *selection: str
          '--no-prompt-templates', '--no-themes', '--no-context-files', *selection],
         input=json.dumps({'id': 'models', 'type': 'get_available_models'}) + '\n',
         cwd=cwd, env=environment,
-        capture_output=True, text=True, timeout=TIMEOUT, check=True,
+        capture_output=True, text=True, encoding='utf-8', timeout=TIMEOUT, check=True,
     )
     for line in completed.stdout.splitlines():
         reply = json.loads(line)
@@ -524,7 +529,7 @@ def _claude(connection: Mapping[str, Any], cwd: Path) -> dict:
     provider = connection.get('provider') or DEFAULT_PROVIDERS['claude']
 
     response = subprocess.run(
-        command, input=json.dumps(query) + '\n', text=True, capture_output=True,
+        command, input=json.dumps(query) + '\n', text=True, encoding='utf-8', capture_output=True,
         timeout=TIMEOUT, env=environment, cwd=cwd, check=True,
     )
     for line in response.stdout.splitlines():

@@ -28,6 +28,7 @@ from .native_host import NativeCalls
 from .driver import ClaudeDriver
 from .execution import MCP_SERVER
 from .plugin import _existing_document, claude_host_plugin, kept_host_paths, write_adoption
+from graftling.stdio import use_utf8_stdio
 
 if os.name != 'nt':
     import fcntl
@@ -59,7 +60,8 @@ def isolate_stdio(log: Path) -> tuple[TextIO, TextIO]:
     """
     log.parent.mkdir(parents=True, exist_ok=True)
     mcp_in  = os.fdopen(os.dup(0), 'r', encoding='utf-8')
-    mcp_out = os.fdopen(os.dup(1), 'w', encoding='utf-8')
+    # MCP stdio is newline-delimited JSON: '\n' on every platform, never Windows' '\r\n'.
+    mcp_out = os.fdopen(os.dup(1), 'w', encoding='utf-8', newline='\n')
     sink = open(log, 'a', encoding='utf-8', buffering=1)
     null = os.open(os.devnull, os.O_RDONLY)
     os.dup2(null, 0)
@@ -165,7 +167,7 @@ def claim_channel(channel_file: Path, endpoint: dict) -> bool:
         if replaced:
             remove_stale_channel(channel_file)
         # Exclusive creation still stops a host that does not take this lock.
-        with channel_file.open('x') as stream:
+        with channel_file.open('x', encoding='utf-8') as stream:
             json.dump(endpoint, stream)
         return replaced
 
@@ -539,6 +541,7 @@ def found_configuration(start: Path, data_root: str | None = None) -> Path:
 
 def main() -> None:
     """Serve the native-owned MCP entry or install/forward its existing mod binding."""
+    use_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['serve', 'context', 'configuration'])
     parser.add_argument('--config', type=Path)
@@ -581,7 +584,7 @@ def main() -> None:
     # Until the configuration names the channel, a refusal is logged beside it.
     log = options.config.absolute().parent / 'host.log'
     try:
-        configuration = json.loads(options.config.read_text())
+        configuration = json.loads(options.config.read_text(encoding='utf-8'))
         if set(configuration) - {'root', 'cwd', 'claude', 'channel_file', 'settings', 'runtimes'}:
             raise ValueError('Unknown native host configuration fields.')
         root, cwd, executable, channel_file = (Path(configuration[key])

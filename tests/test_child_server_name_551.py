@@ -43,7 +43,9 @@ def test_pi_extension_reads_the_chosen_server() -> None:
     executable = shutil.which('node')
     if executable is None:
         pytest.skip('Node is required')
-    script = ("const m = await import(process.argv[1]);"
+    # A file URL: Node imports a Windows path such as C:\\... only as one.
+    script = ("const {pathToFileURL} = await import('node:url');"
+              "const m = await import(pathToFileURL(process.argv[1]).href);"
               "console.log(JSON.stringify([m.childServer({GRAFTLING_MCP_SERVER: 'host_name'}),"
               " m.childServer({}), m.childServer({GRAFTLING_MCP_SERVER: 'bad name/'})]));")
     result = subprocess.run([executable, '--input-type=module', '-e', script, str(SOURCE / 'pi/extension.mjs')],

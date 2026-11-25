@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+from graftling.stdio import use_utf8_stdio
 
 
 def _frame(sender: str, recipient: str, body: str) -> str:
@@ -77,6 +78,7 @@ def display_response(
 
 def main() -> None:
     """Serve one synchronous command hook, without reading or changing config."""
+    use_utf8_stdio()
     event = json.load(sys.stdin)
     if not isinstance(event, dict):
         raise ValueError('A native hook object is required.')

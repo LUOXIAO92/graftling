@@ -50,6 +50,7 @@ PI_OTHER = frozenset({'worktree_access', 'allowed_domains', 'allow_mach_lookup',
 # How long a written notice waits for the extension's acknowledgement.
 ACK_SECONDS = 10.0
 from .session import current_connection, session_record, verify_main
+from graftling.stdio import use_utf8_stdio
 
 
 def verify_native_parent(executable: Path) -> None:
@@ -188,7 +189,7 @@ def pi_request(overrides: Mapping[str, Any], cwd: Path, environment: Mapping[str
     if request['worktree_access'] == 'write' and 'git_common_directory' not in request:
         try:
             common = subprocess.run(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
-                                    cwd=cwd, capture_output=True, text=True, check=True, timeout=10).stdout.strip()
+                                    cwd=cwd, capture_output=True, text=True, encoding='utf-8', check=True, timeout=10).stdout.strip()
         except (OSError, subprocess.SubprocessError) as error:
             raise ValueError('Pi worktree_access write needs a Git worktree, or set '
                              'pi.git_common_directory.') from error
@@ -475,6 +476,7 @@ def start(config: Path | None) -> tuple[Path, Notices, Callable, Callable, Agent
 
 def main() -> None:
     """Keep one control owner alive until the trusted extension closes its pipe."""
+    use_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, help='host configuration; default: GRAFTLING_DATA_ROOT, else <Session cwd>/.agents-control')
     options = parser.parse_args()

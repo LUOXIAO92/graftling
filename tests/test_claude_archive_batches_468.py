@@ -93,16 +93,33 @@ def test_many_sessions_through_one_archive_keep_few_files_open(tmp_path: Path) -
     """Collecting many Sessions with one archive (as migration does) does not hold one file per Session."""
     import os
 
-    archive = SessionArchive(tmp_path / 'swarm', save_normalized_sessions=True, backfill_history=True)
-    before = len(os.listdir('/dev/fd'))
-    for index in range(40):
-        session = f's{index}'
+    def open_files() -> int:
+        """This process's open descriptors; on Windows, which has no /dev/fd, its handles."""
+        if os.name == 'nt':
+            import ctypes
+
+            kernel32 = ctypes.WinDLL('kernel32')
+            count    = ctypes.c_ulong()
+            kernel32.GetProcessHandleCount(ctypes.c_void_p(-1), ctypes.byref(count))
+            return count.value
+        return len(os.listdir('/dev/fd'))
+
+    def collect(session: str) -> None:
+        """Write one two-message native Session and collect it through the shared archive."""
         path = tmp_path / f'{session}.jsonl'
         records = [{**message('q', None, 'user'), 'sessionId': session},
                    {**message('a', 'q', 'assistant'), 'sessionId': session}]
         path.write_text(''.join(json.dumps(record) + '\n' for record in records))
         ClaudeJsonlCollector(archive, session, tmp_path, 'execution').bind(path)
-    assert len(os.listdir('/dev/fd')) - before <= 3
+
+    archive = SessionArchive(tmp_path / 'swarm', save_normalized_sessions=True, backfill_history=True)
+    # One Session first: what the first collection opens once (imports, lazily created
+    # system state; on Windows the handle count includes such handles) is not per-Session.
+    collect('warm-up')
+    before = open_files()
+    for index in range(40):
+        collect(f's{index}')
+    assert open_files() - before <= 3
     for index in range(40):
         stored = JsonlSessionStore(archive_path(archive.root, f'claude:s{index}'))
         assert [m['id'] for m in stored.messages()] == ['q', 'a']

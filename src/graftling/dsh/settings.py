@@ -112,7 +112,7 @@ def catalog_providers(package: str) -> tuple[str, ...] | None:
         return None
     try:
         result = subprocess.run([node, '--input-type=module', '-e', _CATALOG_SCRIPT], cwd=Path(package).parent,
-                                capture_output=True, text=True, timeout=30)
+                                capture_output=True, text=True, encoding='utf-8', timeout=30)
         return tuple(json.loads(result.stdout)) if result.returncode == 0 else None
     except (OSError, ValueError, subprocess.SubprocessError):
         return None

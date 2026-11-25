@@ -148,9 +148,11 @@ async function showFrames($, state, frames) {
 }
 
 // The Python this copy runs. The plugin copy takes GRAFTLING_PYTHON, else
-// python3 on PATH, as its MCP server's bin/graftling-host does.
+// python3 on PATH, as its MCP server's bin/graftling-host does. Windows (OS is
+// Windows_NT there) names it python, as a venv's Scripts\python.exe is named.
 async function pluginPython($) {
-  return (await $.env.get('GRAFTLING_PYTHON')) || 'python3';
+  return (await $.env.get('GRAFTLING_PYTHON'))
+    || ((await $.env.get('OS')) === 'Windows_NT' ? 'python' : 'python3');
 }
 
 // Whether configuration --write material serves this Session's project, so the
