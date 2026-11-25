@@ -138,6 +138,8 @@ requests = {}
 exchanges = iter(json.loads(os.environ.get('PEER_REQUEST_EXCHANGES', '[]')))
 exchange = next(exchanges, json.loads(os.environ.get('PEER_REQUEST_EXCHANGE', 'null')))
 held_reply = None
+# 639: the MCP server each Session keeps ('mcp-session'), by thread.
+mcp_servers = {}
 sequence = 0
 queued = 0
 if os.environ.get('PEER_STALL_CLOSE'):
@@ -307,6 +309,13 @@ for line in incoming():
                 # new process group. Whatever the service starts stays in its job, so another
                 # execution's process is started by the test, outside the job.
                 quiet.pop('start_new_session')
+                if os.environ.get('PEER_TOOL_INHERIT'):
+                    # 639: the tool inherits the service's inheritable handles, as a Runtime that
+                    # starts children inheriting handles does (Rust, libuv; an inference for Codex),
+                    # so the query handle to the job reaches it. This peer's own stdio is not passed on.
+                    for descriptor in (0, 1, 2):
+                        os.set_inheritable(descriptor, False)
+                    quiet['close_fds'] = False
                 subprocess.Popen([sys.executable, '-c', os.environ['PEER_TOOL_COMMAND']],
                                  creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, **quiet)
             else:
@@ -454,6 +463,25 @@ for line in incoming():
                 process.wait(timeout=10)
                 complete(thread_id, turn_id, 'The child answered.')
             threading.Thread(target=run_in_turn, daemon=True).start()
+        elif prompt == 'mcp-session':
+            def run_session(thread_id=thread_id, turn_id=turn_id):
+                """639: as Codex does, keep one MCP server for the whole Session (closed at its end, below)."""
+                servers = sessions[thread_id]['config']['mcp_servers']; server = servers.get('graftling') or servers['graphtraj']
+                environment = {key: value for key, value in os.environ.items()
+                               if key not in {'GRAFTLING_CONNECTION', 'GRAPHTRAJ_CLI_CONNECTION'}}
+                environment.update(server['env'])
+                if thread_id not in mcp_servers:
+                    mcp_servers[thread_id] = subprocess.Popen(
+                        [server['command'], *server['args']], cwd=server['cwd'], env=environment,
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, encoding='utf-8')
+                process, answers = mcp_servers[thread_id], []
+                for index, arguments in enumerate(json.loads(os.environ['PEER_MCP_CALLS']), 1):
+                    process.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': index, 'method': 'tools/call', 'params': {
+                        'name': 'subagents', '_meta': {'threadId': thread_id}, 'arguments': arguments}}) + '\n')
+                    process.stdin.flush()
+                    answers.append(json.loads(process.stdout.readline()))
+                complete(thread_id, turn_id, json.dumps(answers))
+            threading.Thread(target=run_session, daemon=True).start()
         elif prompt in {'native-subagent', 'native-subagent-late'}:
             def spawn_item(event, status, receivers, thread_id=thread_id, turn_id=turn_id):
                 """Codex 0.164's ThreadItem for its own spawn_agent."""
@@ -517,6 +545,18 @@ for line in incoming():
     emit({'id': message['id'], 'result': result})
     if method == 'thread/start' and os.environ.get('PEER_PAUSE_INPUT'):
         time.sleep(5)
+
+# 639 (M18): the Session ended (this service's stdin closed), so end each kept MCP server by
+# closing its stdin, never by a signal, and record how it ended.
+for kept in mcp_servers.values():
+    kept.stdin.close()
+    try:
+        ended = {'pid': kept.pid, 'exit_code': kept.wait(timeout=20), 'unread': kept.stdout.read()}
+    except subprocess.TimeoutExpired:
+        ended = {'pid': kept.pid, 'exit_code': None}
+    if os.environ.get('PEER_MCP_END'):
+        with open(os.environ['PEER_MCP_END'], 'a', encoding='utf-8') as stream:
+            stream.write(json.dumps(ended) + '\n')
 
 if os.environ.get('PEER_STALL_CLOSE'):
     time.sleep(10)

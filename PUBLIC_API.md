@@ -1765,6 +1765,12 @@ Delivery rules:
   the execution's directory (it may appear after the end is reported; the result does
   not carry it). A Codex host the user started (`CodexHost`), and a
   service reached through a proxy or an existing WebSocket, are not covered.
+  On Windows (639) a Codex child and `CodexHost` run as on POSIX: the MCP server Codex
+  starts reaches the owner over its named pipe, and no Unix socket permission entry is
+  written (`project_access` leaves `dangerously_allow_all_unix_sockets` out, and
+  `CodexAppServer.fork_session` accepts `network_profile` and `unix_socket` but selects
+  Main's own profile). `CodexHost`'s Session ends with the parent's turn, not on a
+  signal: closing the service's stdin ends Codex.
 - A completed round of a child that still has running members is recorded,
   not pushed. All rounds stay readable through `status`.
 - A notice its parent cannot receive now is recorded `held`, stays readable

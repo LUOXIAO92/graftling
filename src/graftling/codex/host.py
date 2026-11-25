@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 from pathlib import Path
 import sys
 import threading
@@ -320,9 +319,14 @@ class CodexHost(CodexManagedExecution):
             return True
 
     def run(self) -> dict:
-        """Keep one actual parent owner, even across repeated host invocations."""
-        if os.name == 'nt':
-            raise AgentsError('authority-denied', 'Windows does not support the Codex parent host.')
+        """Keep one actual parent owner, even across repeated host invocations.
+
+        The same on Windows (639): ``try_exclusive`` holds ``owner.lock`` through
+        ``LockFileEx`` (634), and the MCP server reaches this host over its named
+        pipe, accepted only from inside the service's job (636). The session ends
+        when the parent's turn ends, not on a signal: closing the service's stdin
+        ends Codex, and Codex's closing of the MCP server's stdin ends that (M18).
+        """
         from graftling.locks import try_exclusive
 
         with try_exclusive(self.directory / 'owner.lock') as owned:

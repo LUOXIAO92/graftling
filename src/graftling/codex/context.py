@@ -153,7 +153,14 @@ def apply_unix_socket_access(request: dict, configured: Mapping[str, Any] | None
     It does not read Agent-writable native configuration or change filesystem,
     account, approval or external network rules. An explicit empty list revokes
     previously projected socket grants on normal same-Session continuation.
+
+    Windows (639, M17): the configuration is checked as on POSIX, but nothing
+    is projected. A ``unix_sockets`` entry means nothing there. graftling's own
+    channel is a named pipe, reached by the MCP server Codex starts outside its
+    tool sandbox (inference, to be confirmed on a real Codex); no entry grants it.
     """
+    from graftling.process_tree import windows
+
     if configured is None:
         return
     if not isinstance(configured, dict):
@@ -166,7 +173,7 @@ def apply_unix_socket_access(request: dict, configured: Mapping[str, Any] | None
                        or '..' in Path(path).parts for path in paths)):
             raise _invalid_role_value('codex.unix_sockets')
     paths = configured.get(request['worktree_path'])
-    if paths is None:
+    if paths is None or windows():
         return
     config = request['session_parameters']['config']
     profile = config['permissions'][config['default_permissions']]

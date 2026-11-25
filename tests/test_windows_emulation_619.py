@@ -152,18 +152,29 @@ def test_process_listing_refuses_clearly_under_windows_emulation(tmp_path: Path)
     assert report['ancestors']
 
 
-def test_codex_parent_host_refuses_clearly_under_windows_emulation(tmp_path: Path) -> None:
-    """The Codex parent host names Windows instead of failing on ``import fcntl``."""
+def test_codex_parent_host_takes_its_owner_lock_under_windows_emulation(tmp_path: Path) -> None:
+    """639: the Codex parent host no longer refuses on Windows; it takes ``owner.lock`` through
+    ``graftling._win32`` (``try_exclusive``), then starts its service and stops what it owns."""
     report = emulated(
-        'from graftling import AgentsError\n'
+        'import types\n'
+        'from pathlib import Path\n'
         'from graftling.codex.host import CodexHost\n'
+        'from graftling.codex.managed_session import CodexManagedExecution\n'
+        'def service(self):\n'
+        '    raise RuntimeError("the service would start here")\n'
+        'CodexManagedExecution.run = service\n'
+        'host = CodexHost.__new__(CodexHost)\n'
+        'host.directory = Path("host")\n'
+        'host.control = types.SimpleNamespace(interrupt_owned=lambda: [])\n'
         'try:\n'
-        '    CodexHost.__new__(CodexHost).run()\n'
+        '    host.run()\n'
         '    raised = None\n'
         'except Exception as error:\n'
-        '    raised = [type(error).__name__, getattr(error, "code", None), str(error)]\n'
-        'print(json.dumps({"raised": raised}))\n',
+        '    raised = [type(error).__name__, str(error)]\n'
+        'print(json.dumps({"raised": raised, "calls": EMULATED, "stop_unconfirmed": host.stop_unconfirmed,\n'
+        '                  "lock": Path("host/owner.lock").is_file()}))\n',
         tmp_path,
     )
-    assert report['raised'][:2] == ['AgentsError', 'authority-denied'], report
-    assert 'Windows does not support the Codex parent host.' in report['raised'][2], report
+    assert report['raised'] == ['RuntimeError', 'the service would start here'], report
+    assert ['lock_file', False] in report['calls'], report
+    assert report['stop_unconfirmed'] == [] and report['lock'], report

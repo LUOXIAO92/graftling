@@ -31,7 +31,12 @@ def project_access(request: dict, value: Any) -> None:
     Native domain policy is host-wide: this does not provide port isolation.
     The prior values are retained so withdrawal restores rather than broadens them.
     """
+    from graftling.process_tree import windows
+
     value = validate_connection(value)
+    # Windows (639, M17): no Unix socket key is written or restored; it means nothing there.
+    keys = ('enabled', 'allow_local_binding', 'dangerously_allow_non_loopback_proxy') if windows() else (
+        'enabled', 'allow_local_binding', 'dangerously_allow_all_unix_sockets', 'dangerously_allow_non_loopback_proxy')
     config = request['session_parameters']['config']
     profile = config['permissions'][config['default_permissions']]
     previous = request.pop('local_websocket_projection', None)
@@ -90,9 +95,7 @@ def project_access(request: dict, value: Any) -> None:
             'domain': domains.get('127.0.0.1'), 'file': profile['filesystem'].get(token),
             'provider_domain': domains.get('chatgpt.com'),
             'token_file': token, 'had_domains': had_domains, 'had_network': had_network,
-            'network': {key: network.get(key) for key in (
-                'enabled', 'allow_local_binding', 'dangerously_allow_all_unix_sockets',
-                'dangerously_allow_non_loopback_proxy')},
+            'network': {key: network.get(key) for key in keys},
             'proxy': config.get('features', {}).get('network_proxy'),
         }
         domains['127.0.0.1'] = 'allow'
@@ -100,8 +103,7 @@ def project_access(request: dict, value: Any) -> None:
         domains['chatgpt.com'] = 'allow'
         profile['filesystem'][token] = 'read'
         network.setdefault('enabled', True)
-        network.update(allow_local_binding=False, dangerously_allow_all_unix_sockets=False,
-                       dangerously_allow_non_loopback_proxy=False)
+        network.update({key: False for key in keys if key != 'enabled'})
         config['features'] = {**config.get('features', {}), 'network_proxy': True}
     if value or previous:
         from graftling.codex.context import _toml_value

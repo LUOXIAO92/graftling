@@ -9,16 +9,26 @@ import pytest
 
 from graftling import AgentControl, Caller, bind
 from graftling.codex.driver import CodexDriver
-from posix_only import SHEBANG, require_posix
 
 
 @pytest.fixture
 def native_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """Configure the controlled peer without loading any GraphTraj role or Task."""
-    require_posix(SHEBANG)
-    peer = tmp_path / 'codex'
-    peer.write_text('#!' + sys.executable + '\n' + Path(__file__).with_name('codex_stdio_peer.py').read_text())
-    peer.chmod(0o755)
+    """Configure the controlled peer without loading any GraphTraj role or Task.
+
+    Windows runs no '#!' script (639): the ``.cmd`` stand-in of 637 starts the
+    peer through this interpreter, named by a variable so the batch file stays
+    ASCII under a non-ASCII temporary directory.
+    """
+    source = Path(__file__).with_name('codex_stdio_peer.py').read_text(encoding='utf-8')
+    if sys.platform == 'win32':
+        (tmp_path / 'codex_peer.py').write_text(source, encoding='utf-8')
+        peer = tmp_path / 'codex.cmd'
+        peer.write_text('@"%PEER_PYTHON%" "%~dp0codex_peer.py" %*\r\n', encoding='ascii')
+        monkeypatch.setenv('PEER_PYTHON', sys.executable)
+    else:
+        peer = tmp_path / 'codex'
+        peer.write_text('#!' + sys.executable + '\n' + source)
+        peer.chmod(0o755)
     monkeypatch.setenv('PYTHONPATH', str(Path(__file__).resolve().parents[1] / 'src'))
     monkeypatch.setenv('PEER_NATIVE_ROLLOUT', str(tmp_path / 'native'))
     return {'adapter_request': {
@@ -185,9 +195,9 @@ def test_host_cli_reports_native_turn_failure(tmp_path: Path, native_settings: d
     result = subprocess.run([
         sys.executable, '-m', 'graftling.codex.host', '--settings', str(settings),
         '--directory', str(tmp_path / 'failed-host'), '--output', str(output), 'failed-turn',
-    ], capture_output=True, text=True, timeout=10)
+    ], capture_output=True, text=True, encoding='utf-8', timeout=30)
     assert result.returncode == 1, result.stdout + result.stderr
-    native = json.loads(output.read_text())
+    native = json.loads(output.read_text(encoding='utf-8'))
     assert native['outcome'] == 'runtime-error'
     assert native['error']['code'] == 'RUNTIME_EXECUTION_FAILED'
     assert 'native execution failed' in result.stderr

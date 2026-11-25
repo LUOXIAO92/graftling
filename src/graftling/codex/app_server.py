@@ -933,11 +933,17 @@ class CodexAppServer:
             profile: the fork selects a profile of this name that extends Main's
             with Codex managed network enabled and ``unix_socket`` allowed. The
             reported ``networkAccess`` is then the only accepted difference
-            from Main's sandbox.
+            from Main's sandbox. Windows (639, M17): accepted but not
+            projected, since a Unix socket entry means nothing there; the
+            fork selects Main's own profile.
         """
+        from graftling.process_tree import windows
+
         if (network_profile is None) != (unix_socket is None):
             raise CodexAdapterError('RUNTIME_REQUEST_INVALID',
                                     'network_profile and unix_socket are supplied together.')
+        if windows():
+            network_profile = unix_socket = None
         if any(not isinstance(parent.get(k), str) or not parent[k]
                for k in ('id', 'model', 'modelProvider')):
             raise CodexAdapterError('RUNTIME_REQUEST_INVALID', 'Main model metadata is unavailable.')
