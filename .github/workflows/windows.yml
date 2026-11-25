@@ -1,0 +1,98 @@
+# graftling's whole test suite on a GitHub-hosted Windows x64 runner (632, W0).
+# Tests that exercise a POSIX mechanism by design skip on Windows with a reason that
+# starts "POSIX-only: " (tests/posix_only.py); every other test runs. The JUnit file
+# and the job log are the evidence. No secret is used: this is a public repository.
+# Step names are stable: later Windows tasks and their step scripts judge them by name.
+name: Windows tests
+on:
+  push:
+    branches: [agent/632-graftling-windows-ci, dev]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-tests:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PIP_NO_INPUT: '1'
+    steps:
+      # src/graftling/PUBLIC_API.md and src/graftling/install are git symbolic links;
+      # without core.symlinks Git for Windows writes text stubs. Only this disposable
+      # runner's configuration changes.
+      - name: Keep symbolic links on this runner
+        run: git config --global core.symlinks true
+      - name: Check out the commit under test
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Fail unless the linked package documents are symbolic links
+        run: |
+          foreach ($path in 'src/graftling/PUBLIC_API.md', 'src/graftling/install') {
+            $item = Get-Item $path
+            if ($item.LinkType -ne 'SymbolicLink') { throw "$path is not a symbolic link (LinkType=$($item.LinkType))" }
+            "$path -> $($item.Target)"
+          }
+          if ((Get-Content -Raw src/graftling/PUBLIC_API.md) -ne (Get-Content -Raw PUBLIC_API.md)) { throw 'src/graftling/PUBLIC_API.md does not read as PUBLIC_API.md' }
+          if (-not (Get-ChildItem src/graftling/install -Filter *.md)) { throw 'src/graftling/install has no install guides' }
+      # The same pins as GraphTraj's Windows workflow (desktop-win-adoption.yml).
+      - name: Set up Node 22.18.0 x64
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22.18.0'
+          architecture: x64
+      - name: Set up Python 3.13.7 x64
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13.7'
+          architecture: x64
+      # Test tools only, pinned as GraphTraj's Windows workflow pins them; graftling's
+      # package metadata is unchanged. tests/conftest.py requires an editable install,
+      # so subprocesses started with -I import this checkout.
+      - name: Install graftling and pinned test tools
+        run: |
+          python -m pip install --no-deps pip==25.3 setuptools==80.9.0 wheel==0.45.1 packaging==25.0 pytest==8.3.5 iniconfig==2.1.0 pluggy==1.6.0 colorama==0.4.6 PyYAML==6.0.2 websockets==15.0.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --no-deps --no-build-isolation -e .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Named facts only; never the whole environment.
+      - name: Show runner, Python and pytest versions
+        run: |
+          New-Item -ItemType Directory -Force test-results/windows | Out-Null
+          $facts = [ordered]@{ commit=$env:GITHUB_SHA; run=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT
+            os=[Environment]::OSVersion.VersionString; image=$env:ImageOS; image_version=$env:ImageVersion
+            arch=$env:PROCESSOR_ARCHITECTURE; python=(python --version); pytest=(python -m pytest --version)
+            node=(node --version); git=(git --version); codepage=(Get-Culture).TextInfo.ANSICodePage }
+          $facts | ConvertTo-Json | Set-Content -Encoding utf8 test-results/windows/environment.json
+          $facts | Format-Table -AutoSize | Out-String -Width 200
+      # The whole suite, never stopping at the first failure. -v names each test as it
+      # starts, so a hang shows which; faulthandler dumps every thread of a test that
+      # runs over 300 s; the step and job timeouts end anything longer. -rfEsxX lists
+      # every failure, error and skip with its reason. xunit1 keeps each test's file and
+      # line in the JUnit file. The exit code is kept beside it: 0 or 1 means the suite
+      # ran, anything else that it did not.
+      - name: Run the graftling test suite
+        # macOS runs the suite in about 4 minutes; failing waits on Windows can take far longer.
+        timeout-minutes: 75
+        run: |
+          python -m pytest -p no:cacheprovider -v -rfEsxX --tb=short --durations=25 -o faulthandler_timeout=300 -o junit_family=xunit1 --junitxml=test-results/windows/junit.xml
+          $code = $LASTEXITCODE
+          "$code" | Set-Content -Encoding ascii test-results/windows/pytest-exit-code.txt
+          "pytest exit code: $code"
+          exit $code
+      - name: Retain JUnit results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          # The attempt keeps a re-run's upload from colliding with the first one.
+          name: graftling-windows-junit-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/windows/
+          if-no-files-found: error
+          retention-days: 7

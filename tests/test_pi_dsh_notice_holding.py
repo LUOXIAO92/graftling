@@ -23,6 +23,7 @@ import pytest
 from graftling import AgentControl, Caller, bind
 from graftling.dsh import host as dsh_host
 from graftling.pi import host as pi_host
+from posix_only import SHEBANG, require_posix
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -810,6 +811,7 @@ with open(os.environ['TEST_LOG'], 'w') as log:
 def run_extension(tmp_path: Path, *, entries: list | None = None, ui: bool = False, turn: bool = True,
                   notices: str = 'exec-1:completed', run_ms: int = 1500) -> tuple[list, list]:
     """Drive the real extension.mjs with a recording Pi and a scripted host."""
+    require_posix(SHEBANG)
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required')
@@ -1012,6 +1014,7 @@ with open(os.environ['TEST_LOG'], 'w') as log:
 
 def run_plugin(tmp_path: Path, **environment: str) -> list:
     """Drive the real plugin.mjs's host row with stub DSH packages and a scripted host."""
+    require_posix(SHEBANG)
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required')

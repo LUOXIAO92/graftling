@@ -17,6 +17,7 @@ import graftling
 from graftling import AgentControl, AgentsError, Caller, bind
 from graftling.pi import host
 from graftling.pi.driver import PiDriver
+from posix_only import SHEBANG, require_posix
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -453,6 +454,7 @@ with open(os.environ['TEST_LOG'], 'w') as log:
 
 def run_extension(tmp_path: Path, **environment: str) -> tuple[list, list]:
     """Drive the agents Pi extension against a scripted host process."""
+    require_posix(SHEBANG)
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required')

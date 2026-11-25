@@ -20,6 +20,7 @@ from graftling.claude.driver import ClaudeDriver
 from graftling.codex.driver import CodexDriver
 from graftling.dsh.driver import DshDriver
 from graftling.pi.driver import PiDriver
+from posix_only import SH_SCRIPT, require_posix
 
 
 CALLER = Caller('test-host', None, 'main-session', 'claude')
@@ -365,6 +366,7 @@ def test_an_unavailable_runtime_fails_create_without_an_agent(tmp_path: Path) ->
 
 
 def executable(directory: Path, name: str, output: str = '') -> Path:
+    require_posix(SH_SCRIPT)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
     path.write_text(f'#!/bin/sh\necho "{output}"\n')

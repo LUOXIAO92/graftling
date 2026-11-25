@@ -20,6 +20,7 @@ import sysconfig
 
 import pytest
 
+from posix_only import SH_SCRIPT, SHEBANG, require_posix
 from test_dsh_standalone_host import STUBS
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src' / 'graftling'
@@ -102,6 +103,7 @@ def linked(tmp_path: Path, directory: Path) -> Path:
 
 def on_path(tmp_path: Path, python: str) -> None:
     """Make ``python`` the ``python3`` on the plugin's PATH."""
+    require_posix(SH_SCRIPT)
     script = tmp_path / 'bin' / 'python3'
     script.write_text(f"#!/bin/sh\nexec '{python}' \"$@\"\n")
     script.chmod(0o755)
@@ -149,6 +151,7 @@ def test_a_python_of_another_graftling_is_refused_with_the_uv_command(installati
 
 def test_explicit_graftling_python_wins_and_is_used_unchanged(installation: Path, tmp_path: Path) -> None:
     """GRAFTLING_PYTHON is used as given even when the installation's Python would be found."""
+    require_posix(SHEBANG)
     python = tmp_path / 'chosen-python'
     python.write_text(f'#!{sys.executable}\n{RECORDING_HOST}')
     python.chmod(0o755)

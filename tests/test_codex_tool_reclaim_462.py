@@ -28,9 +28,11 @@ from graftling import AgentControl, Caller, bind
 from graftling.codex.driver import CodexDriver
 from graftling.member_processes import MEMBER_RUN_ENV
 from graftling.tool_descendants import Identity, _table, identity, read_sidecar
+from posix_only import PREFIX
 
 pytestmark = pytest.mark.skipif(not (sys.platform == 'darwin' or sys.platform.startswith('linux')),
-                                reason='macOS and Linux process tables')
+                                reason=PREFIX + 'macOS and Linux process tables; tools in their own session '
+                                'killed by SIGKILL and os.killpg')
 
 TOOL = '/bin/sleep 462; :'
 CALLER = ('controlled-host', 'actual-parent', 'parent-session', 'codex')

@@ -30,6 +30,7 @@ from graftling.dsh.errors import DshError
 from graftling.dsh.service import DshService
 from graftling.dsh.settings import prepare
 from dsh_standalone_peer import FakeDshService, install_dsh
+from posix_only import SH_SCRIPT, require_posix
 from test_codex_independent_control import native_settings  # noqa: F401 - pytest fixture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -737,6 +738,7 @@ def test_a_dsh_that_cannot_start_tells_the_standalone_parent_why(
     tmp_path: Path, dsh: dict, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A real process exits before authentication; a first start has no Trace to read."""
+    require_posix(SH_SCRIPT)
     monkeypatch.setattr(execution.DshExecution, 'service_type', DshService)
     Path(dsh['executable']).write_text(f'#!/bin/sh\necho "{REASON}"\nexit 1\n')
     (tmp_path / 'agents').mkdir()

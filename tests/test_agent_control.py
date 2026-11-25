@@ -14,6 +14,7 @@ import pytest
 
 import graftling
 from graftling import AgentControl, AgentsError, Caller, ExecutionEvents
+from posix_only import require_posix
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -512,6 +513,7 @@ def test_direct_parent_confirms_an_ended_execution_whose_processes_are_gone(root
     driver.release(resumed['execution'])
 
     # A Runtime group member that outlived the recorded Runtime blocks confirmation.
+    require_posix('from here the test uses a process group (start_new_session, os.killpg, SIGKILL)')
     group  = subprocess.Popen([sys.executable, '-c', 'import subprocess, sys; subprocess.Popen('
                                '[sys.executable, "-c", "import time; time.sleep(60)"])'], start_new_session=True)
     group.wait()

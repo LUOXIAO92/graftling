@@ -20,6 +20,7 @@ import graftling
 from graftling import AgentControl, Caller, discover_models
 from graftling.child_env import is_credential_name
 from graftling.claude.driver import ClaudeDriver
+from posix_only import SHEBANG, posix_only
 
 
 CALLER = Caller('test-host', None, 'main-session', 'claude')
@@ -117,6 +118,7 @@ def test_a_host_claude_endpoint_without_its_key_is_refused_before_any_process(
     assert not claude.exists()
 
 
+@posix_only(SHEBANG)
 def test_a_child_reaches_its_endpoint_with_only_the_connection_key(tmp_path: Path, claude: Path) -> None:
     agents = control(tmp_path, f'    base_url: {GATEWAY}\n    api_key_env: GATEWAY_TEST_KEY\n')
     # Named tools: no default-tools probe start (576).
@@ -133,6 +135,7 @@ def test_a_child_reaches_its_endpoint_with_only_the_connection_key(tmp_path: Pat
     assert query['env'] == start['env'] and setting_sources(query['argv']) == ''
 
 
+@posix_only(SHEBANG)
 @pytest.mark.parametrize('connection', ['', '    provider: anthropic\n'])
 def test_without_an_endpoint_the_child_keeps_the_native_login_as_before(
     tmp_path: Path, claude: Path, connection: str,

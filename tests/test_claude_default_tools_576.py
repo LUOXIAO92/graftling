@@ -17,6 +17,7 @@ from graftling.claude import execution as module
 from graftling.claude.execution import (ClaudeExecution, probe_default_tools, read_init_tools, tool_probe_argv,
                                         tool_probe_environment, tool_probe_key)
 from graftling.runtime import RuntimeAdapterError
+from posix_only import SHEBANG, require_posix
 
 
 def _claude(tmp_path: Path, **request: object) -> ClaudeExecution:
@@ -28,6 +29,7 @@ def _claude(tmp_path: Path, **request: object) -> ClaudeExecution:
 
 def _stub(tmp_path: Path, body: str) -> Path:
     """A stand-in executable that records its argv, cwd and environment, then runs ``body``."""
+    require_posix(SHEBANG)
     path = tmp_path / 'claude-stub'
     path.write_text(f'''#!{sys.executable}
 import json, os, sys, time

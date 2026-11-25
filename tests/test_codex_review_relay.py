@@ -10,11 +10,13 @@ import pytest
 
 from graftling import AgentControl, Caller, bind
 from graftling.codex.driver import CodexDriver
+from posix_only import SHEBANG, require_posix
 
 
 @pytest.fixture
 def native_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     """Run the controlled app-server peer and record what the client sends it."""
+    require_posix(SHEBANG)
     peer = tmp_path / 'codex'
     peer.write_text('#!' + sys.executable + '\n' + Path(__file__).with_name('codex_stdio_peer.py').read_text())
     peer.chmod(0o755)

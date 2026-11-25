@@ -21,6 +21,7 @@ import graftling.codex.app_server
 import graftling.dsh.service
 from graftling import AgentControl, Caller, discover_models
 from graftling.discovery import handle_request
+from posix_only import SHEBANG, require_posix
 
 
 CALLER = Caller('test-host', None, 'main-session', 'claude')
@@ -85,6 +86,7 @@ class RecordingDriver:
 
 def fake_client(directory: Path, name: str, body: str) -> None:
     """Write an executable Python script ``name`` into ``directory``."""
+    require_posix(SHEBANG)
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / name
     path.write_text(f'#!{sys.executable}\nimport json, os, sys\n{body}', encoding='utf-8')

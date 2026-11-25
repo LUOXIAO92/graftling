@@ -15,6 +15,7 @@ import pytest
 
 from graftling import AgentControl, Caller, bind
 from graftling.pi import host
+from posix_only import SHEBANG, require_posix
 from test_pi_standalone_host import SOURCE, Fake, fakes, host_environment  # noqa: F401 - pytest fixture
 
 EXTENSION = SOURCE / 'graftling/pi/extension.mjs'
@@ -68,6 +69,7 @@ def installed(tmp_path: Path, with_python: bool = True) -> tuple[Path, Path]:
 
 def fake(path: Path) -> Path:
     """Write an executable host stand-in at ``path``."""
+    require_posix(SHEBANG)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('#!' + sys.executable + '\n' + FAKE_PYTHON)
     path.chmod(0o755)

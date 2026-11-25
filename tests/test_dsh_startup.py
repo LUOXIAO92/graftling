@@ -7,10 +7,12 @@ import pytest
 
 from graftling.dsh.errors import DshError
 from graftling.dsh.service import DshService
+from posix_only import SHEBANG, require_posix
 
 
 def test_failed_startup_retains_reason_and_redacts_credentials(tmp_path: Path) -> None:
     """A real subprocess failure names its cause, not auth values or URLs."""
+    require_posix(SHEBANG)
     program = tmp_path / 'dsh'
     program.write_text(f'#!{sys.executable}\nimport os\n'
                        'print("Error: missing package example-module")\n'

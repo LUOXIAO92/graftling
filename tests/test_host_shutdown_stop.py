@@ -18,6 +18,7 @@ from typing import Any, Callable
 import pytest
 
 from graftling import AgentsError, AgentsResult, Caller, bind, shutdown
+from posix_only import require_posix
 import test_pi_dsh_notice_holding as holding
 from test_pi_dsh_notice_holding import CALLERS, Driver, Process, SOURCE, native_host, read_record, wait_until  # noqa: F401
 
@@ -516,6 +517,8 @@ def run_host(tmp_path: Path, kind: str, position: str = 'first', stubborn: str =
     operation). ``facts['ended_after']`` is the seconds from the
     host entering its stdin loop, by which time the pipe is closed, to its process ending.
     """
+    require_posix("the host runs in its own process group (start_new_session) stopped with os.killpg and "
+                  "SIGKILL; its lock holder uses fcntl")
     script = tmp_path / 'run-host.py'
     script.write_text(f'HOLDER = {HOLDER!r}\nCLIENT = {CLIENT!r}\n' + HOST)
     (tmp_path / 'host.json').write_text(json.dumps({'root': str(tmp_path / 'data')}))

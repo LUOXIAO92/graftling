@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -86,7 +87,11 @@ def _checkout_import_problem(cwd: Path, executable: str = sys.executable) -> Opt
 def _command_problem(executable: str = sys.executable) -> Optional[str]:
     """Say which console command of the installed distribution is missing."""
     scripts = Path(executable).parent
-    missing = [name for name in ("subagents", "subagents-mcp") if not (scripts / name).exists()]
+    suffix = ""
+    if sys.platform == "win32":
+        # pip puts Windows console commands in the scheme's Scripts directory, as .exe (632).
+        scripts, suffix = Path(sysconfig.get_path("scripts")), ".exe"
+    missing = [name for name in ("subagents", "subagents-mcp") if not (scripts / (name + suffix)).exists()]
     if not missing:
         return None
     return "The test interpreter's bin directory {0} lacks {1}; install this checkout: {2} -m pip install -e {3}".format(

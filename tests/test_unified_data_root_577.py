@@ -22,6 +22,7 @@ from graftling.claude.plugin import MARKETPLACE_DIRECTORY, marketplace_module
 from test_dsh_standalone_host import fake_dsh, header, run_host as run_dsh_host, run_plugin
 from test_pi_default_host_572 import installed, run_default_host as run_pi_default, start as start_pi
 from test_pi_standalone_host import SOURCE, host_environment
+from posix_only import SH_SCRIPT, SHEBANG, require_posix
 
 
 # ---------------------------------------------------------------- DSH
@@ -181,6 +182,7 @@ def test_pi_child_with_the_variable_starts_no_host(tmp_path: Path) -> None:
 @pytest.fixture
 def codex_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Settings for the controlled Codex peer, whose Session cwd is ``tmp_path/project``."""
+    require_posix(SHEBANG)
     project = tmp_path / 'project'
     project.mkdir()
     peer = tmp_path / 'codex'
@@ -253,6 +255,7 @@ def test_codex_without_a_usable_session_cwd_names_both_ways(tmp_path: Path, code
 @pytest.fixture
 def claude_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A stand-in ``claude`` first on PATH; GRAFTLING_DATA_ROOT starts unset."""
+    require_posix(SH_SCRIPT)
     directory = tmp_path / 'bin'
     directory.mkdir()
     claude = directory / 'claude'

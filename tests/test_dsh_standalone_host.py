@@ -15,6 +15,7 @@ import pytest
 
 from graftling import AgentControl, AgentsError, Caller, bind
 from graftling.dsh import host
+from posix_only import SHEBANG, posix_only, require_posix
 
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -478,6 +479,7 @@ with open(os.environ['TEST_LOG'], 'w') as log:
 
 def run_plugin(tmp_path: Path, **environment: str) -> tuple[dict, dict | None]:
     """Drive plugin.mjs's host row against stub DSH packages and a scripted host."""
+    require_posix(SHEBANG)
     node = shutil.which('node')
     if not node:
         pytest.skip('Node is required')
@@ -588,6 +590,7 @@ def test_host_without_configuration_serves_the_project_data_root(tmp_path: Path)
     assert refused['code'] == 1 and 'cwd does not match' in json.loads(refused['stderr'])['error']['message']
 
 
+@posix_only("a read-only directory made with chmod 0o555 and checked with os.geteuid")
 def test_host_without_configuration_reports_an_unwritable_project(tmp_path: Path) -> None:
     """A project directory where .agents-control cannot be made names GRAFTLING_DSH_CONFIG (570)."""
     project = tmp_path / 'project'

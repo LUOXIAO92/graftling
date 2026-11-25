@@ -22,6 +22,7 @@ from graftling.approval import REVIEW_METHOD, approves, check_reply, review_fail
 from graftling.claude.driver import ClaudeDriver
 from graftling.claude.execution import REVIEW_HOOK_MIN_SECONDS, ClaudeExecution
 from graftling import review as review_core
+from posix_only import SHEBANG, require_posix
 
 # A reviewer process: it refuses Write and allows everything else, the connectivity check included.
 REVIEWER_SCRIPT = """
@@ -110,6 +111,7 @@ class Harness:
 @pytest.fixture
 def native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Put the controlled peer where a Claude driver finds it."""
+    require_posix(SHEBANG + '; the peer (claude_cli_fixture.py) also starts its tools in new sessions')
     binary = tmp_path / 'bin/claude'
     binary.parent.mkdir()
     binary.write_text(f'#!{sys.executable}\n' + Path(__file__).with_name('claude_cli_fixture.py').read_text())

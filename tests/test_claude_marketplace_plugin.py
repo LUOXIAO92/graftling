@@ -16,6 +16,10 @@ import pytest
 import graftling
 from graftling.claude import host
 from graftling.claude.plugin import MARKETPLACE_DIRECTORY, claude_host_plugin, marketplace_module
+from posix_only import SH_SCRIPT, posix_only, require_posix
+
+# The launcher under test and its stand-in Pythons are sh scripts (629 M9, W8).
+LAUNCHER_SH = "claude-plugin/bin/graftling-host is a sh script run by sh, with '#!/bin/sh' stand-in Pythons"
 
 
 REPOSITORY = Path(__file__).resolve().parents[1]
@@ -54,6 +58,7 @@ def test_manifests_name_graftling_and_bake_in_no_path() -> None:
 @pytest.fixture
 def claude_on_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A stand-in ``claude`` first on PATH."""
+    require_posix(SH_SCRIPT)
     directory = tmp_path / 'bin'
     directory.mkdir()
     claude = directory / 'claude'
@@ -184,6 +189,7 @@ def fake_python(path: Path, body: str) -> Path:
     return path
 
 
+@posix_only(LAUNCHER_SH)
 @pytest.mark.parametrize('python, named', [
     ('missing', 'GRAFTLING_PYTHON='),
     ('without', 'GRAFTLING_PYTHON='),
@@ -208,6 +214,7 @@ def test_launcher_names_what_to_install_when_python_cannot_run_graftling(
         assert "No module named 'graftling'" in result.stderr
 
 
+@posix_only(LAUNCHER_SH)
 def test_launcher_execs_the_found_python_with_the_host(tmp_path: Path) -> None:
     """GRAFTLING_PYTHON first; the host replaces the launcher with the same arguments."""
     record = tmp_path / 'argv'

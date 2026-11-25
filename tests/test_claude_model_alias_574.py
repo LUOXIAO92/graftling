@@ -21,6 +21,7 @@ import graftling.models
 from graftling import AgentControl, Caller
 from graftling.claude.driver import ClaudeDriver
 from graftling.claude.execution import alias_resolution
+from posix_only import SH_SCRIPT, require_posix
 
 CALLER = Caller('test-host', None, 'main-session', 'claude')
 CATALOG = [  # the shape models._claude returns for Claude 2.1.330's catalog (Task 574 repro)
@@ -146,6 +147,7 @@ def test_the_init_check_accepts_only_the_catalog_resolution() -> None:
 
 
 def test_the_claude_driver_passes_the_expected_model_to_its_request(tmp_path: Path) -> None:
+    require_posix(SH_SCRIPT)
     claude = tmp_path / 'claude'
     claude.write_text('#!/bin/sh\necho "2.1.330 (Claude Code)"\n')
     claude.chmod(0o755)

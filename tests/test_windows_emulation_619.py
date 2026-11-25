@@ -17,6 +17,11 @@ import sys
 from pathlib import Path
 
 import graftling
+from posix_only import posix_only
+
+# On Windows the runner checks these paths for real; the emulation stands in for it on POSIX hosts only.
+pytestmark = posix_only('emulates Windows on a POSIX host (no fcntl, a stand-in msvcrt); '
+                        'the Windows runner checks the same paths for real')
 
 # Prepended to every emulated script; ``EMULATED`` holds the stand-in's calls.
 EMULATION = r'''
