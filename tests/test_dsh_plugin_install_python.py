@@ -28,12 +28,16 @@ SOURCE = Path(__file__).resolve().parents[1] / 'src' / 'graftling'
 # Records the Python that runs it, then behaves as a host whose Session ends.
 RECORDING_HOST = '''
 import json, os, sys
-sys.stdin.readline()
+sys.stdin.buffer.readline()
 print(json.dumps({'connection': '/fake/address'}), flush=True)
-with open(os.environ['TEST_LOG'], 'a') as log:
+with open(os.environ['TEST_LOG'], 'a', encoding='utf-8') as log:
     log.write(sys.executable + '\\n')
-sys.stdin.read()
+sys.stdin.buffer.read()
 '''
+
+# A Python whose piped output is not UTF-8 unless it is told so: -I ignores PYTHONUTF8, as on
+# Windows, where the code page is the output encoding (638). Ignored where the locale is missing.
+LATIN1 = {'LC_ALL': 'en_US.ISO8859-1'}
 
 DRIVER = '''
 import { pathToFileURL } from 'node:url';
@@ -61,11 +65,12 @@ console.log(JSON.stringify({ attached, error }));
 def installation(tmp_path: Path) -> Path:
     """A venv with graftling in its site-packages, as ``uv tool install`` leaves one; returns its prefix.
 
-    Beside it: ``stub/`` (DSH's packages) and ``bin/`` (the plugin's PATH, empty).
+    Beside it: ``stub/`` (DSH's packages) and ``bin/`` (the plugin's PATH, empty). The venv lies
+    under a non-ASCII directory name, as an installation in a user's profile can (638).
     """
     if not shutil.which('node'):
         pytest.skip('Node is required')
-    prefix = tmp_path / 'tools' / 'graftling'
+    prefix = tmp_path / 'tools-\u6d4b\u8bd5-\u00fc' / 'graftling'
     subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(prefix)], check=True)
     package = site_packages(prefix) / 'graftling'
     shutil.copytree(SOURCE, package, ignore=shutil.ignore_patterns('__pycache__'))
@@ -120,20 +125,36 @@ def start(tmp_path: Path, plugin: Path, **environment: str) -> dict:
     log = tmp_path / 'host.log'
     log.unlink(missing_ok=True)
     result = subprocess.run([shutil.which('node'), '--input-type=module', '-e', DRIVER, str(plugin / 'plugin.mjs')],
-                            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+                            cwd=tmp_path, env=env, capture_output=True, encoding='utf-8', timeout=120)
     assert result.returncode == 0, result.stderr
     shown = json.loads(result.stdout)
-    shown['host'] = log.read_text().split() if log.exists() else []
+    shown['host'] = log.read_text(encoding='utf-8').split() if log.exists() else []
     assert not (home / 'graftling-python').exists()
     return shown
 
 
 def test_the_linked_plugin_runs_the_python_of_its_installation(installation: Path, tmp_path: Path) -> None:
     """No GRAFTLING_PYTHON: the host and the MCP server run the installation's own Python."""
-    shown = start(tmp_path, linked(tmp_path, site_packages(installation) / 'graftling' / 'dsh'))
+    shown = start(tmp_path, linked(tmp_path, site_packages(installation) / 'graftling' / 'dsh'), **LATIN1)
     assert shown['error'] is None, shown['error']
     used = Path(shown['attached'][0])
-    assert shown['attached'] == shown['host'] and used.parent == installation / 'bin'
+    # A venv keeps its Python in bin/, on Windows in Scripts\.
+    assert shown['attached'] == shown['host'] and used.parent == installation / ('Scripts' if os.name == 'nt' else 'bin')
+
+
+def test_the_pi_extension_finds_the_python_of_its_installation(installation: Path, tmp_path: Path) -> None:
+    """Pi's extension probes candidates as graftling-dsh does: the installation's own Python, under a
+    non-ASCII path and a Python output encoding that is not UTF-8 (638)."""
+    extension = site_packages(installation) / 'graftling' / 'pi' / 'extension.mjs'
+    script = ("const {pathToFileURL} = await import('node:url');"
+              "const here = pathToFileURL(process.argv[1]).href;"
+              "const m = await import(here);"
+              "console.log(JSON.stringify(m.graftlingPython(process.env, here)));")
+    env = {key: value for key, value in os.environ.items() if key != 'GRAFTLING_PYTHON'}
+    found = subprocess.run([shutil.which('node'), '--input-type=module', '-e', script, str(extension)],
+                           env={**env, **LATIN1}, capture_output=True, encoding='utf-8', timeout=60)
+    assert found.returncode == 0, found.stderr
+    assert Path(json.loads(found.stdout)).parent == installation / ('Scripts' if os.name == 'nt' else 'bin')
 
 
 def test_a_python_of_another_graftling_is_refused_with_the_uv_command(installation: Path, tmp_path: Path) -> None:

@@ -103,7 +103,7 @@ def identity(pid: int) -> Identity | None:
                             field(120, 8) * 1_000_000 + field(128, 8))
         if sys.platform.startswith('linux'):
             path = Path(f'/proc/{pid}')
-            stat = (path / 'stat').read_text()
+            stat = (path / 'stat').read_text(encoding='utf-8')
             fields = stat[stat.rindex(')') + 2:].split()
             if fields[0] in ('Z', 'X'):
                 return None
@@ -130,7 +130,7 @@ def has_exited(pid: int) -> bool:
             flags  = int.from_bytes(buffer.raw[32:36], sys.byteorder)
             return status == _ZOMBIE_DARWIN or bool(flags & 0x4)
         if sys.platform.startswith('linux'):
-            stat = Path(f'/proc/{pid}/stat').read_text()
+            stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8')
             return stat[stat.rindex(')') + 2:].split()[0] in ('Z', 'X')
     except (OSError, ValueError, IndexError):
         return False
@@ -149,7 +149,7 @@ def _executed(pid: int) -> bool:
                 return False
             return bool(int.from_bytes(buffer.raw[0:4], sys.byteorder) & 0x4000)  # pbi_flags
         if sys.platform.startswith('linux'):
-            stat = Path(f'/proc/{pid}/stat').read_text()
+            stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8')
             return not int(stat[stat.rindex(')') + 2:].split()[6]) & 0x40  # flags, field 9
     except (OSError, ValueError, IndexError):
         return False

@@ -22,22 +22,26 @@ from posix_only import SHEBANG, require_posix
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
 MAIN = Caller('pi-native', None, session='pi-main', runtime='pi')
+# Absolute on POSIX and on Windows alike: '/data' has no drive on Windows.
+DATA = str(Path(Path.cwd().anchor, 'data'))
+SECRET = str(Path(Path.cwd().anchor, 'secret'))
+
 PARENT = {'GRAFTLING_PI_ENTRY': '/opt/pi/cli.js', 'GRAFTLING_PI_PROVIDER': 'anthropic',
           'GRAFTLING_PI_MODEL': 'parent-model', 'PATH': '/usr/bin:/bin', 'PI_CODING_AGENT_DIR': '/pi/agent'}
 
 
 @pytest.mark.parametrize(('document', 'message'), [
     ([], 'must be a JSON object'),
-    ({'root': '/data', 'adapter_request': {}}, 'adapter_request is no longer accepted'),
-    ({'root': '/data', 'roles': {}}, 'Unknown Pi host configuration keys'),
+    ({'root': DATA, 'adapter_request': {}}, 'adapter_request is no longer accepted'),
+    ({'root': DATA, 'roles': {}}, 'Unknown Pi host configuration keys'),
     ({'root': 'relative'}, 'absolute data root'),
     ({}, 'absolute data root'),
-    ({'root': '/data', 'claude': 'opus'}, '"claude" must be an object'),
-    ({'root': '/data', 'pi': {'worktree_path': '/elsewhere'}}, 'worktree_path is always the cwd'),
-    ({'root': '/data', 'pi': {'harness_root': '/project'}}, 'Unknown or fixed Pi settings'),
-    ({'root': '/data', 'pi': {'model': ''}}, 'non-empty string'),
-    ({'root': '/data', 'pi': {'read_paths': ['docs']}}, 'absolute paths'),
-    ({'root': '/data', 'pi': {'worktree_access': 'admin'}}, "'read' or 'write'"),
+    ({'root': DATA, 'claude': 'opus'}, '"claude" must be an object'),
+    ({'root': DATA, 'pi': {'worktree_path': '/elsewhere'}}, 'worktree_path is always the cwd'),
+    ({'root': DATA, 'pi': {'harness_root': '/project'}}, 'Unknown or fixed Pi settings'),
+    ({'root': DATA, 'pi': {'model': ''}}, 'non-empty string'),
+    ({'root': DATA, 'pi': {'read_paths': ['docs']}}, 'absolute paths'),
+    ({'root': DATA, 'pi': {'worktree_access': 'admin'}}, "'read' or 'write'"),
 ])
 def test_configuration_refusals(document: object, message: str) -> None:
     """Anything but the documented Task-free form is refused with a reason."""
@@ -47,13 +51,13 @@ def test_configuration_refusals(document: object, message: str) -> None:
 
 def test_configuration_accepts_root_and_per_runtime_settings() -> None:
     """Every Runtime section is optional; Codex stays absent unless given."""
-    root, settings = host.read_configuration({'root': '/data'})
-    assert root == Path('/data')
+    root, settings = host.read_configuration({'root': DATA})
+    assert root == Path(DATA)
     assert settings == {'pi': {}, 'claude': {}, 'dsh': {}, 'codex': None}
     _, settings = host.read_configuration({
-        'root': '/data', 'pi': {'model': 'm', 'deny_read': ['/secret'], 'worktree_access': 'write'},
+        'root': DATA, 'pi': {'model': 'm', 'deny_read': [SECRET], 'worktree_access': 'write'},
         'claude': {'model': 'claude-opus-5-5'}, 'codex': {'adapter_request': {}}, 'dsh': {'model': 'd'}})
-    assert settings['pi']['deny_read'] == ['/secret'] and settings['codex'] == {'adapter_request': {}}
+    assert settings['pi']['deny_read'] == [SECRET] and settings['codex'] == {'adapter_request': {}}
 
 
 def test_default_request_comes_from_the_native_parent(tmp_path: Path) -> None:

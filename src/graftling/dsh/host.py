@@ -31,6 +31,7 @@ from graftling.connection import agents_connection
 from graftling.notices import notice_id, notice_text
 from graftling.process import process_ancestors, process_arguments, process_executable
 from graftling.shutdown import CLOSE_SECONDS, exit_if_unconfirmed, stop_children
+from graftling.stdio import use_utf8_stdio
 
 # Top-level host configuration keys; each Runtime key holds that driver's settings.
 CONFIG_KEYS = frozenset({'root', 'dsh', 'claude', 'codex', 'pi'})
@@ -311,6 +312,7 @@ def start(config: Path | None, launch: Mapping[str, Any]) -> tuple[Path, dict, N
 
 def main() -> None:
     """Keep one control owner alive until the plugin closes its pipe."""
+    use_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, help='host configuration; default: GRAFTLING_DATA_ROOT, else <Session cwd>/.agents-control')
     options = parser.parse_args()

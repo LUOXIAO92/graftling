@@ -97,7 +97,7 @@ def parent_pid(pid: int) -> int | None:
     """Return the parent of a process, or None when it is gone or unreadable."""
     try:
         if sys.platform.startswith('linux'):
-            stat = Path(f'/proc/{pid}/stat').read_text()
+            stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8')
             return int(stat[stat.rindex(')') + 2:].split()[1])
         if os.name == 'nt':
             # Never load '/usr/lib/libproc.dylib' as a drive-relative Windows path.

@@ -44,6 +44,7 @@ from graftling.tool import TOOL_NAME
 from .app_server import CodexServerRequest
 from .driver import CodexDriver
 from .managed_session import MCP_SERVER, CodexManagedExecution
+from graftling.stdio import use_utf8_stdio
 
 # Added to the parent only, after the user's own text: the model also has Codex's
 # native spawn_agent, which literally does what "create a child" asks (432).
@@ -123,7 +124,7 @@ class CodexHost(CodexManagedExecution):
         parameters['developerInstructions'] = '\n\n'.join(filter(None, (parameters['developerInstructions'], GUIDANCE)))
         expected = None
         if resume:
-            previous = yaml.safe_load((native / 'session.yml').read_text())
+            previous = yaml.safe_load((native / 'session.yml').read_text(encoding='utf-8'))
             expected = previous['session']
         elif (native / 'session.yml').exists():
             raise AgentsError('session-exists', 'Use --resume to continue this host Session.')
@@ -386,6 +387,7 @@ def data_directory(directory: Path | None, settings: object) -> Path:
 
 def main() -> None:
     """Start the packaged native host; request arguments never supply an identity."""
+    use_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--settings', required=True, type=Path, help='Host-selected Run.settings JSON.')
     parser.add_argument('--directory', type=Path, help='Independent control and native state root; default: '
@@ -396,7 +398,7 @@ def main() -> None:
     arguments = parser.parse_args()
     host = None
     try:
-        settings = json.loads(arguments.settings.read_text())
+        settings = json.loads(arguments.settings.read_text(encoding='utf-8'))
         directory = data_directory(arguments.directory, settings)
         host = CodexHost(settings, directory, arguments.instruction, arguments.resume)
         result = host.run()
@@ -410,7 +412,7 @@ def main() -> None:
         _close(host)
         raise
     if arguments.output is not None:
-        arguments.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
+        arguments.output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     # Written out first: a stuck child ends this process without Python's own flush.
     print(result.get('last_agent_message') or result['outcome'], flush=True)
     if result.get('error') is not None:

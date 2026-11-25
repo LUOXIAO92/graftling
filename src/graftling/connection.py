@@ -189,7 +189,7 @@ def _answer_request(
     except OSError:
         return
     try:
-        with os.fdopen(descriptor) as stream:
+        with os.fdopen(descriptor, encoding='utf-8') as stream:
             metadata = os.fstat(stream.fileno())
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
                 raise ValueError('A control request must be a regular file with one link.')
@@ -215,7 +215,7 @@ def _answer_request(
     try:
         descriptor = os.open('response.tmp', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                              0o600, dir_fd=directory)
-        with os.fdopen(descriptor, 'w') as stream:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
             stream.write(reply)
         os.replace('response.tmp', 'response.json', src_dir_fd=directory, dst_dir_fd=directory)
         try:
@@ -300,7 +300,7 @@ def connection_operation(
     try:
         with tempfile.TemporaryDirectory(dir=address) as directory:
             request = Path(directory) / 'request.tmp'
-            with request.open('w') as stream:
+            with request.open('w', encoding='utf-8') as stream:
                 if authenticate:
                     fcntl.lockf(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 stream.write(json.dumps(document))
@@ -331,7 +331,7 @@ def connection_operation(
                         pause(0.01)
                     else:
                         time.sleep(0.01)
-                response = json.loads(response_file.read_text())
+                response = json.loads(response_file.read_text(encoding='utf-8'))
         if 'error' in response:
             raise AgentsError(response['error']['code'], response['error']['message'])
         return response

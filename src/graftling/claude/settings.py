@@ -43,6 +43,11 @@ GATEWAY_EXCLUDED = ('ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPI
 GATEWAY_SETTING_SOURCES = ('--setting-sources', '')
 
 
+def native_claude() -> Path:
+    """Return Claude Code's documented native installation path: ``claude.exe`` on Windows."""
+    return Path.home() / '.local/bin' / ('claude.exe' if os.name == 'nt' else 'claude')
+
+
 def current_cli(executable: str | None = None) -> tuple[str, str]:
     """Return the resolved Claude Code executable and its checked version.
 
@@ -52,12 +57,12 @@ def current_cli(executable: str | None = None) -> tuple[str, str]:
     """
     executable = executable or shutil.which('claude')
     if executable is None:
-        native = Path.home() / '.local/bin/claude'
+        native = native_claude()
         executable = str(native) if native.is_file() else None
     if not executable:
         raise AgentsError('RUNTIME_EXECUTABLE_INVALID', 'Claude Code executable is unavailable.')
     try:
-        version = subprocess.run([executable, '--version'], capture_output=True, text=True,
+        version = subprocess.run([executable, '--version'], capture_output=True, text=True, encoding='utf-8',
                                  check=True, timeout=10).stdout.strip()
         match = re.match(r'(\d+)\.(\d+)\.(\d+) \(Claude Code\)', version)
         if match is None or tuple(map(int, match.groups())) < (2, 1, 299):

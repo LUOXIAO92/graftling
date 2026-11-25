@@ -6,7 +6,7 @@
 name: Windows tests
 on:
   push:
-    branches: [agent/632-graftling-windows-ci, agent/633-graftling-windows-process, agent/634-graftling-windows-durable-writes, agent/635-graftling-windows-process-tree, dev]
+    branches: [agent/632-graftling-windows-ci, agent/633-graftling-windows-process, agent/634-graftling-windows-durable-writes, agent/635-graftling-windows-process-tree, agent/638-graftling-windows-paths-encoding, dev]
   workflow_dispatch:
 permissions:
   contents: read
@@ -82,9 +82,20 @@ jobs:
       # takes 247 s there), leaving room for slower process starts on Windows while letting
       # about ten hung files fit in the 70-minute total the driver keeps under the step bound.
       # The driver's exit code is kept beside the results: 0 or 1 means it finished.
+      # The temporary directory, so every tmp_path, data root, venv and worktree the tests
+      # make, sits under a non-ASCII name (638): graftling must handle such paths on Windows.
+      # The name is built from code points so this file's encoding cannot alter it, and the
+      # directory Python resolves is kept in temp-directory.txt (UTF-8) for the step script.
       - name: Run the graftling test suite
         timeout-minutes: 75
         run: |
+          $temp = Join-Path $env:RUNNER_TEMP ('graftling-' + [char]0x6D4B + [char]0x8BD5 + '-' + [char]0x00FC)
+          New-Item -ItemType Directory -Force $temp | Out-Null
+          $env:TEMP = $temp
+          $env:TMP = $temp
+          python -c "import pathlib, tempfile; pathlib.Path('test-results/windows/temp-directory.txt').write_text(tempfile.gettempdir(), encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "temporary directory: $(Get-Content -Raw -Encoding utf8 test-results/windows/temp-directory.txt)"
           python .github/run_test_files.py --out test-results/windows --file-limit 360 --total-limit 4200
           $code = $LASTEXITCODE
           "$code" | Set-Content -Encoding ascii test-results/windows/run-exit-code.txt

@@ -282,7 +282,7 @@ def _process_created(pid: int) -> float | None:
         if sys.platform.startswith('linux'):
             record = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8')
             ticks = int(record.rpartition(')')[2].split()[19])
-            boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text().splitlines()
+            boot = next(int(line.split()[1]) for line in Path('/proc/stat').read_text(encoding='utf-8').splitlines()
                         if line.startswith('btime '))
             return boot + ticks / os.sysconf('SC_CLK_TCK')
     except (OSError, ValueError, IndexError, StopIteration):

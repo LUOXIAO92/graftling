@@ -14,7 +14,7 @@ from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from graftling.runtime import RuntimeAdapterError
 from .execution import ClaudeExecution
-from .settings import GATEWAY_KEY_REQUIRED, current_cli, prepare
+from .settings import GATEWAY_KEY_REQUIRED, current_cli, native_claude, prepare
 
 # Native Claude effort levels; a model's own list may be narrower.
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
@@ -99,7 +99,7 @@ class ClaudeDriver:
     def require_available(self, connection: Mapping[str, Any]) -> None:
         """Refuse a connection whose Claude Code is not installed or not logged in."""
         executable = self.configuration.get('executable') or shutil.which('claude')
-        native = Path.home() / '.local/bin/claude'
+        native = native_claude()
         if executable is None and native.is_file():
             executable = str(native)
         if connection.get('base_url') and not connection.get('api_key_env'):

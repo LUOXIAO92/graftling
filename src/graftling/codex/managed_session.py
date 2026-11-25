@@ -21,6 +21,7 @@ import yaml
 
 from graftling.approval import review_failed
 from graftling.review import build_request, record_decision, review_call
+from graftling.links import require_symbolic_links
 from graftling.runtime import RuntimeAdapterError
 from .app_server import CodexAppServer, CodexExecution, CodexServerRequest
 from graftling.child_env import child_environment, consumer_environment, is_credential_name
@@ -273,6 +274,8 @@ class CodexManagedExecution:
 
     def run(self) -> dict:
         """Run native control on one loop while the Worker accepts local calls."""
+        # The Trace entry links Codex's rollout (Windows: Developer Mode).
+        require_symbolic_links('Codex')
         return asyncio.run(self._run())
 
     async def _run(self) -> dict:
@@ -337,7 +340,7 @@ class CodexManagedExecution:
                 resume_source = None
                 retained = self.directory / 'session.yml'
                 if self.expected_session and retained.is_file():
-                    previous = yaml.safe_load(retained.read_text())
+                    previous = yaml.safe_load(retained.read_text(encoding='utf-8'))
                     if previous.get('session') == self.expected_session and previous.get('rollout_path'):
                         path = Path(previous['rollout_path'])
                         try:
@@ -485,7 +488,7 @@ class CodexManagedExecution:
         partial = target.with_name(target.name + '.partial')
         partial.write_text(yaml.safe_dump(
             {'runtime_pid': process.pid, 'runtime_exit_code': process.returncode,
-             'escaped_processes': self.escaped_processes}, sort_keys=False))
+             'escaped_processes': self.escaped_processes}, sort_keys=False), encoding='utf-8')
         os.replace(partial, target)
 
     async def _observe(self) -> None:

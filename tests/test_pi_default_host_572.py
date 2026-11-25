@@ -41,10 +41,11 @@ await owner.close();
 console.log(JSON.stringify({started, error, servers}));
 '''
 
-# A host stand-in: its argv and cwd go to TEST_LOG; with -c it answers the import check.
+# A host stand-in: its argv and cwd go to TEST_LOG; with -c (after -I and options such as
+# -X utf8) it answers the import check.
 FAKE_PYTHON = '''
 import json, os, sys
-if sys.argv[1:3] == ['-I', '-c']:
+if sys.argv[1:2] == ['-I'] and '-c' in sys.argv[2:5]:
     print(os.environ.get('TEST_IMPORTS', ''))
     raise SystemExit(0 if os.environ.get('TEST_IMPORTS') else 1)
 with open(os.environ['TEST_LOG'], 'a') as log:

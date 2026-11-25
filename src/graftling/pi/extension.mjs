@@ -95,7 +95,8 @@ export async function loadHostSdk(executable = process.argv[1]) {
  * The Python of the graftling installation this file belongs to (572).
  * GRAFTLING_PYTHON wins when set. Otherwise the candidates are the
  * interpreters of the environment whose site-packages holds this file
- * (<prefix>/lib/pythonX.Y/site-packages/graftling/pi/ -> <prefix>/bin/),
+ * (<prefix>/lib/pythonX.Y/site-packages/graftling/pi/ -> <prefix>/bin/; Windows:
+ * <prefix>\Lib\site-packages\graftling\pi\ -> <prefix>\Scripts\python.exe),
  * then python3 and python on PATH (an editable install). A candidate counts
  * only when `-I` imports graftling from this same directory. No network.
  */
@@ -106,13 +107,20 @@ export function graftlingPython(environment = process.env, here = import.meta.ur
   const candidates = [];
   if (basename(site) === 'site-packages') {
     const lib = dirname(site);
-    const prefix = dirname(dirname(lib));
-    candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+    if (process.platform === 'win32') {
+      // Windows: <prefix>\Lib\site-packages; a venv's Python is <prefix>\Scripts\python.exe.
+      const prefix = dirname(lib);
+      candidates.push(join(prefix, 'Scripts', 'python.exe'), join(prefix, 'python.exe'));
+    } else {
+      const prefix = dirname(dirname(lib));
+      candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+    }
   }
   candidates.push('python3', 'python');
   const expected = join(pkg, '__init__.py');
   for (const candidate of candidates) {
-    const found = spawnSync(candidate, ['-I', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
+    // -X utf8: the path is printed as UTF-8, as read here; -I ignores PYTHONUTF8 (638).
+    const found = spawnSync(candidate, ['-I', '-X', 'utf8', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
       {encoding: 'utf8', env: environment, timeout: 20000});
     if (found.status === 0 && found.stdout.trim() === expected) return candidate;
   }

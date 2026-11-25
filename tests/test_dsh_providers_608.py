@@ -149,6 +149,9 @@ def test_listing_routes_the_provider_like_its_child(tmp_path: Path, dsh: dict,
     import graftling.dsh.service
 
     monkeypatch.setattr(graftling.dsh.service, 'DshService', CatalogService)
+    if os.name == 'nt':
+        # Windows finds a command on PATH only under a PATHEXT name; the service is a stand-in anyway.
+        Path(dsh['executable']).with_suffix('.cmd').write_text('@exit /b 1\n')
     monkeypatch.setenv('PATH', f"{Path(dsh['executable']).parent}{os.pathsep}{os.environ['PATH']}")
     found = discover_models({'runtime': 'dsh', 'provider': 'openrouter', 'api_key_env': KEY_ENV})
     assert CatalogService.patches == [{'id': 'llm-pi-ai', 'config': {'providers': {'openrouter': {

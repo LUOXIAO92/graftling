@@ -15,6 +15,7 @@ from graftling.calls import Call, CallCancelled, current_call, running_call
 from graftling.connection import call_owner
 from graftling.discovery import INPUT_SCHEMA
 from graftling.tool import TOOL_NAME, AgentsError
+from graftling.stdio import use_utf8_stdio
 
 PROTOCOL_VERSION = '2025-06-18'
 
@@ -353,6 +354,7 @@ def call(request_id: Any, params: Mapping) -> dict:
 
 def main() -> None:
     """Run one stdio MCP entry over the owning Runtime's authenticated channel."""
+    use_utf8_stdio()
     serve(sys.stdin, sys.stdout, lambda message: respond(
         message, child_tool_documents, call, {'name': TOOL_NAME, 'version': __version__}))
 
