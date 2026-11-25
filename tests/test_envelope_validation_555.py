@@ -139,6 +139,33 @@ def test_arguments_file_outside_the_boundary_is_refused(tmp_path: Path) -> None:
     assert 'is not a regular file' in directory.document['error']['message']
 
 
+def test_without_o_nofollow_a_directory_is_refused_and_a_file_read(tmp_path: Path,
+                                                                   monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where os.O_NOFOLLOW does not exist (Windows), a directory is still 'not a regular file' (638).
+
+    As on Windows, opening a directory fails with EACCES, so the refusal must come before the open.
+    """
+    monkeypatch.delattr(os, 'O_NOFOLLOW', raising=False)
+    real_open = os.open
+
+    def windows_open(path, flags, *arguments, **options):
+        """os.open as Windows behaves for a directory."""
+        if os.path.isdir(path):
+            raise PermissionError(13, 'Permission denied', str(path))
+        return real_open(path, flags, *arguments, **options)
+
+    monkeypatch.setattr(os, 'open', windows_open)
+    write(tmp_path / 'sub' / 'a.json', json.dumps({'agent': 'nobody'}))
+    for named in ('.', 'sub'):
+        result = handle_request({'action': 'execute', 'feature': 'status', 'arguments_file': named},
+                                executed, files=tmp_path)
+        assert paths(result) == ['request.arguments_file'], named
+        assert 'is not a regular file' in result.document['error']['message'], result.document
+    result = handle_request({'action': 'execute', 'feature': 'status', 'arguments_file': 'sub/a.json'},
+                            executed, files=tmp_path)
+    assert result.document == {'executed': {'action': 'status', 'agent': 'nobody'}}, result.document
+
+
 def test_without_a_host_boundary_a_file_is_refused(tmp_path: Path) -> None:
     """A host that supplies no directory never reads a file; validate_envelope refuses it too."""
     write(tmp_path / 'a.json', '{}')

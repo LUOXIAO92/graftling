@@ -119,7 +119,8 @@ export function graftlingPython(environment = process.env, here = import.meta.ur
   candidates.push('python3', 'python');
   const expected = join(pkg, '__init__.py');
   for (const candidate of candidates) {
-    const found = spawnSync(candidate, ['-I', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
+    // -X utf8: the path is printed as UTF-8, as read here; -I ignores PYTHONUTF8 (638).
+    const found = spawnSync(candidate, ['-I', '-X', 'utf8', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
       {encoding: 'utf8', env: environment, timeout: 20000});
     if (found.status === 0 && found.stdout.trim() === expected) return candidate;
   }

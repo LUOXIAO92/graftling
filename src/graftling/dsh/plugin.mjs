@@ -28,10 +28,12 @@ const READY_MS = 2000;
 // The Python found for this file's graftling installation, for every Session of this DSH.
 let found;
 
-/** Whether ``candidate`` imports graftling from ``expected`` (its __init__.py), with -I. */
+/** Whether ``candidate`` imports graftling from ``expected`` (its __init__.py), with -I.
+ * -X utf8 makes the printed path UTF-8, as Node reads it: -I ignores PYTHONUTF8, and a
+ * Windows code page cannot write every path (638). */
 function importsHere(candidate, expected, environment) {
   return new Promise(done => execFile(candidate,
-    ['-I', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
+    ['-I', '-X', 'utf8', '-c', 'import os, graftling; print(os.path.realpath(graftling.__file__))'],
     { env: environment, timeout: 20000 }, (error, stdout) => done(!error && stdout.trim() === expected)));
 }
 

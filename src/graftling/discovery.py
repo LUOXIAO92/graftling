@@ -147,18 +147,22 @@ def read_arguments(request: dict, files: Path | None) -> dict:
     if not path.is_relative_to(root):
         raise refuse(f'{named} is outside the directory this caller may read ({root})')
     # O_NOFOLLOW refuses a symbolic link as the opened name. Windows has no such
-    # flag, so there the opened file must be the regular file lstat saw first.
+    # flag, so there lstat must show a regular file before opening (opening a
+    # directory there fails as "Permission denied"), and the opened file must be
+    # that same file.
     nofollow = getattr(os, 'O_NOFOLLOW', None)
     try:
-        seen       = os.lstat(path) if nofollow is None else None
+        seen = os.lstat(path) if nofollow is None else None
+        if seen is not None and not stat.S_ISREG(seen.st_mode):
+            raise refuse(f'{named} is not a regular file')
         descriptor = os.open(path, os.O_RDONLY | (nofollow or 0) | getattr(os, 'O_BINARY', 0))
     except FileNotFoundError:
         raise refuse(f'{named} does not exist') from None
     except OSError as error:
         raise refuse(f'{named} cannot be opened ({error.strerror})') from None
     opened = os.fstat(descriptor)
-    if not stat.S_ISREG(opened.st_mode) or (seen is not None and (
-            not stat.S_ISREG(seen.st_mode) or (seen.st_dev, seen.st_ino) != (opened.st_dev, opened.st_ino))):
+    if not stat.S_ISREG(opened.st_mode) or (
+            seen is not None and (seen.st_dev, seen.st_ino) != (opened.st_dev, opened.st_ino)):
         os.close(descriptor)
         raise refuse(f'{named} is not a regular file')
     with os.fdopen(descriptor, 'rb') as stream:
