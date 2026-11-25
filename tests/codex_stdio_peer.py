@@ -206,7 +206,9 @@ for line in incoming():
         result = {
             'thread': {
                 'id': thread_id,
-                'path': str(rollout) if rollout else '/native/' + thread_id + '.jsonl',
+                # A real Codex reports an absolute rollout path. abspath keeps '/native/...' on
+                # POSIX and gives it the current drive on Windows (637); the file never exists.
+                'path': str(rollout) if rollout else os.path.abspath('/native/' + thread_id + '.jsonl'),
                 'turns': [],
             },
             'model': os.environ.get('PEER_OBSERVED_MODEL') or params.get('model', 'runtime-default'),
@@ -314,9 +316,11 @@ for line in incoming():
                                   "import subprocess; subprocess.Popen(['/bin/sleep', '303']).wait()"],
                                  env=other, **quiet)
             if prompt == 'tool-end':
-                # End the turn after the owner's sampler has seen the tool (about 1 s).
+                # End the turn after the owner's sampler has seen the tool (about 1 s). Windows
+                # (637): no sampler, but the test finds the tool and its grandchild in the job
+                # before the reclaim ends them, and each Python start is slower there.
                 emit({'id': message['id'], 'result': result})
-                time.sleep(2.5)
+                time.sleep(8 if os.name == 'nt' else 2.5)
                 complete(thread_id, turn_id, 'tool ran')
                 continue
             prompt = 'hold'

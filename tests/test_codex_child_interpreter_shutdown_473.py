@@ -52,7 +52,10 @@ native_settings = reclaim.native_settings
 
 def windows_tools(root: Path, agent: str, other: subprocess.Popen) -> dict[str, Identity]:
     """Windows: the tool and its grandchild in the service's job, by their arguments, and ``other``."""
-    marker = reclaim.record(root, agent)['process'].get('tool_marker')
+    try:
+        marker = reclaim.record(root, agent)['process'].get('tool_marker')
+    except (OSError, ValueError, KeyError, IndexError):
+        return {}  # the record is being replaced or has no execution yet; read again
     try:
         listed = find_marked_processes(marker) if marker else {}
     except OSError:
@@ -108,7 +111,12 @@ def test_child_ends_completed_after_the_owner_main_thread_returns(tmp_path: Path
         created = json.loads(owner.stdout.readline())
         tools   = ((lambda: windows_tools(root, created['agent'], other)) if WINDOWS
                    else (lambda: reclaim.tools(since)))
-        found   = reclaim.wait_for(lambda: len(tools()) == 3, 10) and tools()
+
+        def all_three() -> dict | None:
+            """The tools once all three are seen; the same read is kept (no second read racing the reclaim)."""
+            current = tools()
+            return current if len(current) == 3 else None
+        found   = reclaim.wait_for(all_three, 30 if WINDOWS else 10) or {}
         assert found, 'the peer did not start the tool; ' + child_evidence(owner, root, created['agent'])
 
         # The process exits only after the non-daemon owner has finished the end processing.

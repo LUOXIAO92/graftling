@@ -202,13 +202,20 @@ def _open_job(name: str) -> OwnedTree:
 
 
 def _windows_argv(pid: int) -> list[str]:
-    """Return a process's arguments as the kernel reports them; empty when unreadable."""
+    """Return a process's arguments as the kernel reports them.
+
+    When the command line cannot be read, the executable's path alone
+    (QueryFullProcessImageNameW), so a listed process still names what it
+    runs; empty when neither can be read.
+    """
+    from graftling import _win32
     from graftling.process import process_arguments
 
     try:
         return process_arguments(pid)
     except OSError:
-        return []
+        image = _win32.image_path(pid)
+        return [image] if image else []
 
 
 def list_job(name: str, skipped: set[int] | frozenset[int]) -> dict[int, list[str]]:
