@@ -13,7 +13,16 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.10.2 (compatible)
+
+`import graftling` works on Windows again, and on Windows process listing and the Codex
+parent host now fail with clear errors (`OSError`, and the existing error code
+`authority-denied`) instead of failing at import. POSIX behaviour is unchanged: the
+Session archive takes the same `flock` on the same lock file through graftling's
+shared lock. No public name, argument, result field, error code or result shape
+changes, and nothing that used to succeed is refused, so the release is compatible
+by section 7 and raises the patch version. GraphTraj's range
+`graftling>=0.10.0,<0.11` includes it.
 
 ### Fixed
 
