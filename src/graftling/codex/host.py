@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 from pathlib import Path
 import sys
 import threading
@@ -319,6 +320,8 @@ class CodexHost(CodexManagedExecution):
 
     def run(self) -> dict:
         """Keep one actual parent owner, even across repeated host invocations."""
+        if os.name == 'nt':
+            raise AgentsError('authority-denied', 'Windows does not support the Codex parent host.')
         import fcntl
 
         with (self.directory / 'owner.lock').open('a+b') as ownership:

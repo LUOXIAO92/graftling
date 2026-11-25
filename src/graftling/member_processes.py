@@ -99,6 +99,9 @@ def parent_pid(pid: int) -> int | None:
         if sys.platform.startswith('linux'):
             stat = Path(f'/proc/{pid}/stat').read_text()
             return int(stat[stat.rindex(')') + 2:].split()[1])
+        if os.name == 'nt':
+            # Never load '/usr/lib/libproc.dylib' as a drive-relative Windows path.
+            return None
         libproc = ctypes.CDLL(ctypes.util.find_library('proc') or '/usr/lib/libproc.dylib', use_errno=True)
         # PROC_PIDTBSDINFO=3: struct proc_bsdinfo, whose pbi_ppid is the fifth uint32.
         buffer = ctypes.create_string_buffer(136)
@@ -131,6 +134,8 @@ def _user_pids() -> list[int]:
                 except OSError:
                     continue
         return pids
+    if os.name == 'nt':
+        raise OSError('Listing marked processes is not supported on Windows.')
     # macOS: libproc lists every pid; KERN_PROCARGS2 later reads only same-user ones.
     libproc = ctypes.CDLL(ctypes.util.find_library('proc') or '/usr/lib/libproc.dylib', use_errno=True)
     count = libproc.proc_listallpids(None, 0)

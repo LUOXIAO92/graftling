@@ -11,7 +11,6 @@ from __future__ import annotations
 from contextlib import contextmanager
 from copy import deepcopy
 from hashlib import sha256
-import fcntl
 import json
 import operator
 import os
@@ -21,7 +20,7 @@ import threading
 from typing import Callable, Iterator
 
 from graftling.config import read_config
-from graftling.locks import ignore_in_git
+from graftling.locks import exclusive, ignore_in_git
 
 from .protocol import (
     LEGACY_FORMAT_VERSION, SURFACE_TYPES, snapshot_event, upgrade_event, upgrade_header,
@@ -289,8 +288,7 @@ class JsonlSessionStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.parent.parent.name == 'sessions':  # the archive_path layout
             ignore_in_git(path.parent.parent)
-        with path.with_suffix('.lock').open('a+b') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with exclusive(path.with_suffix('.lock')):
             if not path.exists():
                 metadata = {'archiveVersion': 1, 'header': header, 'revision': 0,
                             'sources': {}, 'pending': [], 'observations': []}
@@ -367,8 +365,7 @@ class JsonlSessionStore:
         if self._depth:
             yield
             return
-        with self.path.with_suffix('.lock').open('a+b') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with exclusive(self.path.with_suffix('.lock')):
             self.refresh()
             metadata, events, lines = self._metadata_state(), self._events, self._lines
             try:

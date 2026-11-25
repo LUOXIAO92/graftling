@@ -13,6 +13,28 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+### Fixed
+
+- `import graftling` works on Windows again; since before 0.5.2 it stopped at
+  `import fcntl` in the Session archive. The archive lock now uses graftling's
+  shared cross-platform lock (`flock` on POSIX as before, `msvcrt.locking` on
+  Windows) (619).
+- On Windows, listing marked processes (`find_marked_processes`,
+  `stop_marked_processes` and the marker scan of `stop_tool_processes`) reports
+  "Listing marked processes is not supported on Windows." instead of trying to
+  load `/usr/lib/libproc.dylib` as a Windows path, and a process's parent reads
+  as unknown (619).
+- On Windows, the Codex parent host (`python -m graftling.codex.host`) refuses
+  with `authority-denied` "Windows does not support the Codex parent host."
+  instead of failing on `import fcntl` (619).
+- Still unsupported on Windows, unchanged: starting or controlling Agent Runtimes
+  and the Pi host (the local control pipe refuses with `authority-denied`), the
+  Claude and DSH hosts (they refuse because they cannot read their native parent
+  process), and writing Session archives (the directory sync after a write raises
+  `PermissionError`) (619).
+
 ## 0.10.1 (compatible)
 
 Only the description `discover` returns for `models` changes, so that an intent query
