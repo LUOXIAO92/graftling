@@ -626,6 +626,11 @@ def run_main(
         prepare(*((result[2], result[4], driver) if kind == 'pi' else (result[3], result[5], driver)))
         return result
 
+    def unconfirmed_fails(unconfirmed: list[str], *_) -> None:
+        """The real one ends this whole process (os._exit), and with it the test file's results."""
+        assert not unconfirmed, f'host shutdown could not confirm the stop of {unconfirmed}'
+
+    monkeypatch.setattr(host, 'exit_if_unconfirmed', unconfirmed_fails)
     monkeypatch.setattr(host, 'verify_native_parent', lambda *_: None)
     monkeypatch.setattr(host, 'runtime_drivers', lambda *_: {'claude': driver})
     monkeypatch.setattr(host, 'start', started)

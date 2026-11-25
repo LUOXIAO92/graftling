@@ -9,12 +9,14 @@ paths reach. Types are spelled with fixed sizes (``DWORD`` is 32 bits) because
 The process functions (633, W1) open the process with limited query rights,
 close the handle on every path, and raise :class:`OSError` or return ``None``
 as documented. The file functions (634, W2) lock a lock file through an open
-handle, rename with write-through, and describe a volume.
+handle, rename with write-through, and describe a volume. The pipe functions
+(636, W4) create, connect, read and write the owner connection's named pipe and
+pin its client process; they raise :class:`OSError` carrying the Windows error.
 """
 from __future__ import annotations
 
 import ctypes
-from typing import Any
+from typing import Any, Callable
 
 DWORD = ctypes.c_uint32
 ULONG = ctypes.c_uint32
@@ -40,6 +42,37 @@ MOVEFILE_REPLACE_EXISTING = 0x1
 MOVEFILE_WRITE_THROUGH = 0x8
 # GetDriveTypeW answer for a network volume (fileapi.h).
 DRIVE_REMOTE = 4
+# Named pipes (winbase.h, fileapi.h, winnt.h) and their errors (winerror.h), 636.
+GENERIC_READ = 0x80000000
+GENERIC_WRITE = 0x40000000
+OPEN_EXISTING = 3
+PIPE_ACCESS_DUPLEX = 0x3
+FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000
+FILE_FLAG_OVERLAPPED = 0x40000000
+PIPE_TYPE_MESSAGE = 0x4
+PIPE_READMODE_MESSAGE = 0x2
+PIPE_REJECT_REMOTE_CLIENTS = 0x8
+PIPE_UNLIMITED_INSTANCES = 255
+PIPE_BUFFER_BYTES = 65536
+# A client lets the server identify it, never impersonate it.
+SECURITY_SQOS_PRESENT = 0x00100000
+SECURITY_IDENTIFICATION = 0x00010000
+ERROR_FILE_NOT_FOUND = 2
+ERROR_BROKEN_PIPE = 109
+ERROR_PIPE_BUSY = 231
+ERROR_NO_DATA = 232
+ERROR_PIPE_NOT_CONNECTED = 233
+ERROR_MORE_DATA = 234
+ERROR_PIPE_CONNECTED = 535
+ERROR_OPERATION_ABORTED = 995
+ERROR_IO_PENDING = 997
+# The pipe's other end is closed, or was never connected.
+PIPE_GONE = (ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_NOT_CONNECTED)
+INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+# The calling process's token and its user (winnt.h TOKEN_QUERY, TOKEN_INFORMATION_CLASS TokenUser).
+TOKEN_QUERY = 0x8
+TOKEN_USER_CLASS = 1
+SDDL_REVISION_1 = 1
 # PROCESSINFOCLASS values (winternl.h; 60 is available since Windows 8.1).
 PROCESS_BASIC_INFORMATION_CLASS = 0
 PROCESS_COMMAND_LINE_INFORMATION = 60
@@ -88,6 +121,18 @@ class OVERLAPPED(ctypes.Structure):
     ]
 
 
+class SECURITY_ATTRIBUTES(ctypes.Structure):
+    """``SECURITY_ATTRIBUTES``: the pipe's security descriptor, not inheritable."""
+
+    _fields_ = [("nLength", DWORD), ("lpSecurityDescriptor", ctypes.c_void_p), ("bInheritHandle", BOOL)]
+
+
+class SID_AND_ATTRIBUTES(ctypes.Structure):
+    """``SID_AND_ATTRIBUTES``; ``TOKEN_USER`` is this one structure."""
+
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", DWORD)]
+
+
 class UNICODE_STRING(ctypes.Structure):
     """``UNICODE_STRING``: ``Length`` in bytes, without a terminator; 16 bytes on 64-bit."""
 
@@ -96,11 +141,13 @@ class UNICODE_STRING(ctypes.Structure):
 
 
 def _api() -> Any:
-    """Load kernel32, shell32 and ntdll once and declare the functions used here."""
+    """Load kernel32, shell32, ntdll and advapi32 once and declare the functions used here."""
     if not hasattr(_api, "loaded"):
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         shell32 = ctypes.WinDLL("shell32", use_last_error=True)
         ntdll = ctypes.WinDLL("ntdll")
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        overlapped = ctypes.POINTER(OVERLAPPED)
         declarations = (
             (kernel32.OpenProcess, [DWORD, BOOL, DWORD], HANDLE),
             (kernel32.CloseHandle, [HANDLE], BOOL),
@@ -122,10 +169,37 @@ def _api() -> Any:
              ctypes.POINTER(ctypes.c_wchar_p)),
             (ntdll.NtQueryInformationProcess,
              [HANDLE, ctypes.c_int, ctypes.c_void_p, ULONG, ctypes.POINTER(ULONG)], NTSTATUS),
+            # Named pipes, overlapped I/O and the pipe's security descriptor (636).
+            (kernel32.CreateNamedPipeW,
+             [ctypes.c_wchar_p, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, ctypes.POINTER(SECURITY_ATTRIBUTES)],
+             HANDLE),
+            (kernel32.ConnectNamedPipe, [HANDLE, overlapped], BOOL),
+            (kernel32.DisconnectNamedPipe, [HANDLE], BOOL),
+            (kernel32.CreateFileW, [ctypes.c_wchar_p, DWORD, DWORD, ctypes.c_void_p, DWORD, DWORD, HANDLE], HANDLE),
+            (kernel32.ReadFile, [HANDLE, ctypes.c_void_p, DWORD, ctypes.POINTER(DWORD), overlapped], BOOL),
+            (kernel32.WriteFile, [HANDLE, ctypes.c_void_p, DWORD, ctypes.POINTER(DWORD), overlapped], BOOL),
+            (kernel32.PeekNamedPipe,
+             [HANDLE, ctypes.c_void_p, DWORD, ctypes.POINTER(DWORD), ctypes.POINTER(DWORD), ctypes.POINTER(DWORD)],
+             BOOL),
+            (kernel32.SetNamedPipeHandleState,
+             [HANDLE, ctypes.POINTER(DWORD), ctypes.POINTER(DWORD), ctypes.POINTER(DWORD)], BOOL),
+            (kernel32.WaitNamedPipeW, [ctypes.c_wchar_p, DWORD], BOOL),
+            (kernel32.GetNamedPipeClientProcessId, [HANDLE, ctypes.POINTER(ULONG)], BOOL),
+            (kernel32.CreateEventW, [ctypes.c_void_p, BOOL, BOOL, ctypes.c_wchar_p], HANDLE),
+            (kernel32.GetOverlappedResult, [HANDLE, overlapped, ctypes.POINTER(DWORD), BOOL], BOOL),
+            (kernel32.CancelIoEx, [HANDLE, overlapped], BOOL),
+            (kernel32.GetCurrentProcess, [], HANDLE),
+            (kernel32.GetSystemTimePreciseAsFileTime, [ctypes.POINTER(FILETIME)], None),
+            (advapi32.OpenProcessToken, [HANDLE, DWORD, ctypes.POINTER(HANDLE)], BOOL),
+            (advapi32.GetTokenInformation,
+             [HANDLE, ctypes.c_int, ctypes.c_void_p, DWORD, ctypes.POINTER(DWORD)], BOOL),
+            (advapi32.ConvertSidToStringSidW, [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)], BOOL),
+            (advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW,
+             [ctypes.c_wchar_p, DWORD, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ULONG)], BOOL),
         )
         for function, argtypes, restype in declarations:
             function.argtypes, function.restype = argtypes, restype
-        _api.loaded = (kernel32, shell32, ntdll)
+        _api.loaded = (kernel32, shell32, ntdll, advapi32)
     return _api.loaded
 
 
@@ -243,7 +317,7 @@ def split_command_line(line: str) -> list[str]:
     """
     if not line:
         return []
-    _, shell32, _ = _api()
+    shell32 = _api()[1]
     count = ctypes.c_int(0)
     arguments = shell32.CommandLineToArgvW(line, ctypes.byref(count))
     if not arguments:
@@ -339,3 +413,233 @@ def volume_facts(path: str) -> tuple[str, str, int]:
         _raise_last_error()
 
     return root.value, name.value, kernel32.GetDriveTypeW(root.value)
+
+
+# --- The owner connection's named pipe (636, W4) ---
+
+
+def close(handle: int) -> None:
+    """Close a handle these functions returned."""
+    _close(handle)
+
+
+def now_ticks() -> int:
+    """Return the system time in FILETIME ticks, as precisely as Windows keeps it."""
+    now = FILETIME()
+    _api()[0].GetSystemTimePreciseAsFileTime(ctypes.byref(now))
+    return now.dwHighDateTime << 32 | now.dwLowDateTime
+
+
+def current_user_sid() -> str:
+    """Return the SID of this process's user, as text (``S-1-5-21-...``)."""
+    if not hasattr(current_user_sid, "text"):
+        kernel32, _, _, advapi32 = _api()
+        token = HANDLE()
+        if not advapi32.OpenProcessToken(kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(token)):
+            _raise_last_error()
+        try:
+            size = DWORD(0)
+            advapi32.GetTokenInformation(token, TOKEN_USER_CLASS, None, 0, ctypes.byref(size))
+            buffer = ctypes.create_string_buffer(max(size.value, ctypes.sizeof(SID_AND_ATTRIBUTES)))
+            if not advapi32.GetTokenInformation(token, TOKEN_USER_CLASS, buffer, len(buffer), ctypes.byref(size)):
+                _raise_last_error()
+            text = ctypes.c_void_p()
+            if not advapi32.ConvertSidToStringSidW(SID_AND_ATTRIBUTES.from_buffer(buffer).Sid, ctypes.byref(text)):
+                _raise_last_error()
+            try:
+                current_user_sid.text = ctypes.wstring_at(text.value)
+            finally:
+                kernel32.LocalFree(text)
+        finally:
+            _close(token)
+    return current_user_sid.text
+
+
+def create_pipe(name: str, first: bool) -> int:
+    """Create one instance of the pipe ``name`` and return its handle.
+
+    Duplex, message mode, overlapped, remote clients rejected, and a protected
+    DACL whose one entry admits this process's user: no other account can
+    connect. With ``first`` the call fails (ERROR_ACCESS_DENIED) when a pipe of
+    this name already exists in any process, so nobody can pre-empt the host.
+    """
+    kernel32, _, _, advapi32 = _api()
+    descriptor = ctypes.c_void_p()
+    # D:P: a protected DACL (nothing inherited); (A;;GA;;;SID): all access for this user only.
+    if not advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            f"D:P(A;;GA;;;{current_user_sid()})", SDDL_REVISION_1, ctypes.byref(descriptor), None):
+        _raise_last_error()
+    try:
+        attributes = SECURITY_ATTRIBUTES(ctypes.sizeof(SECURITY_ATTRIBUTES), descriptor.value, False)
+        handle = kernel32.CreateNamedPipeW(
+            name, PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED | (FILE_FLAG_FIRST_PIPE_INSTANCE if first else 0),
+            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS,
+            PIPE_UNLIMITED_INSTANCES, PIPE_BUFFER_BYTES, PIPE_BUFFER_BYTES, 0, ctypes.byref(attributes))
+        if handle in (None, INVALID_HANDLE_VALUE):
+            _raise_last_error()
+        return handle
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
+def _event() -> int:
+    """A new manual-reset event, not signalled, for one overlapped operation."""
+    event = _api()[0].CreateEventW(None, True, False, None)
+    if not event:
+        _raise_last_error()
+    return event
+
+
+def connect_pipe(handle: int, stopped: Callable[[], bool]) -> bool:
+    """Wait on the listening instance ``handle`` until a client connects.
+
+    Returns True once one has (a client that already left counts; reading
+    from it then fails), False when ``stopped()`` turned true first and the
+    wait was cancelled. ``stopped`` is asked every 50 ms.
+    """
+    kernel32 = _api()[0]
+    overlapped = OVERLAPPED(hEvent=_event())
+    try:
+        if kernel32.ConnectNamedPipe(handle, ctypes.byref(overlapped)):
+            return True
+        error = ctypes.get_last_error()
+        if error in (ERROR_PIPE_CONNECTED, ERROR_NO_DATA):
+            return True
+        if error != ERROR_IO_PENDING:
+            raise ctypes.WinError(error)
+        while True:
+            waited = kernel32.WaitForSingleObject(overlapped.hEvent, 50)
+            if waited == WAIT_OBJECT_0:
+                break
+            if waited != WAIT_TIMEOUT or stopped():
+                kernel32.CancelIoEx(handle, ctypes.byref(overlapped))
+                break
+        done = DWORD(0)
+        # Waiting here also after a cancel: the OVERLAPPED must outlive the operation.
+        if kernel32.GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(done), True):
+            return True
+        error = ctypes.get_last_error()
+        if error == ERROR_OPERATION_ABORTED:
+            return False
+        raise ctypes.WinError(error)
+    finally:
+        _close(overlapped.hEvent)
+
+
+def disconnect_pipe(handle: int) -> None:
+    """Drop the client of the instance ``handle`` so it can listen again."""
+    if not _api()[0].DisconnectNamedPipe(handle):
+        _raise_last_error()
+
+
+def open_pipe(name: str) -> int:
+    """Connect to the pipe ``name`` as a client in message read mode; return the handle.
+
+    The server may identify this client, never impersonate it. The OSError's
+    ``winerror`` is ERROR_FILE_NOT_FOUND when there is no such pipe,
+    ERROR_PIPE_BUSY when no instance is free and ERROR_ACCESS_DENIED when the
+    pipe's DACL refuses this account.
+    """
+    kernel32 = _api()[0]
+    handle = kernel32.CreateFileW(name, GENERIC_READ | GENERIC_WRITE, 0, None, OPEN_EXISTING,
+                                  SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, None)
+    if handle in (None, INVALID_HANDLE_VALUE):
+        _raise_last_error()
+    mode = DWORD(PIPE_READMODE_MESSAGE)
+    if not kernel32.SetNamedPipeHandleState(handle, ctypes.byref(mode), None, None):
+        error = ctypes.get_last_error()
+        _close(handle)
+        raise ctypes.WinError(error)
+    return handle
+
+
+def wait_pipe(name: str, milliseconds: int) -> int:
+    """Wait up to ``milliseconds`` (at least 1) for a free instance of the pipe ``name``.
+
+    Returns 0 when one is free, else the Windows error: ERROR_FILE_NOT_FOUND
+    when no pipe of this name exists. Nothing connects.
+    """
+    if _api()[0].WaitNamedPipeW(name, max(1, milliseconds)):
+        return 0
+    return ctypes.get_last_error()
+
+
+def peek_pipe(handle: int) -> int:
+    """Return the size of the message waiting in ``handle``, 0 when none.
+
+    Raises OSError (``winerror`` in ``PIPE_GONE``) when the other end is closed.
+    """
+    available, left = DWORD(0), DWORD(0)
+    if not _api()[0].PeekNamedPipe(handle, None, 0, None, ctypes.byref(available), ctypes.byref(left)):
+        _raise_last_error()
+    return left.value or available.value
+
+
+def _transfer(function: Any, handle: int, buffer: Any, size: int, overlapped_io: bool) -> tuple[int, bool]:
+    """Run ReadFile or WriteFile on ``handle`` to its end: (bytes moved, whether the message has more)."""
+    done = DWORD(0)
+    if not overlapped_io:
+        if function(handle, buffer, size, ctypes.byref(done), None):
+            return done.value, False
+        error = ctypes.get_last_error()
+        if error == ERROR_MORE_DATA:
+            return done.value, True
+        raise ctypes.WinError(error)
+    overlapped = OVERLAPPED(hEvent=_event())
+    try:
+        if not function(handle, buffer, size, None, ctypes.byref(overlapped)):
+            error = ctypes.get_last_error()
+            if error not in (ERROR_IO_PENDING, ERROR_MORE_DATA):
+                raise ctypes.WinError(error)
+        if _api()[0].GetOverlappedResult(handle, ctypes.byref(overlapped), ctypes.byref(done), True):
+            return done.value, False
+        error = ctypes.get_last_error()
+        if error == ERROR_MORE_DATA:
+            return done.value, True
+        raise ctypes.WinError(error)
+    finally:
+        _close(overlapped.hEvent)
+
+
+def read_message(handle: int, overlapped_io: bool) -> bytes:
+    """Read one whole message from ``handle``; ``overlapped_io`` for a server instance."""
+    parts = []
+    size = max(peek_pipe(handle), 4096)
+    while True:
+        buffer = ctypes.create_string_buffer(size)
+        count, more = _transfer(_api()[0].ReadFile, handle, buffer, size, overlapped_io)
+        parts.append(buffer.raw[:count])
+        if not more:
+            return b"".join(parts)
+
+
+def write_message(handle: int, data: bytes, overlapped_io: bool) -> None:
+    """Write ``data`` to ``handle`` as one message; ``overlapped_io`` for a server instance."""
+    count, _ = _transfer(_api()[0].WriteFile, handle, ctypes.create_string_buffer(data, len(data)), len(data),
+                         overlapped_io)
+    if count != len(data):
+        raise OSError(f"Wrote {count} of {len(data)} bytes of a pipe message")
+
+
+def pin_pipe_client(handle: int, connected: int) -> tuple[int, int]:
+    """Open the client process of the connected instance ``handle``: (its PID, a handle to it).
+
+    The process must still run and must have been created no later than
+    ``connected`` (FILETIME ticks read once the connection was made), so a
+    PID reused after the client ended is refused. While the returned handle
+    is open the PID cannot name another process. Raises OSError otherwise.
+    """
+    pid = ULONG(0)
+    if not _api()[0].GetNamedPipeClientProcessId(handle, ctypes.byref(pid)):
+        _raise_last_error()
+    process = _open(pid.value, PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
+    try:
+        created = _created(process)
+        if _api()[0].WaitForSingleObject(process, 0) != WAIT_TIMEOUT:
+            raise OSError(f"The pipe client process {pid.value} has ended")
+        if created is None or created > connected:
+            raise OSError(f"The pipe client process {pid.value} was created after the connection")
+    except BaseException:
+        _close(process)
+        raise
+    return pid.value, process
