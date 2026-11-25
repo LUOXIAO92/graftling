@@ -552,7 +552,10 @@ Parts for building a host or a consumer on agents (since 0.2.2), also in
   error=None)` stops those still alive with the same uid and start time, their
   current descendants and processes carrying exactly `marker`, never a pid in
   `exclude`, and returns `{found, stopped, remaining[, error]}`, each a list of
-  `{pid, command}` with the command already redacted;
+  `{pid, command}` with the command already redacted; on Windows `entries` are
+  not used and the processes of the Job Object named `graftling-<marker>` (the
+  tree graftling started the Runtime in) are stopped, and a marker with no such
+  job is reported in `error` (637);
 - `DECISION_METHOD`, the request method of `ask_parent` (section 4), and
   `within_workspace`, the check on `create`'s `workspace` (section 2);
 - `native_session_files(root)`, the native Session files recorded under a data
@@ -1743,7 +1746,11 @@ Delivery rules:
   read provisional for a moment (inference); a process started and detached between two
   samples (about one second) is found only by the marker, so not when it is a platform binary; a process whose chain of
   ancestors passed through a readable process without the marker is left alone by
-  design; Windows is not covered. A Pi execution records `tool_marker` and
+  design. On Windows nothing is sampled or scanned: a Runtime's tree is a Job Object
+  named after its marker, which no tool can leave, so its processes are listed from the
+  job and stopped by terminating it, the job named by the recorded `runtime_job` first
+  (637); everything in the job counts as the execution's, a nested managed launch
+  included, and a job no longer open under its name is reported in `error`. A Pi execution records `tool_marker` and
   `tool_descendants` too and is stopped the same way (461); Pi starts its bash tool
   detached, outside the Runtime's group, as `/bin/bash`, and stops the running tool's
   process group itself when it shuts down. A background job left by an earlier tool

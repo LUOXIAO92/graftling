@@ -158,16 +158,34 @@ def _stop_escaped(execution: dict) -> None:
     lock is held about 5 s at most beyond the scan. A record with neither fact
     (older, or another Runtime) is left as it was; an unreadable sidecar is
     reported in ``escaped_processes.error``.
+
+    Windows (637): for a record with either fact, the job named by
+    ``runtime_job``, else the one named after ``tool_marker``, is opened by
+    name and its processes except the caller and its ancestors are ended; the
+    sidecar is not read. A job no longer open under that name is reported in
+    ``escaped_processes.error``. A record with neither fact is left as it was
+    there too, even with ``runtime_job``: its tree's surviving members still
+    keep the end unconfirmed (635).
     """
     marker = execution["process"].get("tool_marker")
     sidecar = execution["process"].get("tool_descendants")
+    job = execution["process"].get("runtime_job")
     marker = marker if isinstance(marker, str) and marker else None
     sidecar = sidecar if isinstance(sidecar, str) and sidecar else None
-    if (marker is None and sidecar is None) or os.name == "nt":
-        return
+    job = job if isinstance(job, str) and job else None
     from graftling.member_processes import ancestor_pids
+    from graftling.process_tree import job_name, windows
     from graftling.review import redact
-    from graftling.tool_descendants import read_sidecar, stop_tool_processes
+    from graftling.tool_descendants import read_sidecar, stop_job_tools, stop_tool_processes
+
+    if marker is None and sidecar is None:
+        return
+    if windows():
+        name = job or (job_name(marker) if marker else None)
+        execution["escaped_processes"] = redact(stop_job_tools(name, ancestor_pids()))
+        return
+    if os.name == "nt":
+        return
 
     entries, error = None, None
     if sidecar is not None:
