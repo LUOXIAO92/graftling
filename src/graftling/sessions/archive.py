@@ -109,7 +109,7 @@ def _archived_header(path: Path) -> dict:
     shape, or a header that does not decode from its prefix, is read whole as
     before, with the same errors. Opening the archive itself still reads it all.
     """
-    with path.open('rb') as stream:
+    with open_published(path) as stream:
         data = stream.read(_HEADER_READ)
         while data.startswith(_HEADER_PREFIX):
             line, newline, _ = data.partition(b'\n')

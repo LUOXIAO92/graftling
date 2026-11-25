@@ -21,6 +21,7 @@ from typing import Any, Callable
 import pytest
 
 from graftling import AgentControl, Caller, bind
+from graftling.durable import read_published
 from graftling.dsh import host as dsh_host
 from graftling.pi import host as pi_host
 from posix_only import SHEBANG, require_posix
@@ -195,7 +196,7 @@ def stopped_end(build: Callable) -> tuple[str, Driver]:
 
 def read_record(tmp_path: Path, agent: str) -> dict:
     """The core's durable record, to tell a held end from a shown one."""
-    return json.loads((tmp_path / 'data' / 'control' / 'agents' / f'{agent}.json').read_text())
+    return json.loads(read_published(tmp_path / 'data' / 'control' / 'agents' / f'{agent}.json'))
 
 
 def test_an_end_arriving_while_stopped_is_held_and_delivered_once_by_the_next_host(native_host: Callable, tmp_path: Path) -> None:
