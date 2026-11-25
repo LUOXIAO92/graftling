@@ -14,6 +14,7 @@ import time
 import pytest
 
 from graftling import AgentControl, AgentsError, Caller, bind
+from graftling.durable import read_published
 from graftling.dsh import host
 from posix_only import SHEBANG, posix_only, require_posix
 
@@ -680,7 +681,7 @@ def test_default_root_is_shared_with_the_claude_code_host(
 
     assert listed(operate) == set(made['dsh']) and listed(claude_call) == set(made['claude'])
     for agent in made['dsh'] + made['claude']:
-        record = json.loads((root / 'control' / 'agents' / f'{agent}.json').read_text())
+        record = json.loads(read_published(root / 'control' / 'agents' / f'{agent}.json'))
         assert record['agent'] == agent
     assert len(list((root / 'control' / 'agents').glob('*.json'))) == 8
     # A DSH child cannot be read through the Claude Main, nor the reverse.

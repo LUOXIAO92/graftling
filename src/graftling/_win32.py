@@ -6,8 +6,12 @@ types declared, on the first call of :func:`_api`, which only Windows code
 paths reach. Types are spelled with fixed sizes (``DWORD`` is 32 bits) because
 ``ctypes.wintypes`` follows the host's ``long`` on other platforms.
 
-Every function opens the process with limited query rights, closes the handle
-on every path, and raises :class:`OSError` or returns ``None`` as documented.
+The process functions (633, W1) open the process with limited query rights,
+close the handle on every path, and raise :class:`OSError` or return ``None``
+as documented. The file functions (634, W2) lock a lock file through an open
+handle, rename with write-through, and describe a volume. The job functions
+(635, W3) create, open, fill, list, probe and terminate the Job Objects behind
+``graftling.process_tree``.
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ ULONG = ctypes.c_uint32
 BOOL = ctypes.c_int
 HANDLE = ctypes.c_void_p
 NTSTATUS = ctypes.c_int32
+UINT = ctypes.c_uint32
 
 # Access rights (processthreadsapi.h) and results (winbase.h, winerror.h).
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
@@ -26,7 +31,17 @@ SYNCHRONIZE = 0x00100000
 WAIT_OBJECT_0 = 0x0
 WAIT_TIMEOUT = 0x102
 ERROR_ACCESS_DENIED = 5
+ERROR_SHARING_VIOLATION = 32
+ERROR_LOCK_VIOLATION = 33
 ERROR_INVALID_PARAMETER = 87
+# LockFileEx flags (fileapi.h).
+LOCKFILE_FAIL_IMMEDIATELY = 0x1
+LOCKFILE_EXCLUSIVE_LOCK = 0x2
+# MoveFileExW flags (winbase.h).
+MOVEFILE_REPLACE_EXISTING = 0x1
+MOVEFILE_WRITE_THROUGH = 0x8
+# GetDriveTypeW answer for a network volume (fileapi.h).
+DRIVE_REMOTE = 4
 # PROCESSINFOCLASS values (winternl.h; 60 is available since Windows 8.1).
 PROCESS_BASIC_INFORMATION_CLASS = 0
 PROCESS_COMMAND_LINE_INFORMATION = 60
@@ -56,6 +71,22 @@ class PROCESS_BASIC_INFORMATION(ctypes.Structure):
         ("BasePriority", ctypes.c_int32),
         ("UniqueProcessId", ctypes.c_size_t),
         ("InheritedFromUniqueProcessId", ctypes.c_size_t),
+    ]
+
+
+class OVERLAPPED(ctypes.Structure):
+    """``OVERLAPPED``; ``Offset`` and ``OffsetHigh`` place a byte-range lock.
+
+    The union of the two offsets with ``Pointer`` is spelled as the offsets,
+    which have the union's size and alignment on 32- and 64-bit Windows.
+    """
+
+    _fields_ = [
+        ("Internal", ctypes.c_size_t),
+        ("InternalHigh", ctypes.c_size_t),
+        ("Offset", DWORD),
+        ("OffsetHigh", DWORD),
+        ("hEvent", HANDLE),
     ]
 
 
@@ -154,6 +185,15 @@ def _api() -> Any:
             (kernel32.GetProcessTimes, [HANDLE] + [ctypes.POINTER(FILETIME)] * 4, BOOL),
             (kernel32.WaitForSingleObject, [HANDLE, DWORD], DWORD),
             (kernel32.LocalFree, [ctypes.c_void_p], ctypes.c_void_p),
+            (kernel32.LockFileEx,
+             [HANDLE, DWORD, DWORD, DWORD, DWORD, ctypes.POINTER(OVERLAPPED)], BOOL),
+            (kernel32.UnlockFileEx, [HANDLE, DWORD, DWORD, DWORD, ctypes.POINTER(OVERLAPPED)], BOOL),
+            (kernel32.MoveFileExW, [ctypes.c_wchar_p, ctypes.c_wchar_p, DWORD], BOOL),
+            (kernel32.GetVolumePathNameW, [ctypes.c_wchar_p, ctypes.c_wchar_p, DWORD], BOOL),
+            (kernel32.GetVolumeInformationW,
+             [ctypes.c_wchar_p, ctypes.c_wchar_p, DWORD, ctypes.POINTER(DWORD), ctypes.POINTER(DWORD),
+              ctypes.POINTER(DWORD), ctypes.c_wchar_p, DWORD], BOOL),
+            (kernel32.GetDriveTypeW, [ctypes.c_wchar_p], UINT),
             (shell32.CommandLineToArgvW, [ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_int)],
              ctypes.POINTER(ctypes.c_wchar_p)),
             (ntdll.NtQueryInformationProcess,
@@ -455,3 +495,72 @@ def process_in_job(pid: int, job: int) -> bool:
         return bool(result.value)
     finally:
         close_handle(handle)
+
+
+# --- Lock files, replacement and volumes (634, W2) ---
+
+
+def _raise_last_error() -> None:
+    """Raise the calling thread's last Win32 error as the matching ``OSError``."""
+    raise ctypes.WinError(ctypes.get_last_error())
+
+
+def lock_file(handle: int, wait: bool) -> bool:
+    """Lock byte 0 of an open file exclusively through this handle.
+
+    The lock belongs to the handle: other handles, in this process or
+    another, are excluded, and the kernel releases it when the handle is
+    closed or its process ends. With ``wait`` the call blocks without a time
+    limit (the handle is synchronous); without it, return ``False`` at once
+    when another handle holds the lock.
+    """
+    flags = LOCKFILE_EXCLUSIVE_LOCK | (0 if wait else LOCKFILE_FAIL_IMMEDIATELY)
+    if _api()[0].LockFileEx(handle, flags, 0, 1, 0, ctypes.byref(OVERLAPPED())):
+        return True
+    if not wait and ctypes.get_last_error() == ERROR_LOCK_VIOLATION:
+        return False
+    _raise_last_error()
+
+
+def unlock_file(handle: int) -> None:
+    """Release the lock ``lock_file`` took through this handle."""
+    if not _api()[0].UnlockFileEx(handle, 0, 1, 0, ctypes.byref(OVERLAPPED())):
+        _raise_last_error()
+
+
+def replace_file(source: str, target: str) -> int:
+    """Rename ``source`` over ``target`` with write-through.
+
+    Returns 0 on success, else the Win32 error code, so the caller decides
+    which conflicts to retry; ``raise_error`` turns a code into ``OSError``.
+    """
+    if _api()[0].MoveFileExW(source, target, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH):
+        return 0
+    return ctypes.get_last_error()
+
+
+def raise_error(code: int, source: str, target: str) -> None:
+    """Raise Win32 error ``code`` as ``OSError`` naming both paths."""
+    error = ctypes.WinError(code)
+    raise type(error)(error.errno, error.strerror, source, code, target)
+
+
+def volume_facts(path: str) -> tuple[str, str, int]:
+    """Return the volume root holding ``path``, its file system name and drive type.
+
+    Examples
+    --------
+    ``volume_facts('C:\\\\data')`` gives ``('C:\\\\', 'NTFS', 3)`` on a local NTFS disk;
+    a mapped network share answers drive type ``DRIVE_REMOTE``.
+    """
+    kernel32 = _api()[0]
+    size = 32768
+    root = ctypes.create_unicode_buffer(size)
+    if not kernel32.GetVolumePathNameW(path, root, size):
+        _raise_last_error()
+
+    name = ctypes.create_unicode_buffer(261)
+    if not kernel32.GetVolumeInformationW(root.value, None, 0, None, None, None, name, len(name)):
+        _raise_last_error()
+
+    return root.value, name.value, kernel32.GetDriveTypeW(root.value)

@@ -58,11 +58,11 @@ import ipaddress
 import math
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
+from graftling.durable import read_published, replace_durably
 from graftling.locks import exclusive
 
 if TYPE_CHECKING:
@@ -186,7 +186,7 @@ def _read(root: Path) -> tuple[dict[str, bool], dict[str, dict], dict[str, dict]
     """Parse and check the whole file once."""
     path = root / CONFIG_FILE
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_published(path)
     except FileNotFoundError:
         return {}, {}, {}, {}, []
 
@@ -444,10 +444,7 @@ def _update(root: Path, values: dict[str, bool], *, keep_existing: bool) -> dict
                 f"{name}: {'true' if merged[name] else 'false'}\n"
                 for name in CONFIG_DEFAULTS if name in merged
             ) + _other_lines(root / CONFIG_FILE)
-            descriptor, temporary = tempfile.mkstemp(dir=root, prefix=".config-")
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                stream.write(text)
-            os.replace(temporary, root / CONFIG_FILE)
+            replace_durably(root / CONFIG_FILE, text.encode("utf-8"), sync_file=False, sync_directory=False)
     return {**CONFIG_DEFAULTS, **merged}
 
 
