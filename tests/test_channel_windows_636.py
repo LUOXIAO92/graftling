@@ -290,8 +290,10 @@ def test_another_local_account_cannot_connect(tmp_path: Path, other_account: tup
         # The probe works: the same account connects.
         mine = subprocess.run(child(PROBE, name), timeout=60)
         assert mine.returncode == 0
-        # Another account is refused by the pipe's DACL: the Win32 error itself.
-        assert run_as(*other_account, child(PROBE, name)) == _win32.ERROR_ACCESS_DENIED
+        # Another account is refused by the pipe's DACL: the Win32 error itself. (Bound to a name first, so
+        # pytest's assertion message shows the code, never the temporary account's password.)
+        code = run_as(*other_account, child(PROBE, name))
+        assert code == _win32.ERROR_ACCESS_DENIED
 
 
 def test_a_pipe_another_account_created_for_a_dead_hosts_address_gets_nothing(
