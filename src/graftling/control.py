@@ -207,23 +207,17 @@ def _alive(pid: object) -> bool:
     alive (496). A dead owner's Runtime is reparented, and its new parent may
     reap it late.
 
-    ponytail: PID reuse is not distinguished; the owned_at fact is kept for a
-    consumer that needs to compare process start times.
-    """
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    if os.name == "nt":
-        # ponytail: os.kill(pid, 0) would signal on Windows; assume alive.
-        return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    from graftling.tool_descendants import has_exited
+    :func:`graftling.process.process_alive` answers on every platform; it
+    never uses ``os.kill(pid, 0)`` on Windows, where that terminates the
+    target (M12).
 
-    return not has_exited(pid)
+    ponytail: PID reuse is not distinguished; the owned_at fact is kept for a
+    consumer that needs to compare process start times (``process_alive``'s
+    ``started``).
+    """
+    from graftling.process import process_alive
+
+    return process_alive(pid, None)
 
 
 def _group_alive(pid: int) -> bool:
