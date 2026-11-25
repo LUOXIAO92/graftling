@@ -77,7 +77,7 @@ def yaml_sections(value: dict, known: dict) -> str:
 
 def write_text_durably(path: Path, text: str) -> None:
     """Atomically replace one owner's nonsecret document with ``text``."""
-    with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, delete=False) as stream:
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as stream:
         temporary = Path(stream.name)
         try:
             stream.write(text)

@@ -40,7 +40,8 @@ function importsHere(candidate, expected, environment) {
  * set. Otherwise the interpreters of the installation this file belongs to: DSH's
  * `dsh plugin add <installed graftling/dsh>` links the profile's package to it, so
  * this file's real path is <prefix>/lib/pythonX.Y/site-packages/graftling/dsh/ and
- * <prefix>/bin/ holds its Python; then python3 and python on PATH (an editable
+ * <prefix>/bin/ holds its Python (Windows: <prefix>\Lib\site-packages and
+ * <prefix>\Scripts\python.exe); then python3 and python on PATH (an editable
  * install). A candidate counts only when it imports graftling from this same
  * directory, so the plugin and the Python package are always one installation.
  * Nothing is built or written. A refusal keeps no result, so the next Session tries
@@ -55,8 +56,14 @@ function graftlingPython(environment) {
     const candidates = [];
     if (basename(site) === 'site-packages') {
       const lib = dirname(site);
-      const prefix = dirname(dirname(lib));
-      candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+      if (process.platform === 'win32') {
+        // Windows: <prefix>\Lib\site-packages; a venv's Python is <prefix>\Scripts\python.exe.
+        const prefix = dirname(lib);
+        candidates.push(join(prefix, 'Scripts', 'python.exe'), join(prefix, 'python.exe'));
+      } else {
+        const prefix = dirname(dirname(lib));
+        candidates.push(join(prefix, 'bin', basename(lib)), join(prefix, 'bin', 'python3'), join(prefix, 'bin', 'python'));
+      }
     }
     candidates.push('python3', 'python');
     for (const candidate of candidates) {

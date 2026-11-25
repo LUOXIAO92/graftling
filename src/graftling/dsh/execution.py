@@ -22,6 +22,7 @@ from .errors import DshError
 from graftling.child_env import child_environment, consumer_environment
 from graftling.connection import CONNECTION_ENV
 from graftling.extra_tools import EXTRA_TOOLS_ENV, descriptor_environment
+from graftling.links import require_symbolic_links
 from graftling.member_processes import MEMBER_RUN_ENV, new_marker
 from graftling.tool_descendants import DescendantSampler, stop_tool_processes
 from .settings import (_DEFAULT_KEY_ENV, AMBIENT_ENDPOINTS, DEFAULT_PROVIDER, credential_environment, pi_ai_patch,
@@ -656,6 +657,8 @@ class DshExecution:
 
     def run(self) -> dict:
         """Bind, subscribe, prompt and wait; retain ownership through stop confirmation."""
+        # The Trace entry links DSH's native log (Windows: Developer Mode).
+        require_symbolic_links('DSH')
         connections = ExitStack()
         if self.host_connection is not None:
             # The selected host interpreter and MCP use the same installed

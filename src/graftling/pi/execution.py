@@ -24,6 +24,7 @@ import uuid
 
 import tempfile
 
+from graftling.links import require_symbolic_links
 from graftling.models import pi_default_keys, write_key_reference
 from graftling.approval import REVIEW_METHOD, review_failed
 from graftling.review import build_request, record_decision, review_call
@@ -406,8 +407,15 @@ class PiExecution:
             # writes already protect the root when no broader grant covers it.
             # The selected srt also grants these native log/scratch directories
             # by default. Never place protected control records inside them.
-            default_write = ('/tmp/claude', '/private/tmp/claude',
-                             str(Path.home() / '.npm/_logs'), str(Path.home() / '.claude/debug'))
+            if os.name == 'nt':
+                # Their Windows places: Claude's directory under the temporary
+                # directory and npm's cache logs under the local application data.
+                local = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData/Local')
+                default_write = (str(Path(tempfile.gettempdir()) / 'claude'), str(local / 'npm-cache/_logs'),
+                                 str(Path.home() / '.claude/debug'))
+            else:
+                default_write = ('/tmp/claude', '/private/tmp/claude',
+                                 str(Path.home() / '.npm/_logs'), str(Path.home() / '.claude/debug'))
             if any(private.is_relative_to(Path(path).resolve()) for path in (*write, *default_write)):
                 raise RuntimeAdapterError(
                     'ROLE_CONFIG_UNSUPPORTED',
@@ -563,6 +571,8 @@ class PiExecution:
 
     def run(self) -> dict:
         """Bind real Pi identity before task input, then observe native settlement."""
+        # The agent directory and the Trace entry are links (Windows: Developer Mode).
+        require_symbolic_links('Pi')
         reader = None
         collector = None
         with ExitStack() as resources:
@@ -611,7 +621,7 @@ class PiExecution:
                 self.bound = True
                 header = {'id': self.session, 'type': 'session'}
                 if self.native_trace.is_file():
-                    with self.native_trace.open() as stream:
+                    with self.native_trace.open(encoding='utf-8') as stream:
                         header = json.loads(stream.readline())
                 collector = self.archive_collector(header, self._rpc('get_entries'))
                 with self.lock:
@@ -638,7 +648,7 @@ class PiExecution:
                             native = self._rpc('get_entries')
                             header = None
                             if self.native_trace.is_file():
-                                with self.native_trace.open() as stream:
+                                with self.native_trace.open(encoding='utf-8') as stream:
                                     header = json.loads(stream.readline())
                             collector.sync(native['entries'], native['leafId'], header=header,
                                            settled=kind == 'agent_settled')

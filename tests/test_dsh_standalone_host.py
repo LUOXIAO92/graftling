@@ -20,6 +20,8 @@ from posix_only import SHEBANG, posix_only, require_posix
 
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
 MAIN = Caller('dsh-native', None, session='dsh-main', runtime='dsh')
+# Absolute on POSIX and on Windows alike: '/data' has no drive on Windows.
+DATA = str(Path(Path.cwd().anchor, 'data'))
 
 
 def header(cwd: Path, **fields) -> dict:
@@ -29,10 +31,10 @@ def header(cwd: Path, **fields) -> dict:
 
 @pytest.mark.parametrize(('document', 'message'), [
     ([], 'must be a JSON object'),
-    ({'root': '/data', 'roles': {}}, 'Unknown DSH host configuration keys'),
+    ({'root': DATA, 'roles': {}}, 'Unknown DSH host configuration keys'),
     ({'root': 'relative'}, 'absolute data root'),
     ({}, 'absolute data root'),
-    ({'root': '/data', 'claude': 'opus'}, '"claude" must be an object'),
+    ({'root': DATA, 'claude': 'opus'}, '"claude" must be an object'),
 ])
 def test_configuration_refusals(document: object, message: str) -> None:
     """Anything but the documented Task-free form is refused with a reason."""
@@ -42,10 +44,10 @@ def test_configuration_refusals(document: object, message: str) -> None:
 
 def test_configuration_accepts_root_and_per_runtime_settings() -> None:
     """Every Runtime section is optional."""
-    root, settings = host.read_configuration({'root': '/data'})
-    assert root == Path('/data')
+    root, settings = host.read_configuration({'root': DATA})
+    assert root == Path(DATA)
     assert settings == {'dsh': None, 'claude': None, 'codex': None, 'pi': None}
-    _, settings = host.read_configuration({'root': '/data', 'dsh': {'model': 'd'}, 'codex': {'adapter_request': {}}})
+    _, settings = host.read_configuration({'root': DATA, 'dsh': {'model': 'd'}, 'codex': {'adapter_request': {}}})
     assert settings['dsh'] == {'model': 'd'} and settings['codex'] == {'adapter_request': {}}
 
 

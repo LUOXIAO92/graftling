@@ -25,12 +25,16 @@ from posix_only import SH_SCRIPT, require_posix
 
 CALLER = Caller('test-host', None, 'main-session', 'claude')
 
-CONFIG = """\
+# Absolute on POSIX and on Windows alike: '/native/claude' has no drive on Windows.
+ANCHOR        = Path(Path.cwd().anchor)
+NATIVE_CLAUDE = str(ANCHOR / 'native' / 'claude')
+
+CONFIG = f"""\
 save_normalized_sessions: false   # unchanged booleans
 connections:
   work-claude:
     runtime: claude
-    home: /native/claude
+    home: {NATIVE_CLAUDE}
     base_url: https://proxy.example/v1
     api_key_env: WORK_CLAUDE_KEY
     models:
@@ -128,7 +132,7 @@ def test_connections_and_presets_are_read_with_their_names(tmp_path: Path) -> No
     root = configured(tmp_path)
     declared = read_connections(root)
     assert declared['connections']['work-claude'] == {
-        'name': 'work-claude', 'runtime': 'claude', 'home': '/native/claude',
+        'name': 'work-claude', 'runtime': 'claude', 'home': NATIVE_CLAUDE,
         'base_url': 'https://proxy.example/v1', 'api_key_env': 'WORK_CLAUDE_KEY',
         'models': ['claude-opus-5-5', {'id': 'claude-sonnet-5-5', 'supported_efforts': ['low', 'high']}]}
     assert declared['connections']['local-codex'] == {'name': 'local-codex', 'runtime': 'codex'}
@@ -153,7 +157,7 @@ def test_no_file_and_boolean_only_files_read_as_before(tmp_path: Path) -> None:
     ('connections:\n  a:\n    runtime: claude\n  a:\n    runtime: codex\n', 4, 'a is repeated'),
     ('connections:\n  a:\n    runtime: claude\n    runtime: codex\n', 4, 'runtime is repeated'),
     ('connections:\n  a:\n    runtime: gemini\n', 3, 'connections.a.runtime: expected one of'),
-    ('connections:\n  a:\n    home: /x\n', 2, 'connections.a.runtime: required'),
+    (f'connections:\n  a:\n    home: {ANCHOR / "x"}\n', 2, 'connections.a.runtime: required'),
     ('connections:\n  a:\n    runtime: claude\n    models: claude\n', 4, 'expected a non-empty list'),
     ('connections:\n  a:\n    runtime: claude\n    models: [x, x]\n', 4, 'a model id is repeated'),
     ('connections:\n  a:\n    runtime: claude\n    models: [{alias: y}]\n', 4, 'models.id: required'),
@@ -424,7 +428,7 @@ def test_claude_driver_applies_connection_model_and_effort(tmp_path: Path, monke
     settings = driver.prepare('claude', CALLER, selection={
         'settings': connection, 'model': 'claude-sonnet-5-5', 'reasoning_effort': 'high', 'provider': None})
     assert (settings['model'], settings['reasoning_effort'], settings['runtime_home'], settings['base_url'],
-            settings['api_key_env']) == ('claude-sonnet-5-5', 'high', '/native/claude',
+            settings['api_key_env']) == ('claude-sonnet-5-5', 'high', NATIVE_CLAUDE,
                                          'https://proxy.example/v1', 'WORK_CLAUDE_KEY')
     assert 'secret-value' not in json.dumps(settings)
     # Without a connection only the model and effort change; the host's endpoint stays with its key.

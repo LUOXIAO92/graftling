@@ -37,6 +37,7 @@ from graftling.connection import CONNECTION_ENV
 from .settings import GATEWAY_EXCLUDED, GATEWAY_SETTING_SOURCES, login_variables
 from .support import write_text_durably, write_yaml_durably, yaml_sections, credential_environment, redact
 
+from graftling.links import require_symbolic_links
 from graftling.runtime import RuntimeAdapterError, SessionStarted
 from .diagnostics import (
     launch_projection, model_projection, native_projection, warning_projection,
@@ -186,7 +187,7 @@ def probe_default_tools(executable: str, version: object, model: str, permission
         if key in _default_tools:
             return list(_default_tools[key])
         try:
-            stored = json.loads(cache.read_text())
+            stored = json.loads(cache.read_text(encoding='utf-8'))
             if isinstance(stored.get('tools'), list) and stored['tools']:
                 _default_tools[key] = list(stored['tools'])
                 return list(stored['tools'])
@@ -1133,6 +1134,8 @@ class ClaudeExecution:
 
     def run(self) -> dict:
         """Own startup, work and cleanup; publish completion only after process exit."""
+        # The Trace entry links Claude's transcript (Windows: Developer Mode).
+        require_symbolic_links('Claude Code')
         last = None
         result_error = None
         reader = None
@@ -1704,4 +1707,4 @@ def yaml_document(path: Path) -> dict:
     """Read this owner's retained native identity document."""
     import yaml
 
-    return yaml.safe_load(path.read_text())
+    return yaml.safe_load(path.read_text(encoding='utf-8'))

@@ -196,7 +196,7 @@ def test_the_hook_rewrite_refuses_a_template_it_would_not_change(monkeypatch: py
     module = plugin._module()
     assert plugin.TOOL_LINE in module.splitlines() and plugin.TOOLS_LINE in module.splitlines()
     written = plugin.claude_host_plugin(Path('/p'), 'n', 'd', tools=['tasks'], server='graphtraj')
-    hook = written['/p/hooks/host_context.mjs']
+    hook = written[str(Path('/p') / 'hooks/host_context.mjs')]
     assert 'const TOOLS = [TOOL, "tasks"];' in hook.splitlines() and 'const SERVER = "graphtraj";' in hook
     monkeypatch.setattr(plugin, 'TOOL_LINE', 'const TOOL = "agents";')
     with pytest.raises(RuntimeError):

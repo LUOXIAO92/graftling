@@ -133,7 +133,8 @@ def test_the_linked_plugin_runs_the_python_of_its_installation(installation: Pat
     shown = start(tmp_path, linked(tmp_path, site_packages(installation) / 'graftling' / 'dsh'))
     assert shown['error'] is None, shown['error']
     used = Path(shown['attached'][0])
-    assert shown['attached'] == shown['host'] and used.parent == installation / 'bin'
+    # A venv keeps its Python in bin/, on Windows in Scripts\.
+    assert shown['attached'] == shown['host'] and used.parent == installation / ('Scripts' if os.name == 'nt' else 'bin')
 
 
 def test_a_python_of_another_graftling_is_refused_with_the_uv_command(installation: Path, tmp_path: Path) -> None:
