@@ -243,7 +243,11 @@ def start_as(user: str, password: str, command: list[str]) -> PROCESS_INFORMATIO
     advapi32.CreateProcessWithLogonW.restype = ctypes.c_int
     startup = STARTUPINFOW(cb=ctypes.sizeof(STARTUPINFOW))
     information = PROCESS_INFORMATION()
-    line = ctypes.create_unicode_buffer(subprocess.list2cmdline(command))
+    text = subprocess.list2cmdline(command)
+    # CreateProcessWithLogonW's documented limit for lpCommandLine: 1024 characters.
+    if len(text) > 1024:
+        pytest.fail(f'The command line for {user} is {len(text)} characters, over CreateProcessWithLogonW\'s 1024')
+    line = ctypes.create_unicode_buffer(text)
     logon_with_profile, create_no_window = 0x1, 0x08000000
     if not advapi32.CreateProcessWithLogonW(user, '.', password, logon_with_profile, command[0], line,
                                             create_no_window, None, str(Path(command[0]).parent),
@@ -308,8 +312,13 @@ def test_a_pipe_another_account_created_for_a_dead_hosts_address_gets_nothing(
                              encoding='utf-8', errors='replace')
     assert granted.returncode == 0, granted.stdout + granted.stderr
     log = shared / 'log.txt'
+    # CreateProcessWithLogonW refuses a command line over 1024 characters (ERROR_INVALID_PARAMETER), so the
+    # squatter runs from a file in the shared directory instead of inline with -c (run 45645601789).
+    script = shared / 'squatter.py'
+    script.write_text(SQUATTER, encoding='utf-8')
     kernel32 = _kernel32()
-    squatter = start_as(*other_account, child(SQUATTER, _channel_windows.pipe_name(str(address)), str(log)))
+    squatter = start_as(*other_account, [sys.executable, '-I', '-X', 'utf8', str(script),
+                                         _channel_windows.pipe_name(str(address)), str(log)])
     try:
         deadline = time.monotonic() + 120
         while not (log.exists() and 'ready' in log.read_text(encoding='utf-8')):
