@@ -854,7 +854,13 @@ class DshExecution:
         process = getattr(self.service, 'process', None)
         if not callable(getattr(process, 'poll', None)) or process.poll() is None:
             return
+        from graftling.process_tree import windows
         from graftling.review import redact
+
+        if windows():
+            # The service's job ends with its owner's handle (kill_on_close), which
+            # the service's close released: no tool of it is left to list (637).
+            return
 
         report = redact(stop_tool_processes(descendants, self.member_marker, {process.pid},
                                             error=self.descendants.error))

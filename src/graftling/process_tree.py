@@ -58,6 +58,17 @@ def windows() -> bool:
     return sys.platform == "win32"
 
 
+def job_name(marker: str) -> str:
+    """Return the name of the Windows job of a tree started with ``marker`` (``graftling-<marker>``).
+
+    A Runtime execution names its tree after its member marker (637), so the
+    marker alone finds the job: :mod:`graftling.member_processes` and
+    :func:`graftling.tool_descendants.stop_tool_processes` list and stop a
+    marker's processes through it on Windows.
+    """
+    return JOB_PREFIX + marker
+
+
 def tree_facts(pid: object) -> dict[str, str]:
     """Return the process fact naming the job of the tree this process started at ``pid``.
 
@@ -199,6 +210,21 @@ class OwnedTree:
             except OSError:
                 continue  # Not readable here, so not shown as a member.
         return members
+
+    def terminate(self, pids: list[int] | None = None) -> None:
+        """Windows only: end the whole job, or only ``pids`` while each is still in it (637).
+
+        ``None`` terminates the job (TerminateJobObject), which also ends a
+        process started in it meanwhile. A list ends each process through one
+        handle that first checks it is in the job, so a reused PID outside the
+        job is never touched; the rest of the job keeps running.
+        """
+        assert windows() and self._job is not None, "terminate is the Windows job's stop"
+        if pids is None:
+            _win32.terminate_job(self._job, TERMINATED_EXIT_CODE)
+            return
+        for pid in pids:
+            _win32.terminate_in_job(pid, self._job, TERMINATED_EXIT_CODE)
 
     def contains(self, pid: int) -> bool:
         """Return whether ``pid`` is in the tree (IsProcessInJob, or the same process group).

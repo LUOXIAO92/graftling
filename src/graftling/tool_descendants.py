@@ -44,7 +44,14 @@ read provisional for a moment (inference); a process started and detached
 between two samples is reached only through the marker scan (so not a platform
 binary); a process whose chain of ancestors passed through a readable process
 without the marker is left alone by design; the Linux rule is not run on a real
-host; Windows is not covered.
+host.
+
+Windows (637, 629 advice 3.5): nothing is sampled and no record is read. A
+Runtime's tree is a Job Object named after its member marker, which no tool
+can leave, so :func:`stop_tool_processes` lists the job's processes
+(JobObjectBasicProcessIdList) and terminates the job. Unlike the marker rule,
+everything in the job is this execution's, including a nested managed launch;
+the same holds for the tree's own stop (635).
 """
 
 from __future__ import annotations
@@ -62,7 +69,7 @@ from typing import NamedTuple
 
 from graftling.durable import read_published, replace_durably
 from graftling.member_processes import (
-    MEMBER_RUN_ENV, _command, _process_view, _user_pids, find_marked_processes,
+    MEMBER_RUN_ENV, _command, _process_view, _user_pids, find_marked_processes, stop_job,
 )
 
 SUPPORTED = sys.platform == 'darwin' or sys.platform.startswith('linux')
@@ -87,7 +94,19 @@ def _proc():
 
 
 def identity(pid: int) -> Identity | None:
-    """Return a live (non-zombie) process's identity, or None when gone or unreadable."""
+    """Return a live (non-zombie) process's identity, or None when gone or unreadable.
+
+    Windows (637): the recorded parent and the creation time in FILETIME
+    ticks, for a process that has not exited; Windows has no process group or
+    uid here, so both are 0.
+    """
+    if sys.platform == 'win32':
+        from graftling import _win32
+
+        facts = _win32.parent_and_creation(pid)
+        if facts is None or not _win32.process_running(pid):
+            return None
+        return Identity(pid, facts[0], 0, 0, facts[1])
     try:
         if sys.platform == 'darwin':
             # PROC_PIDTBSDINFO=3: struct proc_bsdinfo (136 bytes). pbi_status at 4,
@@ -445,6 +464,31 @@ def _wait(targets: dict[int, Identity], seconds: float) -> dict[int, Identity]:
     return alive
 
 
+def stop_job_tools(name: str | None, exclude: set[int] | frozenset[int] = frozenset(), *,
+                   grace: float = 3.0, errors: list[str] | None = None) -> dict:
+    """Windows: stop the processes left in the job ``name``; report as :func:`stop_tool_processes` does.
+
+    The caller and ``exclude`` are skipped. No job of that name (or no name)
+    is reported in ``error`` with ``errors``, never as a silent empty result
+    when a name was given.
+    """
+    errors = list(errors or [])
+    found: dict[int, list[str]] = {}
+    alive: set[int] = set()
+    if name:
+        try:
+            found, alive = stop_job(name, {os.getpid(), *exclude}, grace + 2.0)
+        except OSError as failure:
+            errors.append(f'job scan: {failure}')
+    entry = lambda pid: {'pid': pid, 'command': shown_command(found[pid])}
+    report = {'found': [entry(pid) for pid in sorted(found)],
+              'stopped': [entry(pid) for pid in sorted(found) if pid not in alive],
+              'remaining': [entry(pid) for pid in sorted(alive)]}
+    if errors:
+        report['error'] = '; '.join(errors)
+    return report
+
+
 def stop_tool_processes(entries: list[dict] | None, marker: str | None,
                         exclude: set[int] | frozenset[int] = frozenset(), *, grace: float = 3.0,
                         error: str | None = None) -> dict:
@@ -453,9 +497,16 @@ def stop_tool_processes(entries: list[dict] | None, marker: str | None,
     One SIGTERM, up to ``grace`` seconds, one SIGKILL, up to 2 s for all of
     them together. ``error`` (for example an unreadable record) is reported
     with any scan failure; it never turns into a silent empty result.
+
+    Windows: ``entries`` are not used; the processes of the job named after
+    ``marker`` are stopped (:func:`stop_job_tools`).
     """
-    skipped = {os.getpid(), *exclude}
     errors = [error] if error else []
+    from graftling.process_tree import job_name, windows
+
+    if windows():
+        return stop_job_tools(job_name(marker) if marker else None, exclude, grace=grace, errors=errors)
+    skipped = {os.getpid(), *exclude}
     targets: dict[int, Identity] = {}
     unsettled: dict[int, Identity] = {}
     commands: dict[int, str] = {}

@@ -497,6 +497,26 @@ def process_in_job(pid: int, job: int) -> bool:
         close_handle(handle)
 
 
+def terminate_in_job(pid: int, job: int, exit_code: int = 1) -> bool:
+    """Terminate ``pid`` only while it is in ``job`` (637); return whether it was terminated.
+
+    The membership check and the termination use one process handle, so a
+    PID reused by a process outside the job is never terminated. False when
+    the process is gone, cannot be opened, or is not in the job.
+    """
+    try:
+        handle = _open(pid, PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION)
+    except OSError:
+        return False
+    try:
+        inside = BOOL(0)
+        if not _api()[0].IsProcessInJob(handle, job, ctypes.byref(inside)) or not inside.value:
+            return False
+        return bool(_api()[0].TerminateProcess(handle, exit_code))
+    finally:
+        close_handle(handle)
+
+
 # --- Lock files, replacement and volumes (634, W2) ---
 
 

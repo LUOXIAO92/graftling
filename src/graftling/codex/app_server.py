@@ -232,8 +232,9 @@ class CodexAppServer:
         self._opened = True
         tree = None
         try:
-            # A process group on POSIX, a job on Windows (635).
-            tree = OwnedTree()
+            # A process group on POSIX, a job on Windows (635), named after the service's own
+            # marker when it has one, so its tools are listed through the job (637).
+            tree = OwnedTree(marker=self._environment.get(MEMBER_RUN_ENV) or None)
             process = await asyncio.create_subprocess_exec(
                 *self._command, cwd=self._cwd, env=self._environment,
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

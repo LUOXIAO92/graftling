@@ -1185,7 +1185,8 @@ class ClaudeExecution:
                 self.diagnostics['launch'] = launch_projection(argv)
                 self._save_diagnostics()
                 self.descendants.prepare()
-                self.tree = resources.enter_context(OwnedTree())
+                # Named after the marker, so its tools are listed through the job on Windows (637).
+                self.tree = resources.enter_context(OwnedTree(marker=self.member_marker))
                 self.proc = self.tree.start(argv, cwd=self.request['worktree_path'], env=environment,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             text=True, encoding='utf-8', bufsize=1)

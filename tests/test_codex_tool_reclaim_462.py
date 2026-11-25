@@ -35,6 +35,10 @@ pytestmark = pytest.mark.skipif(not (sys.platform == 'darwin' or sys.platform.st
                                 'killed by SIGKILL and os.killpg')
 
 TOOL = '/bin/sleep 462; :'
+# Windows (637): the tool is a Python program that starts a sleeping grandchild in a new process group.
+WINDOWS_SLEEP = 'import time; time.sleep(462)'
+WINDOWS_TOOL = ('import subprocess, sys; subprocess.Popen([sys.executable, "-c", ' + repr(WINDOWS_SLEEP) + '], '
+                'creationflags=subprocess.CREATE_NEW_PROCESS_GROUP).wait()')
 CALLER = ('controlled-host', 'actual-parent', 'parent-session', 'codex')
 OWNER = r'''
 import json, sys, threading
@@ -50,12 +54,24 @@ threading.Event().wait()
 
 @pytest.fixture
 def native_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """The controlled app-server peer; it starts the tool shell and never stops it itself."""
-    peer = tmp_path / 'codex'
-    peer.write_text('#!' + sys.executable + '\n' + Path(__file__).with_name('codex_stdio_peer.py').read_text())
-    peer.chmod(0o755)
+    """The controlled app-server peer; it starts the tool shell and never stops it itself.
+
+    Windows runs no '#!' script (637): a ``.cmd`` stand-in starts the peer through
+    this interpreter, named by a variable so the batch file stays ASCII under a
+    non-ASCII temporary directory, and the tool is ``WINDOWS_TOOL``.
+    """
+    source = Path(__file__).with_name('codex_stdio_peer.py').read_text(encoding='utf-8')
+    if sys.platform == 'win32':
+        (tmp_path / 'codex_peer.py').write_text(source, encoding='utf-8')
+        peer = tmp_path / 'codex.cmd'
+        peer.write_text('@"%PEER_PYTHON%" "%~dp0codex_peer.py" %*\r\n', encoding='ascii')
+        monkeypatch.setenv('PEER_PYTHON', sys.executable)
+    else:
+        peer = tmp_path / 'codex'
+        peer.write_text('#!' + sys.executable + '\n' + source)
+        peer.chmod(0o755)
     monkeypatch.setenv('PYTHONPATH', str(Path(__file__).resolve().parents[1] / 'src'))
-    monkeypatch.setenv('PEER_TOOL_COMMAND', TOOL)
+    monkeypatch.setenv('PEER_TOOL_COMMAND', WINDOWS_TOOL if sys.platform == 'win32' else TOOL)
     monkeypatch.delenv(MEMBER_RUN_ENV, raising=False)
     return {'adapter_request': {
         'arguments': [str(peer)], 'worktree_path': str(tmp_path),

@@ -300,10 +300,19 @@ for line in incoming():
             # Codex gives tools their own pipes, never the service's stdio.
             quiet = {'stdin': subprocess.DEVNULL, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL,
                      'start_new_session': True}
-            subprocess.Popen(['/bin/sh', '-c', os.environ['PEER_TOOL_COMMAND']], **quiet)
-            other = {**os.environ, 'GRAFTLING_MEMBER_RUN': os.environ.get('GRAFTLING_MEMBER_RUN', 'x')[::-1]}
-            subprocess.Popen([sys.executable, '-c', "import subprocess; subprocess.Popen(['/bin/sleep', '303']).wait()"],
-                             env=other, **quiet)
+            if os.name == 'nt':
+                # 637: on Windows the tool is a Python program (PEER_TOOL_COMMAND is its source) in a
+                # new process group. Whatever the service starts stays in its job, so another
+                # execution's process is started by the test, outside the job.
+                quiet.pop('start_new_session')
+                subprocess.Popen([sys.executable, '-c', os.environ['PEER_TOOL_COMMAND']],
+                                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, **quiet)
+            else:
+                subprocess.Popen(['/bin/sh', '-c', os.environ['PEER_TOOL_COMMAND']], **quiet)
+                other = {**os.environ, 'GRAFTLING_MEMBER_RUN': os.environ.get('GRAFTLING_MEMBER_RUN', 'x')[::-1]}
+                subprocess.Popen([sys.executable, '-c',
+                                  "import subprocess; subprocess.Popen(['/bin/sleep', '303']).wait()"],
+                                 env=other, **quiet)
             if prompt == 'tool-end':
                 # End the turn after the owner's sampler has seen the tool (about 1 s).
                 emit({'id': message['id'], 'result': result})

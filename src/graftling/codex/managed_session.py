@@ -195,6 +195,8 @@ class CodexManagedExecution:
         self.member_marker = None if self.user_environment else new_marker()
         self.tool_descendants = (None if self.member_marker is None else
                                  session_directory / f'tool-descendants-{uuid.uuid4().hex}.json')
+        # Windows: the service's job, held open for the reclaim (_hold_job).
+        self._job = None
         self.descendants = (None if self.tool_descendants is None
                             else DescendantSampler(self.tool_descendants, self.member_marker))
         self.escaped_processes: dict | None = None
@@ -329,6 +331,7 @@ class CodexManagedExecution:
                 if self.descendants is not None and adapter._process is not None:
                     # Only an owned service (never a proxy or an existing WebSocket).
                     self.descendants.start(adapter._process.pid)
+                    self._hold_job()
                 phase = 'thread/resume' if self.expected_session else 'thread/start'
                 observer = asyncio.create_task(self._observe())
                 if self.termination_requested:
@@ -465,14 +468,39 @@ class CodexManagedExecution:
             with (self.directory / 'stderr.log').open('a', encoding='utf-8') as stream:
                 stream.write(adapter.stderr_tail)
 
+    def _hold_job(self) -> None:
+        """Windows: keep a handle to the service's job until the reclaim has listed it (637).
+
+        A job's name lives only while a handle to it is open. The service's
+        owner closes its own when the service exits, and a tool need not hold
+        one, so without this the reclaim could not open the job by name.
+        """
+        from graftling.process_tree import OwnedTree, job_name, windows
+
+        if windows() and self.member_marker:
+            try:
+                self._job = OwnedTree.open(name=job_name(self.member_marker))
+            except OSError:
+                pass  # the reclaim reports the missing job
+
     def _reclaim_tools(self, adapter: CodexAppServer) -> None:
         """Stop the tools the service left behind once it has exited, and record them.
 
         Codex stops its tool shells when its stdin closes, but not when the
         service itself is killed. Only recorded descendants still alive with the
         same uid and start time, their descendants, and processes with this
-        execution's marker are stopped; the service pid is skipped.
+        execution's marker are stopped; the service pid is skipped. On Windows
+        the service's job is the list (637); the held job handle is released here.
         """
+        try:
+            self._reclaim(adapter)
+        finally:
+            job, self._job = self._job, None
+            if job is not None:
+                job.close()
+
+    def _reclaim(self, adapter: CodexAppServer) -> None:
+        """The body of :meth:`_reclaim_tools`."""
         from .diagnostics import redact
 
         entries = self.descendants.finish()

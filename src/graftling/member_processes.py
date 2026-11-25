@@ -11,6 +11,15 @@ are signalled. Names and command patterns are never matched.
 The same scanner serves any such marker variable: ``variable`` names it (the
 test suite uses its own per-run variable), and ``prefix=True`` matches every
 value that starts with ``marker`` instead of exactly it.
+
+Windows (637, 629 advice 3.5): the job is the list. Reading another process's
+environment there means reading its memory, so nothing is scanned. A marker
+resolves to the Job Object its tree was started in (``graftling-<marker>``,
+:func:`graftling.process_tree.job_name`); its processes are listed with
+JobObjectBasicProcessIdList and stopped by terminating the job, whatever
+``variable`` names. A marker whose tree was not started through
+:class:`graftling.process_tree.OwnedTree` has no job, and the scan raises
+OSError saying so, which :func:`stop_marked_processes` reports in ``error``.
 """
 
 from __future__ import annotations
@@ -24,6 +33,10 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from graftling.process_tree import OwnedTree
 
 # The name avoids KEY, SECRET and TOKEN: Codex's default shell environment
 # policy drops such variables from tool shells.
@@ -99,6 +112,11 @@ def parent_pid(pid: int) -> int | None:
         if sys.platform.startswith('linux'):
             stat = Path(f'/proc/{pid}/stat').read_text(encoding='utf-8')
             return int(stat[stat.rindex(')') + 2:].split()[1])
+        if sys.platform == 'win32':
+            # The recorded parent, only when it was created before ``pid`` (graftling.process).
+            from graftling.process import _process_parent
+
+            return _process_parent(pid) or None
         if os.name == 'nt':
             # Never load '/usr/lib/libproc.dylib' as a drive-relative Windows path.
             return None
@@ -171,12 +189,79 @@ def _command(argv: list[str]) -> str:
     return text if len(text) <= _COMMAND_LIMIT else text[:_COMMAND_LIMIT] + '...'
 
 
+def _open_job(name: str) -> OwnedTree:
+    """Open the Windows job ``name``; OSError saying why its processes cannot be listed when none is open."""
+    from graftling.process_tree import OwnedTree
+
+    try:
+        return OwnedTree.open(name=name)
+    except OSError as error:
+        raise OSError(f"No job {name} is open, so its processes cannot be listed on Windows: its tree was "
+                      f"not started through graftling's OwnedTree, or every handle to the job has closed "
+                      f"({type(error).__name__}: {error}).") from error
+
+
+def _windows_argv(pid: int) -> list[str]:
+    """Return a process's arguments as the kernel reports them; empty when unreadable."""
+    from graftling.process import process_arguments
+
+    try:
+        return process_arguments(pid)
+    except OSError:
+        return []
+
+
+def list_job(name: str, skipped: set[int] | frozenset[int]) -> dict[int, list[str]]:
+    """Windows: map each PID in the job ``name``, except ``skipped``, to its arguments.
+
+    OSError when no job of that name is open (:func:`_open_job`).
+    """
+    with _open_job(name) as tree:
+        return {pid: _windows_argv(pid) for pid in tree.pids() if pid not in skipped}
+
+
+def stop_job(name: str, skipped: set[int] | frozenset[int],
+             seconds: float) -> tuple[dict[int, list[str]], set[int]]:
+    """Windows: end the processes of the job ``name`` except ``skipped``; return (found, remaining).
+
+    ``found`` maps each PID to its arguments, read before the stop. When no
+    skipped process is in the job, the job is terminated whole; otherwise
+    only the found processes are, each after checking it is still in the job.
+    ``remaining`` holds those still in the job after up to ``seconds``.
+    OSError when no job of that name is open.
+    """
+    with _open_job(name) as tree:
+        listed = tree.pids()
+        found = {pid: _windows_argv(pid) for pid in listed if pid not in skipped}
+        if not found:
+            return found, set()
+        tree.terminate(None if skipped.isdisjoint(listed) else list(found))
+        deadline = time.monotonic() + seconds
+        while True:
+            remaining = set(found) & set(tree.pids())
+            if not remaining or time.monotonic() >= deadline:
+                return found, remaining
+            time.sleep(0.05)
+
+
 def find_marked_processes(marker: str, exclude: set[int] | frozenset[int] = frozenset(), *,
                           variable: str = MEMBER_RUN_ENV, prefix: bool = False) -> dict[int, str]:
-    """Map pid to command for same-user processes carrying ``marker`` in ``variable``."""
+    """Map pid to command for same-user processes carrying ``marker`` in ``variable``.
+
+    Windows: the processes of the job named after ``marker`` (module
+    docstring); OSError when there is none, or for ``prefix``, which a job
+    name cannot match.
+    """
     if not marker:
         return {}
     skipped = {os.getpid(), *exclude}
+    from graftling.process_tree import job_name, windows
+
+    if windows():
+        if prefix:
+            raise OSError('Windows lists a marker\'s processes through the job named after it; '
+                          'a prefix match is not supported.')
+        return {pid: _command(argv) for pid, argv in sorted(list_job(job_name(marker), skipped).items())}
     found = {}
     for pid in _user_pids():
         if pid in skipped or pid <= 1:
@@ -222,7 +307,22 @@ def stop_marked_processes(marker: str, exclude: set[int] | frozenset[int] = froz
 
     SIGTERM first, SIGKILL after ``grace`` seconds. A process counts as stopped
     once it no longer exists with the marker (exited, zombie or pid reused).
+
+    Windows: the job named after ``marker`` is terminated (module docstring);
+    a process counts as stopped once it has left the job, waiting up to
+    ``grace`` plus 2 seconds. No job is reported in ``error``.
     """
+    from graftling.process_tree import job_name, windows
+
+    if windows() and marker and not prefix:
+        try:
+            argvs, alive = stop_job(job_name(marker), {os.getpid(), *exclude}, grace + 2.0)
+        except OSError as error:
+            return {'found': [], 'stopped': [], 'remaining': [], 'error': str(error)}
+        entry = lambda pid: {'pid': pid, 'command': _command(argvs[pid])}
+        return {'found': [entry(pid) for pid in sorted(argvs)],
+                'stopped': [entry(pid) for pid in sorted(argvs) if pid not in alive],
+                'remaining': [entry(pid) for pid in sorted(alive)]}
     try:
         found = find_marked_processes(marker, exclude, variable=variable, prefix=prefix)
     except (OSError, subprocess.SubprocessError) as error:
