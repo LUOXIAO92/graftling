@@ -36,7 +36,7 @@ INPUT_SCHEMA: dict[str, Any] = {
 DESCRIPTIONS = {
     'create': 'Create a child Agent on a Runtime; returns before its work finishes.',
     'models': "List a Runtime's configured connections with their providers and models, grouped by provider; "
-              'read only, starts no Agent.',
+              'read only.',
     'send': 'Send a message to an Agent.',
     'status': 'Read Agent status, or the visible hierarchy when no Agent is supplied.',
     'wait': 'Wait a finite positive number of seconds for an Agent.',

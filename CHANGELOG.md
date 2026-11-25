@@ -13,6 +13,16 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+### Fixed
+
+- `discover` with an intent query for `create`, such as `start an agent`, lists only
+  `create` again. The `models` description ended with "starts no Agent", whose words
+  matched such a query, so 0.10.0 also listed `models`. The description now ends with
+  "read only"; `models` is still found by its own words (`models`, `providers`,
+  `list models`, `choose a model`). Discovery matching itself is unchanged (615).
+
 ## 0.10.0 (incompatible)
 
 One change is incompatible by section 7 of the public interface, so the minor version
