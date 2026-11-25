@@ -60,7 +60,7 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
-from graftling.durable import replace_durably
+from graftling.durable import read_published, replace_durably
 from graftling.member_processes import (
     MEMBER_RUN_ENV, _command, _process_view, _user_pids, find_marked_processes,
 )
@@ -264,7 +264,7 @@ def write_sidecar(path: Path, runtime_pid: int | None, entries: list[dict]) -> N
 
 def read_sidecar(path: str | Path) -> list[dict]:
     """Return the recorded entries; raise OSError or ValueError when unreadable."""
-    document = json.loads(Path(path).read_text(encoding='utf-8'))
+    document = json.loads(read_published(Path(path)))
     entries = document.get('entries') if isinstance(document, dict) else None
     if not isinstance(entries, list) or not all(
             isinstance(item, dict) and all(isinstance(item.get(key), int) for key in ('pid', 'uid', 'start'))

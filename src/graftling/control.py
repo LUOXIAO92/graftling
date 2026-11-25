@@ -66,7 +66,7 @@ from typing import Any, Callable, Iterator, Mapping, Protocol
 from graftling.approval import DECISION_METHOD, check_reply
 from graftling.calls import pause
 from graftling.config import CONFIG_FILE, read_config, read_connections
-from graftling.durable import replace_durably
+from graftling.durable import read_published, replace_durably
 from graftling.locks import exclusive, ignore_in_git
 from graftling.notices import needs_parent, notice_id
 from graftling.review import check_reviewer
@@ -1734,7 +1734,7 @@ class AgentControl:
         found = []
         for path in sorted((self.root / "control" / "agents").glob("*.json")):
             try:
-                current = _running(json.loads(path.read_text(encoding="utf-8")))
+                current = _running(json.loads(read_published(path)))
                 if (current is not None and not _alive(current["process"].get("worker_pid"))
                         and _alive(current["process"].get("runtime_pid"))):
                     found.append(path.stem)
@@ -1873,7 +1873,7 @@ class AgentControl:
         found = []
         for path in (self.root / "control" / "agents").glob("*.json"):
             try:
-                summary = json.loads(path.read_text(encoding="utf-8"))
+                summary = json.loads(read_published(path))
             except (OSError, ValueError):
                 continue
             if summary.get("parent") != parent:
@@ -2053,7 +2053,7 @@ class AgentControl:
         count = 0
         for path in (self.root / 'control' / 'agents').glob('*.json'):
             try:
-                record = json.loads(path.read_text(encoding='utf-8'))
+                record = json.loads(read_published(path))
             except (OSError, ValueError):
                 continue
             if record.get('parent') == agent and _running(record) is not None:
@@ -2063,7 +2063,7 @@ class AgentControl:
     def _load(self, agent: str) -> dict | None:
         """Read one record without the lock, or ``None`` when absent."""
         try:
-            return json.loads(self._path(agent).read_text(encoding="utf-8"))
+            return json.loads(read_published(self._path(agent)))
         except (AgentsError, FileNotFoundError):
             return None
 

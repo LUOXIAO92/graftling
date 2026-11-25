@@ -19,7 +19,7 @@ import threading
 from typing import Callable, Iterator
 
 from graftling.config import read_config
-from graftling.durable import replace_durably, require_change_detection
+from graftling.durable import open_published, read_published, replace_durably, require_change_detection
 from graftling.locks import exclusive, ignore_in_git
 
 from .protocol import (
@@ -51,7 +51,7 @@ def native_session_files(root: Path) -> list[Path]:
     files = set()
     for path in root.glob('native/*/session.yml'):
         try:
-            record = yaml.safe_load(path.read_text(encoding='utf-8'))
+            record = yaml.safe_load(read_published(path))
             if not isinstance(record, dict) or not record.get('session'):
                 continue
             activity = record.get('activity')
@@ -288,7 +288,7 @@ class JsonlSessionStore:
 
     def _load(self) -> None:
         """Read one atomic snapshot and validate its protocol and identities."""
-        stream = self.path.open('rb')
+        stream = open_published(self.path)
         try:
             lines = stream.read().decode('utf-8').split('\n')
             identity = _identity(os.fstat(stream.fileno()))
@@ -724,7 +724,8 @@ class JsonlSessionStore:
             c not in '0123456789abcdef' for c in digest
         ):
             raise ValueError('Invalid attachment digest.')
-        content = (self.path.parent / 'attachments' / digest).read_bytes()
+        with open_published(self.path.parent / 'attachments' / digest) as stream:
+            content = stream.read()
         if sha256(content).hexdigest() != digest:
             raise ValueError('Attachment digest mismatch.')
         return content

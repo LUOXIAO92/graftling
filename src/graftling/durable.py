@@ -9,14 +9,20 @@ temporary file is flushed to disk and whether the directory is flushed after
 the rename. Windows cannot open a directory to flush it; the rename is made
 with write-through instead, and a rename refused because another handle
 holds the destination open (a reader, a virus scanner) is retried briefly.
+
+Readers that do not hold the writer's lock open such a file through
+``open_published`` or ``read_published``: on Windows, opening a name while a
+new version is renamed over it can be refused for a moment, and is retried.
 """
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 import time
 from pathlib import Path
+from typing import BinaryIO
 
 # How long a Windows rename refused by another open handle is retried, in seconds.
 REPLACE_RETRY_SECONDS = 2.0
@@ -97,6 +103,41 @@ def _replace_windows(source: str, target: str) -> None:
         # Back off up to 0.1 s; a reader usually closes within milliseconds.
         time.sleep(delay)
         delay = min(delay * 2, 0.1)
+
+
+def open_published(path: Path) -> BinaryIO:
+    """Open a file that ``replace_durably`` publishes, for binary reading.
+
+    POSIX opens once. On Windows an open refused with ``PermissionError``
+    (access denied or a sharing violation, as while a new version is renamed
+    over the name) is retried for ``REPLACE_RETRY_SECONDS``, then raised.
+    Any other error, such as ``FileNotFoundError``, is raised at once.
+    """
+    path = Path(path)
+    if os.name != "nt":
+        return path.open("rb")
+
+    deadline = time.monotonic() + REPLACE_RETRY_SECONDS
+    delay = 0.005
+    while True:
+        try:
+            return path.open("rb")
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+
+        # Back off up to 0.1 s; a rename completes within milliseconds.
+        time.sleep(delay)
+        delay = min(delay * 2, 0.1)
+
+
+def read_published(path: Path) -> str:
+    """Return the UTF-8 text of a published file, read as ``Path.read_text`` reads it.
+
+    Newlines are translated as in text mode; the open is ``open_published``'s.
+    """
+    with io.TextIOWrapper(open_published(path), encoding="utf-8") as stream:
+        return stream.read()
 
 
 def require_change_detection(directory: Path) -> None:

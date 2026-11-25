@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from graftling.durable import REPLACE_RETRY_SECONDS, replace_durably
+from graftling.durable import REPLACE_RETRY_SECONDS, read_published, replace_durably
 from graftling.locks import exclusive, try_exclusive
 from graftling.sessions.archive import JsonlSessionStore
 
@@ -110,6 +110,38 @@ def test_replace_durably_publishes_whole_content_without_leftovers(tmp_path: Pat
 
     assert path.read_bytes() == b'newer\n'
     assert sorted(item.name for item in tmp_path.iterdir()) == ['record.json']
+
+
+def test_reader_and_writer_of_one_record_overlap_without_errors(tmp_path: Path) -> None:
+    """A lock-free reader polling a record while it is replaced sees only whole versions.
+
+    On Windows a plain open can be refused while a new version is renamed over
+    the name; ``read_published`` retries that refusal.
+    """
+    path = tmp_path / 'agent.json'
+    replace_durably(path, b'0', sync_file=False)
+    stop = threading.Event()
+    errors: list = []
+
+    def write() -> None:
+        try:
+            for version in range(1, 301):
+                replace_durably(path, str(version).encode(), sync_file=False)
+        except BaseException as error:  # reported by the assertions below
+            errors.append(error)
+        finally:
+            stop.set()
+
+    writer = threading.Thread(target=write, daemon=True)
+    seen = []
+    writer.start()
+    while not stop.is_set():
+        seen.append(int(read_published(path)))
+    writer.join(30)
+
+    assert errors == []
+    assert seen == sorted(seen) and set(seen) <= set(range(301))
+    assert read_published(path) == '300'
 
 
 def test_session_archive_written_by_two_stores_of_one_file(tmp_path: Path) -> None:

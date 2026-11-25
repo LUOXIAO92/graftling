@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
-from graftling.durable import replace_durably
+from graftling.durable import read_published, replace_durably
 from graftling.locks import exclusive
 
 if TYPE_CHECKING:
@@ -186,7 +186,7 @@ def _read(root: Path) -> tuple[dict[str, bool], dict[str, dict], dict[str, dict]
     """Parse and check the whole file once."""
     path = root / CONFIG_FILE
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_published(path)
     except FileNotFoundError:
         return {}, {}, {}, {}, []
 
