@@ -13,7 +13,13 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.10.1 (compatible)
+
+Only the description `discover` returns for `models` changes, so that an intent query
+for `create` lists `create` alone again. No public name, argument, result field, error
+code or result shape changes; the fix makes `discover` behave as documented, so the
+release is compatible by section 7 and raises the patch version. GraphTraj's range
+`graftling>=0.10.0,<0.11` includes it.
 
 ### Fixed
 
