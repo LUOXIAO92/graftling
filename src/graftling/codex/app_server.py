@@ -398,12 +398,12 @@ class CodexAppServer:
         return self._process.pid
 
     def authenticate_caller(self, pid: int) -> None:
-        """Require a kernel-observed caller below this still-live service."""
+        """Require a kernel-observed caller below this still-live service (Windows: in its job)."""
         from graftling import AgentsError
-        from graftling.process import process_ancestors
+        from graftling.process import caller_in_tree
 
         if (self._process is None or self._process.returncode is not None
-                or self._process.pid not in process_ancestors(pid)):
+                or not caller_in_tree(self._process.pid, self._tree, pid)):
             raise AgentsError('authority-denied', 'Caller is outside the live Codex service.')
 
     def native_connection(self, thread_id: str) -> dict:

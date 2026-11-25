@@ -23,7 +23,7 @@ def bind_run(turn: ClaudeExecution, run: Run) -> None:
     def connection(directory: Path) -> Iterator[str]:
         """Authenticate CLI/MCP processes beneath the still-owned native CLI."""
         with agents_connection(directory, run.call,
-                               lambda pid: authenticate_process(turn.proc, pid),
+                               lambda pid: authenticate_process(turn.proc, pid, turn.tree),
                                files=Path(turn.request['worktree_path'])) as address:
             yield address
 

@@ -53,8 +53,9 @@ def bind_run(turn: DshExecution, run: Run, extra_tools: Sequence[ExtraTool] | No
     def connection(directory: Path) -> Iterator[str]:
         """Authenticate the actual MCP subprocess using the request lock PID."""
         def authenticate(pid: int) -> None:
-            """Use only the still-owned native service's OS ancestry."""
-            authenticate_process(turn.service.process if turn.service else None, pid)
+            """Use only the still-owned native service's OS ancestry (Windows: its job)."""
+            service = turn.service
+            authenticate_process(service.process if service else None, pid, service.tree if service else None)
 
         with agents_connection(directory, run.call, authenticate, native_context=lambda: session_context(turn),
                                extra_tools=list(turn.extra_tools.values())) as address:

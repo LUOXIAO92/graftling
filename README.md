@@ -579,4 +579,13 @@ After upgrading:
   sandbox follows the working directory ([`PUBLIC_API.md`](PUBLIC_API.md) section 2).
 - Native Sessions are not interchangeable between Runtimes. A child continues only on
   the Runtime it started on.
+- On Windows the owner connection is a named pipe that only the host's own user account
+  can open, and a caller sends a request only to a pipe its own account owns, so other
+  local users can neither reach a host nor pose as one, as on POSIX. Which process may send a
+  request is decided by its parent-process chain (and, for a Runtime the host started,
+  by the Runtime's process tree), and on Windows that check is weaker than on POSIX
+  against a deliberately hostile process of the same user: Windows lets such a process
+  start a child that names any process it can open as the child's parent, and the
+  child then also joins that parent's job. A Runtime whose sandbox stops its commands
+  from opening other processes closes this gap; a Runtime without a sandbox does not.
 </content>

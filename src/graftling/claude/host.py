@@ -17,6 +17,7 @@ from graftling import AgentControl, AgentsError, AgentsResult, Caller, __version
 from graftling.tool import TOOL_NAME
 from graftling.connection import connection_operation, host_alive, worker_connection
 from graftling.discovery import handle_request
+from graftling.locks import exclusive
 from graftling.process import process_ancestors, process_executable
 from graftling.calls import on_discard, stop_requested
 from graftling.config import data_root_override
@@ -160,9 +161,7 @@ def claim_channel(channel_file: Path, endpoint: dict) -> bool:
     starting over one stale file cannot both serve. Only starting hosts take it,
     each for this one step. The loser sees the winner's live channel.
     """
-    lock = os.open(channel_file.parent, os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with claim_lock(channel_file.parent):
         require_free_channel(channel_file)
         replaced = os.path.lexists(channel_file)
         if replaced:
@@ -171,6 +170,26 @@ def claim_channel(channel_file: Path, endpoint: dict) -> bool:
         with channel_file.open('x', encoding='utf-8') as stream:
             json.dump(endpoint, stream)
         return replaced
+
+
+CLAIM_LOCK = 'claim.lock'
+
+
+@contextmanager
+def claim_lock(directory: Path):
+    """Hold the lock of ``directory``'s channel claim for the block.
+
+    POSIX locks the directory itself. Windows cannot lock a directory, so
+    there it is the lock file ``CLAIM_LOCK`` inside it (``locks.exclusive``).
+    """
+    if os.name == 'nt':
+        with exclusive(directory / CLAIM_LOCK):
+            yield
+        return
+    lock = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
     finally:
         os.close(lock)
 

@@ -323,13 +323,11 @@ class CodexHost(CodexManagedExecution):
         """Keep one actual parent owner, even across repeated host invocations."""
         if os.name == 'nt':
             raise AgentsError('authority-denied', 'Windows does not support the Codex parent host.')
-        import fcntl
+        from graftling.locks import try_exclusive
 
-        with (self.directory / 'owner.lock').open('a+b') as ownership:
-            try:
-                fcntl.flock(ownership, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise AgentsError('turn-running', 'This parent Session already has an owner.') from error
+        with try_exclusive(self.directory / 'owner.lock') as owned:
+            if not owned:
+                raise AgentsError('turn-running', 'This parent Session already has an owner.')
             try:
                 result = super().run()
             finally:

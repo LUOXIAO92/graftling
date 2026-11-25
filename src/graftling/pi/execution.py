@@ -524,7 +524,7 @@ class PiExecution:
 
         return agents_connection(
             self.directory / 'mcp', self.agent_call,
-            lambda pid: authenticate_process(self.proc, pid),
+            lambda pid: authenticate_process(self.proc, pid, self.tree),
             files=Path(self.request['worktree_path']),
             extra_tools=list(self.extra_tools.values()),
         )
