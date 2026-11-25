@@ -1,8 +1,8 @@
 """graftling's Windows paths under an emulation of Windows on a POSIX host (619).
 
 Each check runs in a fresh interpreter where graftling's own modules (only
-those) find no ``fcntl``, get a stand-in ``msvcrt`` that records its calls,
-and see an ``os`` whose ``name`` is ``'nt'`` and that lacks the POSIX-only
+those) find no ``fcntl``, get a stand-in ``msvcrt`` and a stand-in
+``graftling._win32`` (634) that records its lock calls, and see an ``os`` whose ``name`` is ``'nt'`` and that lacks the POSIX-only
 process functions. Patching ``os.name`` or ``sys.modules`` for the whole
 interpreter would make ``pathlib`` and ``subprocess`` take the host for
 Windows, so the emulation is scoped per module through its builtins. This is development evidence only: the real check is a
@@ -31,8 +31,17 @@ sys.path.insert(0, SOURCE)
 EMULATED = []
 
 msvcrt = types.ModuleType('msvcrt')
-msvcrt.LK_UNLCK, msvcrt.LK_LOCK = 0, 1
-msvcrt.locking = lambda descriptor, mode, length: EMULATED.append(['locking', mode, length])
+msvcrt.get_osfhandle = lambda descriptor: descriptor
+
+# graftling's ctypes declarations need a real kernel32; the stand-in records
+# lock calls, renames with the host's os.replace and answers a local NTFS volume.
+win32 = types.ModuleType('graftling._win32')
+win32.ERROR_ACCESS_DENIED, win32.ERROR_SHARING_VIOLATION, win32.DRIVE_REMOTE = 5, 32, 4
+win32.lock_file = lambda handle, wait: EMULATED.append(['lock_file', wait]) or True
+win32.unlock_file = lambda handle: EMULATED.append(['unlock_file'])
+win32.replace_file = lambda source, target: os.replace(source, target) or 0
+win32.volume_facts = lambda path: ('C:\\', 'NTFS', 3)
+sys.modules['graftling._win32'] = win32
 
 nt_os = types.ModuleType('os')
 nt_os.__dict__.update(os.__dict__)
@@ -106,10 +115,7 @@ def test_graftling_imports_under_windows_emulation(tmp_path: Path) -> None:
 
 
 def test_archive_lock_goes_through_windows_lock_under_emulation(tmp_path: Path) -> None:
-    """Creating an archive takes and releases its lock through ``msvcrt``.
-
-    Only the lock is checked here; writing archives on Windows stays unsupported.
-    """
+    """Creating an archive takes and releases its lock through ``graftling._win32``."""
     report = emulated(
         'from pathlib import Path\n'
         'from graftling.sessions.archive import JsonlSessionStore\n'
@@ -124,7 +130,7 @@ def test_archive_lock_goes_through_windows_lock_under_emulation(tmp_path: Path) 
         'print(json.dumps({"calls": EMULATED, "lock": path.with_suffix(".lock").exists(), "error": error}))\n',
         tmp_path,
     )
-    assert report['calls'][:2] == [['locking', 1, 1], ['locking', 0, 1]], report
+    assert report['calls'][:2] == [['lock_file', True], ['unlock_file']], report
     assert report['lock'], report
 
 

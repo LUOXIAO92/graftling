@@ -55,12 +55,12 @@ import json
 import os
 import signal
 import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
 from typing import NamedTuple
 
+from graftling.durable import replace_durably
 from graftling.member_processes import (
     MEMBER_RUN_ENV, _command, _process_view, _user_pids, find_marked_processes,
 )
@@ -258,14 +258,8 @@ def _alive(entry: Identity | dict) -> bool:
 def write_sidecar(path: Path, runtime_pid: int | None, entries: list[dict]) -> None:
     """Write the record atomically; it is never under the Agent lock."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(prefix=path.name + '.', dir=path.parent)
-    try:
-        with os.fdopen(handle, 'w', encoding='utf-8') as stream:
-            json.dump({'version': 1, 'runtime_pid': runtime_pid, 'entries': entries}, stream)
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+    text = json.dumps({'version': 1, 'runtime_pid': runtime_pid, 'entries': entries})
+    replace_durably(path, text.encode('utf-8'), sync_file=False, sync_directory=False)
 
 
 def read_sidecar(path: str | Path) -> list[dict]:

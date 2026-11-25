@@ -55,7 +55,6 @@ from __future__ import annotations
 from copy import deepcopy
 import json
 import os
-import tempfile
 import threading
 import time
 import uuid
@@ -67,6 +66,7 @@ from typing import Any, Callable, Iterator, Mapping, Protocol
 from graftling.approval import DECISION_METHOD, check_reply
 from graftling.calls import pause
 from graftling.config import CONFIG_FILE, read_config, read_connections
+from graftling.durable import replace_durably
 from graftling.locks import exclusive, ignore_in_git
 from graftling.notices import needs_parent, notice_id
 from graftling.review import check_reviewer
@@ -2026,10 +2026,8 @@ class AgentControl:
             path = self._path(agent)
             path.parent.mkdir(parents=True, exist_ok=True)
             self._ignore_in_git()
-            descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix='.import-')
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-                json.dump(dict(record), stream, ensure_ascii=False, indent=2, sort_keys=True)
-            os.replace(temporary, path)
+            text = json.dumps(dict(record), ensure_ascii=False, indent=2, sort_keys=True)
+            replace_durably(path, text.encode('utf-8'), sync_file=False, sync_directory=False)
         return self._document(record)
 
     def configure_stopped(self, agent: str, settings: Mapping[str, Any], caller: Caller) -> dict:
@@ -2108,10 +2106,7 @@ class AgentControl:
                     if text != before:
                         path.parent.mkdir(parents=True, exist_ok=True)
                         self._ignore_in_git()
-                        descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=".record-")
-                        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                            stream.write(text)
-                        os.replace(temporary, path)
+                        replace_durably(path, text.encode("utf-8"), sync_file=False, sync_directory=False)
         finally:
             if outermost:
                 self._deliver_lost()

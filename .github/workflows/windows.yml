@@ -6,7 +6,7 @@
 name: Windows tests
 on:
   push:
-    branches: [agent/632-graftling-windows-ci, dev]
+    branches: [agent/632-graftling-windows-ci, agent/634-graftling-windows-durable-writes, dev]
   workflow_dispatch:
 permissions:
   contents: read
