@@ -383,7 +383,9 @@ def test_windows_a_breakaway_attempt_stays_in_the_job(runtime) -> None:
     script, out = runtime
     with OwnedTree() as tree:
         tree.start([sys.executable, str(script), 'breakaway', str(out)], **QUIET)
-        pids = recorded(out, ('root', 'breakaway.json'))
+        pids = recorded(out, ('root',))
+        # breakaway.json holds the outcome as JSON, not a PID, so it is not read through recorded() (635 correction 2).
+        assert eventually(lambda: (out / 'breakaway.json').exists(), 60)
         outcome = json.loads((out / 'breakaway.json').read_text())
         if outcome['breakaway'] == 'escaped':
             os.kill(outcome['pid'], signal.SIGTERM)
