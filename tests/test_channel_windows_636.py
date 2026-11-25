@@ -54,8 +54,8 @@ except AgentsError as error:
 OWNER = '''
 import subprocess, sys
 sys.stdin.readline()
-done = subprocess.run([sys.executable, "-I", "-c", sys.argv[2], sys.argv[1], "descendant"],
-                      capture_output=True, text=True)
+done = subprocess.run([sys.executable, "-I", "-X", "utf8", "-c", sys.argv[2], sys.argv[1], "descendant"],
+                      capture_output=True, encoding="utf-8")
 print(done.stdout.strip() or done.stderr.strip().replace("\\n", " | "), flush=True)
 sys.stdin.readline()
 '''
@@ -63,7 +63,7 @@ sys.stdin.readline()
 # Starts CALLER detached from any handle of this test, then ends at once.
 LAUNCHER = '''
 import subprocess, sys
-subprocess.Popen([sys.executable, "-I", "-c", sys.argv[2], sys.argv[1], "orphan"],
+subprocess.Popen([sys.executable, "-I", "-X", "utf8", "-c", sys.argv[2], sys.argv[1], "orphan"],
                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 '''
 
@@ -92,9 +92,13 @@ except OSError as error:
 '''
 
 
+def child(script: str, *arguments: str) -> list[str]:
+    """A Python child running ``script``: isolated, and UTF-8 whatever the code page or TEMP path."""
+    return [sys.executable, '-I', '-X', 'utf8', '-c', script, *arguments]
+
+
 def run_caller(address: str, label: str) -> dict:
-    done = subprocess.run([sys.executable, '-I', '-c', CALLER, address, label],
-                          capture_output=True, text=True, timeout=60)
+    done = subprocess.run(child(CALLER, address, label), capture_output=True, encoding='utf-8', timeout=60)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
 
@@ -127,7 +131,7 @@ def test_requests_from_this_and_another_process_are_answered(tmp_path: Path) -> 
         assert _channel_windows.pipe_name(address).startswith('\\\\.\\pipe\\graftling-')
         assert connection_operation(address, {'n': 0}, authenticate=True) == {'echo': {'n': 0}}
         assert run_caller(address, 'child') == {'result': {'echo': {'from': 'child'}}}
-        calls = [call_in_thread(address, {'n': n}) for n in range(1, 6)]
+        calls = [call_in_thread(address, {'n': n}, authenticate=True) for n in range(1, 6)]
         for call in calls:
             call['thread'].join(30)
         assert sorted(call['result']['echo']['n'] for call in calls) == [1, 2, 3, 4, 5]
@@ -203,10 +207,10 @@ def test_another_local_account_cannot_connect(tmp_path: Path) -> None:
         with worker_connection(tmp_path, lambda request: {}) as address:
             name = _channel_windows.pipe_name(address)
             # The probe works: the same account connects.
-            mine = subprocess.run([sys.executable, '-I', '-c', PROBE, name], timeout=60)
+            mine = subprocess.run(child(PROBE, name), timeout=60)
             assert mine.returncode == 0
             # Another account is refused by the pipe's DACL.
-            assert run_as(user, password, [sys.executable, '-I', '-c', PROBE, name]) == _win32.ERROR_ACCESS_DENIED
+            assert run_as(user, password, child(PROBE, name)) == _win32.ERROR_ACCESS_DENIED
     finally:
         subprocess.run(['net', 'user', user, '/delete'], capture_output=True, stdin=subprocess.DEVNULL)
 
@@ -215,8 +219,8 @@ def test_a_same_user_process_outside_the_owner_is_refused_and_its_descendant_acc
     ran, owners = [], []
     with worker_connection(tmp_path, lambda request: ran.append(request) or {'ran': request},
                            authenticate=lambda pid: authenticate_process(owners[0], pid)) as address:
-        owners.append(owner := subprocess.Popen([sys.executable, '-I', '-c', OWNER, address, CALLER],
-                                                stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True))
+        owners.append(owner := subprocess.Popen(child(OWNER, address, CALLER), stdin=subprocess.PIPE,
+                                                stdout=subprocess.PIPE, encoding='utf-8'))
         try:
             # A sibling of the owner, started by this same user, poses as its caller.
             sibling = run_caller(address, 'sibling')
@@ -243,7 +247,7 @@ def test_the_callers_pid_stays_pinned_while_it_is_authenticated(tmp_path: Path) 
         raise AgentsError('authority-denied', 'checked')
 
     with worker_connection(tmp_path, lambda request: {}, authenticate=authenticate) as address:
-        launcher = subprocess.run([sys.executable, '-I', '-c', LAUNCHER, address, CALLER], timeout=60)
+        launcher = subprocess.run(child(LAUNCHER, address, CALLER), timeout=60)
         assert launcher.returncode == 0
         assert entered.wait(60)
         # No handle of this test or of the ended launcher keeps the caller; end it.
@@ -259,7 +263,7 @@ def test_the_callers_pid_stays_pinned_while_it_is_authenticated(tmp_path: Path) 
 
 
 def test_the_hosts_death_is_seen_at_once_by_a_caller_waiting_on_an_accepted_request(tmp_path: Path) -> None:
-    host = subprocess.Popen([sys.executable, '-I', '-c', HOST, str(tmp_path)], stdout=subprocess.PIPE, text=True)
+    host = subprocess.Popen(child(HOST, str(tmp_path)), stdout=subprocess.PIPE, encoding='utf-8')
     try:
         address = host.stdout.readline().strip()
         assert address and host_alive(address)
