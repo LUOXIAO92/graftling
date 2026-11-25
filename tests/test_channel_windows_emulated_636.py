@@ -389,3 +389,41 @@ def test_a_removed_control_directory_stops_the_pipe_service(pipes: FakePipes, tm
         assert not host_alive(address)
     err = capfd.readouterr().err
     assert err.count('no longer exists; its connection service stopped.') == 1
+
+
+class Tree:
+    """A stand-in OwnedTree whose job holds ``members``, or cannot be read."""
+
+    def __init__(self, members: set[int] | None) -> None:
+        self.members = members
+
+    def contains(self, pid: int) -> bool:
+        if self.members is None:
+            raise OSError('the job cannot be read')
+        return pid in self.members
+
+
+def test_on_windows_an_owner_started_caller_is_checked_by_job_membership_only(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from graftling import process
+    from graftling.process import authenticate_process, caller_in_tree
+
+    monkeypatch.setattr(process.sys, 'platform', 'win32')
+    monkeypatch.setattr(process, 'process_ancestors', lambda pid: pytest.fail('Windows walks no PIDs'))
+    assert caller_in_tree(10, Tree({20}), 20)
+    assert not caller_in_tree(10, Tree({20}), 30)
+    assert not caller_in_tree(10, Tree(None), 20)  # unreadable job: refused
+    assert not caller_in_tree(10, None, 20)  # no tree: refused
+
+    class Live:
+        pid = 10
+
+        @staticmethod
+        def poll() -> None:
+            return None
+
+    authenticate_process(Live(), 20, Tree({20}))
+    for tree in (Tree({30}), Tree(None), None):
+        with pytest.raises(AgentsError) as error:
+            authenticate_process(Live(), 20, tree)
+        assert error.value.code == 'authority-denied'

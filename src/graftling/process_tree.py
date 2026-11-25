@@ -204,9 +204,12 @@ class OwnedTree:
         """Return whether ``pid`` is in the tree (IsProcessInJob, or the same process group).
 
         A PID with no process is not. Windows raises OSError when the process
-        exists but cannot be opened.
+        exists but cannot be opened, and when this tree's job handle is closed:
+        IsProcessInJob with no job would answer for any job (636).
         """
         if windows():
+            if self._job is None:
+                raise OSError("This tree's job handle is closed; membership cannot be read.")
             try:
                 return _win32.process_in_job(pid, self._job)
             except OSError as error:

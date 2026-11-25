@@ -145,16 +145,40 @@ def _linux_parent(pid: int) -> int:
 
 
 
-def authenticate_process(process: subprocess.Popen | None, caller_pid: int) -> None:
-    """Require a kernel-identified caller below the host's still-live child.
+def authenticate_process(process: subprocess.Popen | None, caller_pid: int, tree: object = None) -> None:
+    """Require a kernel-identified caller inside the host's still-live child's tree.
 
     ``process`` is the owning host's Popen handle, never request JSON. Keeping
     that handle and checking poll prevents a stale PID from granting authority.
+    ``tree`` is the :class:`graftling.process_tree.OwnedTree` that started it.
+    POSIX: the caller must be a descendant of ``process`` (unchanged).
+    Windows: the caller must be in the tree's job (IsProcessInJob), with no
+    PID walk; no tree, or a job that cannot be read, refuses (636).
     """
     from graftling.tool import AgentsError
 
-    if process is None or process.poll() is not None or process.pid not in process_ancestors(caller_pid):
+    if (process is None or process.poll() is not None
+            or not caller_in_tree(process.pid, tree, caller_pid)):
         raise AgentsError('authority-denied', 'The request is not owned by this live native process.')
+
+
+def caller_in_tree(root_pid: int, tree: object, caller_pid: int) -> bool:
+    """Whether ``caller_pid`` belongs to the owned Runtime started at ``root_pid``.
+
+    POSIX: ``root_pid`` is among the caller's ancestors. Windows: the caller is
+    in ``tree``'s job (``OwnedTree.contains``). A same-user process can still
+    name a process of the job as its parent and so join the job; see the
+    module docstring. Without a tree, or when the job or the caller cannot be
+    read, the answer is False: never allowed by default.
+    """
+    if sys.platform != 'win32':
+        return root_pid in process_ancestors(caller_pid)
+    if tree is None:
+        return False
+    try:
+        return bool(tree.contains(caller_pid))
+    except OSError:
+        return False
 
 
 def process_executable(pid: int) -> Path | None:

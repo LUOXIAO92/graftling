@@ -5,8 +5,10 @@ Positive and negative cases through the public functions of
 
 - another local account cannot connect (a temporary account, started with
   CreateProcessWithLogonW, is refused by the pipe's DACL);
-- a same-user process that is not below the owning process is refused, and a
-  caller's PID stays pinned while it is authenticated;
+- an owner-started Runtime's caller must be in its job: a same-user process
+  outside the job is refused, and one that forges the owner as its parent is
+  refused or, if Windows puts it in the job, accepted as README.md states;
+  a caller's PID stays pinned while it is authenticated;
 - the host's death is seen at once by a caller waiting on an accepted request;
 - a withdraw before acceptance means the operation never runs; after
   acceptance the caller keeps POSIX's behaviour; without a verdict delivery
@@ -34,7 +36,8 @@ import pytest
 
 from graftling import _channel_windows, _win32
 from graftling.connection import connection_operation, host_alive, worker_connection
-from graftling.process import authenticate_process, process_alive
+from graftling.process import authenticate_process, caller_in_tree, process_alive
+from graftling.process_tree import OwnedTree
 from graftling.tool import AgentsError
 
 pytestmark = pytest.mark.skipif(os.name != 'nt', reason='Windows-only: the named-pipe owner connection (636)')
@@ -215,25 +218,106 @@ def test_another_local_account_cannot_connect(tmp_path: Path) -> None:
         subprocess.run(['net', 'user', user, '/delete'], capture_output=True, stdin=subprocess.DEVNULL)
 
 
-def test_a_same_user_process_outside_the_owner_is_refused_and_its_descendant_accepted(tmp_path: Path) -> None:
-    ran, owners = [], []
-    with worker_connection(tmp_path, lambda request: ran.append(request) or {'ran': request},
-                           authenticate=lambda pid: authenticate_process(owners[0], pid)) as address:
-        owners.append(owner := subprocess.Popen(child(OWNER, address, CALLER), stdin=subprocess.PIPE,
-                                                stdout=subprocess.PIPE, encoding='utf-8'))
-        try:
-            # A sibling of the owner, started by this same user, poses as its caller.
-            sibling = run_caller(address, 'sibling')
-            assert sibling['code'] == 'authority-denied', sibling
-            # The owner's own child is accepted.
-            owner.stdin.write('go\n')
-            owner.stdin.flush()
-            assert json.loads(owner.stdout.readline()) == {'result': {'ran': {'from': 'descendant'}}}
-        finally:
-            owner.stdin.close()
-            owner.wait(30)
-            owner.stdout.close()
-    assert ran == [{'from': 'descendant'}]
+class STARTUPINFOEXW(ctypes.Structure):
+    _fields_ = [('StartupInfo', STARTUPINFOW), ('lpAttributeList', ctypes.c_void_p)]
+
+
+def run_with_parent(parent_pid: int, command: list[str]) -> int:
+    """Start ``command`` naming ``parent_pid`` as its parent (PROC_THREAD_ATTRIBUTE_PARENT_PROCESS).
+
+    Waits for it to end and returns its PID. Test-only Win32 declarations: this
+    is how a same-user process forges its recorded parent.
+    """
+    kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    handle, size_t, dword = ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32
+    for name, argtypes, restype in (
+            ('OpenProcess', [dword, ctypes.c_int, dword], handle),
+            ('InitializeProcThreadAttributeList', [ctypes.c_void_p, dword, dword, ctypes.POINTER(size_t)], ctypes.c_int),
+            ('UpdateProcThreadAttribute', [ctypes.c_void_p, dword, size_t, ctypes.c_void_p, size_t, ctypes.c_void_p,
+                                           ctypes.c_void_p], ctypes.c_int),
+            ('DeleteProcThreadAttributeList', [ctypes.c_void_p], None),
+            ('CreateProcessW', [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
+                                dword, ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_void_p,
+                                ctypes.POINTER(PROCESS_INFORMATION)], ctypes.c_int),
+            ('WaitForSingleObject', [handle, dword], dword),
+            ('CloseHandle', [handle], ctypes.c_int)):
+        function = getattr(kernel32, name)
+        function.argtypes, function.restype = argtypes, restype
+    process_create_process, parent_attribute = 0x0080, 0x00020000
+    extended_startupinfo, create_no_window = 0x00080000, 0x08000000
+    parent = kernel32.OpenProcess(process_create_process, False, parent_pid)
+    assert parent, f'OpenProcess({parent_pid}) failed: {ctypes.get_last_error()}'
+    size = size_t(0)
+    kernel32.InitializeProcThreadAttributeList(None, 1, 0, ctypes.byref(size))
+    attributes = ctypes.create_string_buffer(size.value)
+    information = PROCESS_INFORMATION()
+    try:
+        assert kernel32.InitializeProcThreadAttributeList(attributes, 1, 0, ctypes.byref(size)), ctypes.get_last_error()
+        parent_value = handle(parent)
+        assert kernel32.UpdateProcThreadAttribute(attributes, 0, parent_attribute, ctypes.byref(parent_value),
+                                                  ctypes.sizeof(parent_value), None, None), ctypes.get_last_error()
+        startup = STARTUPINFOEXW()
+        startup.StartupInfo.cb = ctypes.sizeof(STARTUPINFOEXW)
+        startup.lpAttributeList = ctypes.cast(attributes, ctypes.c_void_p)
+        line = ctypes.create_unicode_buffer(subprocess.list2cmdline(command))
+        assert kernel32.CreateProcessW(command[0], line, None, None, False, extended_startupinfo | create_no_window,
+                                       None, None, ctypes.byref(startup), ctypes.byref(information)), \
+            f'CreateProcessW with a forged parent failed: {ctypes.get_last_error()}'
+        assert kernel32.WaitForSingleObject(information.hProcess, 120_000) == 0, 'the forged-parent caller hung'
+        return information.dwProcessId
+    finally:
+        kernel32.DeleteProcThreadAttributeList(attributes)
+        for opened in (information.hThread, information.hProcess, parent):
+            if opened:
+                kernel32.CloseHandle(opened)
+
+
+# CALLER, writing its outcome to the file named by its third argument (a forged child has no stdout).
+CALLER_TO_FILE = CALLER.replace('print(json.dumps(', 'open(sys.argv[3], "w", encoding="utf-8").write(json.dumps(')
+
+
+def test_the_owner_started_rule_is_membership_of_the_runtimes_job(tmp_path: Path, record_property) -> None:
+    """An owner-started Runtime's callers are the processes in its job (Phase B), never a PID walk."""
+    ran, seen, owners = [], {}, []
+
+    with OwnedTree() as tree:
+        def authenticate(pid: int) -> None:
+            facts = _win32.parent_and_creation(pid)
+            seen[pid] = {'in_job': tree.contains(pid), 'parent': facts[0] if facts else None}
+            authenticate_process(owners[0], pid, tree)
+
+        with worker_connection(tmp_path, lambda request: ran.append(request) or {'ran': request},
+                               authenticate=authenticate) as address:
+            owners.append(owner := tree.start(child(OWNER, address, CALLER), stdin=subprocess.PIPE,
+                                              stdout=subprocess.PIPE, encoding='utf-8'))
+            try:
+                # A sibling of the owner, started by this same user, poses as its caller.
+                sibling = run_caller(address, 'sibling')
+                assert sibling['code'] == 'authority-denied', sibling
+                # A same-user process that names the owner as its parent.
+                outcome = tmp_path / 'forged.json'
+                forged = run_with_parent(owner.pid, child(CALLER_TO_FILE, address, 'forged', str(outcome)))
+                forged_result = json.loads(outcome.read_text(encoding='utf-8'))
+                assert seen[forged]['parent'] == owner.pid  # the forgery took effect
+                record_property('forged_parent_in_job', seen[forged]['in_job'])
+                if seen[forged]['in_job']:
+                    # The weakness README.md states: the named parent's job is inherited, so it is accepted.
+                    assert forged_result == {'result': {'ran': {'from': 'forged'}}}
+                else:
+                    assert forged_result['code'] == 'authority-denied', forged_result
+                # The owner's own child, in the job, is accepted.
+                owner.stdin.write('go\n')
+                owner.stdin.flush()
+                assert json.loads(owner.stdout.readline()) == {'result': {'ran': {'from': 'descendant'}}}
+                assert any(facts['in_job'] for facts in seen.values())
+            finally:
+                owner.stdin.close()
+                owner.wait(30)
+                owner.stdout.close()
+    assert {'from': 'descendant'} in ran and {'from': 'sibling'} not in ran
+    # A closed job handle or no tree never admits anyone.
+    assert not caller_in_tree(owner.pid, tree, os.getpid())
+    assert not caller_in_tree(owner.pid, None, os.getpid())
 
 
 def test_the_callers_pid_stays_pinned_while_it_is_authenticated(tmp_path: Path) -> None:
