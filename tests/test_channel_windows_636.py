@@ -333,7 +333,7 @@ def test_a_pipe_another_account_created_for_a_dead_hosts_address_gets_nothing(
         time.sleep(3.5)  # the squatter checks each connection for 3 s
         lines = log.read_text(encoding='utf-8').splitlines()
         assert 'connected' in lines  # the caller reached the squatter's pipe ...
-        assert not [line for line in lines if line.startswith('read')]  # ... and sent it nothing
+        assert not [line for line in lines if line.startswith('read ')]  # ... and sent it nothing ("read <n>", not "ready")
     finally:
         kernel32.TerminateProcess(squatter.hProcess, 1)
         kernel32.WaitForSingleObject(squatter.hProcess, 30_000)
