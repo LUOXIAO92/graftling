@@ -10,6 +10,17 @@ from uuid import UUID
 from graftling import AgentsError, AgentsResult
 from graftling.tool import TOOL_NAME
 
+# A call refused before the plugin's hook ever reached this host (652). The hook sends
+# each call's context, so its silence means Claude Code did not load the plugin; the
+# usual cause is a folder whose trust was not accepted.
+NO_PLUGIN = ("No matching current native call association: graftling's Claude Code plugin has not "
+             "reached this host in this session, so Claude Code has not loaded it (the plugin "
+             "configuration --write generates, .claude/skills/agents-claude-host, or the graftling "
+             "marketplace plugin). Claude Code loads a project's plugin only in a folder whose trust "
+             "was accepted, in print mode (claude -p) too: start claude in {cwd}, accept the folder "
+             "trust, then start Claude Code again. The call is not executed.")
+
+
 class NativeCalls:
     """Consume each current native association exactly once, never a startup ID.
 
@@ -45,10 +56,14 @@ class NativeCalls:
         self.queued: list[dict] = []
         self.running: list[dict] = []
         self.lock = threading.Lock()
+        # Whether the plugin's hook has sent any context yet, and whether its absence was logged.
+        self.reached = False
+        self.unreached_logged = False
 
     def context(self, document: dict) -> dict:
         """Accept only authenticated mod facts; this is not a model tool."""
         with self.lock:
+            self.reached = True
             operation = document.get('operation')
             if operation == 'end':
                 return self.end(document)
@@ -115,10 +130,21 @@ class NativeCalls:
         Queued associations were prepared earlier than the prepared ones, so
         they are matched first, in order. All belong to one Session (see
         ``context``), so a match is never ambiguous between Sessions.
+
+        Before the plugin's hook has sent any context, the refusal names the
+        plugin and folder trust, and host.log (this process's stderr) gets it
+        once.
         """
         with self.lock:
             candidates = [item for item in self.queued + self.prepared
                           if item['request'] == request and item['tool'] == tool]
+            if not candidates and not self.reached:
+                message = NO_PLUGIN.format(cwd=self.cwd)
+                if not self.unreached_logged:
+                    self.unreached_logged = True
+                    print(time.strftime('%Y-%m-%dT%H:%M:%S%z'), 'subagents-call refused:', message,
+                          file=sys.stderr, flush=True)
+                raise AgentsError('authority-denied', message)
             if not candidates:
                 raise AgentsError('authority-denied', 'No matching current native call association. '
                                   'A call whose native call ended before it was served, or that came '

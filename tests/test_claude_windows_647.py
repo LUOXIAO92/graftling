@@ -34,7 +34,7 @@ import pytest
 from graftling import AgentControl, AgentsError, Caller, bind
 from graftling.claude import driver as claude_driver
 from graftling.claude.driver import ClaudeDriver
-from graftling.claude.plugin import MARKETPLACE_DIRECTORY, marketplace_module
+from graftling.claude.plugin import MARKETPLACE_DIRECTORY, claude_host_plugin
 
 WINDOWS = sys.platform == 'win32'
 SOURCE = Path(__file__).resolve().parents[1] / 'src'
@@ -142,7 +142,11 @@ def mod_context(module: Path, environment: dict, tool: str, cwd: Path) -> dict:
 
 
 def test_mod_starts_a_windows_venvs_base_interpreter(tmp_path: Path) -> None:
-    """Windows and a venv: base python.exe, -I, the bootstrap and the venv; otherwise unchanged."""
+    """Windows and a venv: base python.exe, -I, the bootstrap and the venv; otherwise unchanged.
+
+    The module configuration --write generates (652: the marketplace copy does not
+    run on native Windows).
+    """
     venv, base = tmp_path / 'venv', tmp_path / 'base'
     (venv / 'Scripts').mkdir(parents=True)
     base.mkdir()
@@ -150,25 +154,30 @@ def test_mod_starts_a_windows_venvs_base_interpreter(tmp_path: Path) -> None:
     python.write_text('')
     (base / 'python.exe').write_text('')
     (venv / 'pyvenv.cfg').write_text(f'home = {base}\ninclude-system-site-packages = false\n')
-    module = tmp_path / 'host_context.mjs'
-    module.write_text(marketplace_module(), encoding='utf-8')
-    tool = 'mcp__plugin_graftling_subagents__subagents'
+    plugin = tmp_path / 'plugin'
+    module = plugin / 'hooks' / 'host_context.mjs'
+    module.parent.mkdir(parents=True)
+    module.write_text(claude_host_plugin(plugin, 'agents-claude-host', 'test')[str(module)], encoding='utf-8')
+    tool = 'mcp__graftling__subagents'
+    config = str(tmp_path / '.agents-control' / 'claude-host.json')
 
-    found = mod_context(module, {'GRAFTLING_PYTHON': str(python), 'OS': 'Windows_NT'}, tool, tmp_path)
+    def settings(python: Path, **extra: str) -> dict:
+        return {'GRAFTLING_CLAUDE_HOST_PYTHON': str(python), 'GRAFTLING_CLAUDE_HOST_CONFIG': config, **extra}
+
+    found = mod_context(module, settings(python, OS='Windows_NT'), tool, tmp_path)
     assert found['decided'] == {'decision': 'allow'}
     assert found['run'][:3] == [str(base / 'python.exe'), '-I', '-c'] and found['run'][4] == str(venv)
-    assert found['run'][5:] == ['context', '--project-from', str(tmp_path)]
+    assert found['run'][5:] == ['context', '--config', config]
 
     # Not Windows, or a python with no pyvenv.cfg beside its directory: the command as before.
-    for environment in ({'GRAFTLING_PYTHON': str(python)},
-                        {'GRAFTLING_PYTHON': str(tmp_path / 'plain' / 'python.exe'), 'OS': 'Windows_NT'}):
+    for environment in (settings(python), settings(tmp_path / 'plain' / 'python.exe', OS='Windows_NT')):
         found = mod_context(module, environment, tool, tmp_path)
-        assert found['run'] == [environment['GRAFTLING_PYTHON'], '-m', 'graftling.claude.host', 'context',
-                                '--project-from', str(tmp_path)]
+        assert found['run'] == [environment['GRAFTLING_CLAUDE_HOST_PYTHON'], '-m', 'graftling.claude.host',
+                                'context', '--config', config]
 
     # A venv whose base interpreter is missing: one line, and no process.
     (base / 'python.exe').unlink()
-    found = mod_context(module, {'GRAFTLING_PYTHON': str(python), 'OS': 'Windows_NT'}, tool, tmp_path)
+    found = mod_context(module, settings(python, OS='Windows_NT'), tool, tmp_path)
     assert found['run'] is None and found['decided']['decision'] == 'deny'
     assert 'pyvenv.cfg names no base interpreter' in found['decided']['reason']
     assert '\n' not in found['decided']['reason']

@@ -148,11 +148,34 @@ async function showFrames($, state, frames) {
 }
 
 // The Python this copy runs. The plugin copy takes GRAFTLING_PYTHON, else
-// python3 on PATH, as its MCP server's bin/graftling-host does. Windows (OS is
-// Windows_NT there) names it python, as a venv's Scripts\python.exe is named.
+// python3 on PATH, as its MCP server's bin/graftling-host does. It does not run
+// on native Windows (WINDOWS_UNSUPPORTED).
 async function pluginPython($) {
-  return (await $.env.get('GRAFTLING_PYTHON'))
-    || ((await $.env.get('OS')) === 'Windows_NT' ? 'python' : 'python3');
+  return (await $.env.get('GRAFTLING_PYTHON')) || 'python3';
+}
+
+// The marketplace plugin on native Windows (652). Its MCP server's sh launcher cannot
+// keep the process Claude Code started, and Claude Code 2.1.314 failed that server
+// there before any sh ran, so this module, which Claude Code runs there, says it: in
+// the transcript, in /agents-context and as one line in host.log, where the launcher
+// writes its own refusals.
+const WINDOWS_UNSUPPORTED = 'graftling plugin: the subagents host did not start: the graftling '
+  + 'marketplace plugin is not supported on native Windows. Disable it and generate this '
+  + "project's plugin files with configuration --write instead (graftling's install/claude-code.md, "
+  + 'Generate the plugin files); then restart Claude Code.';
+
+// host.log as the launcher finds it: GRAFTLING_DATA_ROOT when absolute (a drive or
+// / path), else <Session cwd>/.agents-control. The line is appended; a failed write
+// leaves the transcript line.
+async function logUnsupported($) {
+  const root = await $.env.get('GRAFTLING_DATA_ROOT');
+  const directory = root && /^([A-Za-z]:[\\/]|[\\/])/.test(root) ? root
+    : `${String(await $.session.cwd()).replace(/[\\/]+$/, '')}/.agents-control`;
+  const path = `${directory}/host.log`;
+  try {
+    const before = await $.fs.exists(path) ? await $.fs.read(path) : '';
+    await $.fs.write(path, `${before}${new Date().toISOString()} ${WINDOWS_UNSUPPORTED}\n`);
+  } catch {}
 }
 
 // Whether configuration --write material serves this Session's project, so the
@@ -334,6 +357,16 @@ export function register(on) {
       state.inert = true;
       return next(event);
     }
+    // The marketplace plugin on native Windows: no host, so nothing to associate or push.
+    if (PLUGIN && (await $.env.get('OS')) === 'Windows_NT') {
+      state.inert = true;
+      state.unsupported = true;
+      await logUnsupported($);
+      try { await $.ui.log(WINDOWS_UNSUPPORTED); } catch {}
+      await $.command.register({name: 'agents-context',
+        description: 'Show current native Session and agents registration without a model turn', immediate: true});
+      return next(event);
+    }
     state.foreignConfig = material === 'foreign';
     await $.command.register({name: 'agents-context',
       description: 'Show current native Session and agents registration without a model turn', immediate: true});
@@ -342,6 +375,10 @@ export function register(on) {
   });
 
   on('command.run', {command: 'agents-context'}, async ($) => {
+    if (state.unsupported) {
+      await $.ui.log(WINDOWS_UNSUPPORTED);
+      return {};
+    }
     const session = await $.session.id();
     const tools = await $.tool.list();
     await $.ui.log(`subagents · current Session ${session}`);

@@ -17,7 +17,8 @@ The numbers in parentheses are the project's Task numbers.
 
 Native Windows support, in two rounds (632-651). Claude Code, Codex, Pi and DSH work
 as hosts on Windows; Codex and DSH also as children, while Claude and Pi children are
-refused there. POSIX behaviour is unchanged. The README's *Windows* section lists the
+refused there. POSIX behaviour is unchanged apart from two Claude Code host refusal
+messages, which now name their cause on every platform (652, under Changed). The README's *Windows* section lists the
 prerequisites and *Known limits* the remaining limits. Not yet released: the version
 number and its compatibility mark come with the release.
 
@@ -66,9 +67,22 @@ number and its compatibility mark come with the release.
 - A Pi child: `create` and the Claude and Codex hosts' `runtimes.pi` fail with
   `unsupported-runtime`, because a Pi child runs only inside `srt`, whose Windows
   support is still alpha (648).
-- The Claude Code marketplace plugin is not supported. Its launcher is written to refuse
-  under a Windows `sh`, but on a real host Claude Code showed its server only as
-  `failed`, without that line (647, 650).
+- The Claude Code marketplace plugin is not supported. Claude Code 2.1.314 fails its
+  server there before its `sh` launcher runs, so the launcher's own refusal never showed
+  (647, 650). The plugin's module now says it at session start: a transcript line (in
+  print mode a `ui_log` event), `/agents-context` and a line in `host.log`, each naming
+  `configuration --write` (652).
+
+### Changed
+
+- A `subagents` call that reaches the Claude Code host before graftling's plugin has sent
+  it any context is still refused with `authority-denied`, but the message now says that
+  Claude Code has not loaded the plugin and that the usual cause is a folder whose trust
+  was not accepted, and `host.log` records it once (652). Before, the message was only
+  'No matching current native call association. ...'.
+- A context step started by a process under the same Claude Code, such as a command of its
+  Bash tool, is refused saying so, with that Claude Code's pid. Before, it was described as
+  the host of another Claude Code session (652).
 
 ### Documentation
 
@@ -81,6 +95,9 @@ number and its compatibility mark come with the release.
   Windows, Node, an interactive logon) and *Known limits*; the Claude Code note on
   folder trust in print mode; the DSH note's `file:` URL for `--patch` on Windows
   (651).
+- A real-entry job in the Windows workflow (`claude-real-entry`, on 652's branch and by
+  hand only) runs Claude Code 2.1.314 against a local stub of the Messages API, with no
+  model and no login (`.github/claude_real_entry.py`) (652).
 
 ## 0.10.2 (compatible)
 

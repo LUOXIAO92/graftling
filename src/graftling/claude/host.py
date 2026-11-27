@@ -108,14 +108,26 @@ def serve_until_ended(mcp_in: TextIO, mcp_out: TextIO, responder) -> None:
 def report_missing_host(channel_file: Path, owner: dict | None = None) -> None:
     """Exit the mod's context step with the refusal reason in one line, never a traceback.
 
-    ``owner`` is another Claude's live channel: this project's host is then running, not missing.
+    ``owner`` is the live channel of a host whose Claude Code is not this
+    process's parent: this project's host is then running, not missing. When
+    that Claude Code is a further ancestor, this process was started by a
+    shell or tool inside the same session, and the refusal says so (652).
     """
     record = channel_file.parent.parent / REFUSAL_FILE
     try:
         reason = json.loads(record.read_text(encoding='utf-8'))
         print(f"{reason['code']}: {reason['message']}", file=sys.stderr)
     except (OSError, ValueError, KeyError, TypeError):
-        if owner is not None:
+        chain = process_ancestors(os.getpid()) if owner is not None else []
+        if owner is not None and owner.get('parent') in chain[2:]:
+            parent = chain[1]
+            print(f"This context step was not started by Claude Code itself: its parent is pid {parent} "
+                  f"({process_executable(parent) or 'unknown executable'}), a process under the Claude Code "
+                  f"session (Claude Code pid {owner.get('parent')}) whose subagents host owns this project. "
+                  "The host accepts only the context step that Claude Code starts directly for graftling's "
+                  "plugin; a command run from a shell or a tool, such as Claude Code's Bash tool, is refused. "
+                  "Call the subagents tool instead.", file=sys.stderr)
+        elif owner is not None:
             print("The subagents host of another Claude Code session (Claude Code pid "
                   f"{owner.get('parent')}) owns this project.", file=sys.stderr)
         else:

@@ -43,8 +43,11 @@ marketplace: add the one inside your installation.
 
 ## Install the marketplace plugin
 
-Not on native Windows: there the plugin's server shows only as `failed`
-([Known limits](../../README.md#known-limits)). Generate the plugin files instead.
+Not on native Windows: there the plugin's server fails, and at session start the plugin
+says that it is not supported on native Windows and names `configuration --write`, in the
+transcript (in print mode a `ui_log` event), in `/agents-context` and as a line in
+`.agents-control/host.log` ([Known limits](../../README.md#known-limits)). Generate the
+plugin files instead.
 
 > Seen on a real host only in print mode (`claude -p`), with the marketplace added from a
 > local checkout (before 581 moved it into the installation), the plugin installed at
@@ -204,8 +207,9 @@ not load this project's `.mcp.json`.
 The folder trust is needed in print mode (`claude -p`) too. In a folder whose trust
 was not accepted, Claude Code 2.1.314 does not load the generated plugin, yet the
 `graftling` server still connects and the tool is offered; every call then fails with
-`authority-denied` 'No matching current native call association. ...', and `host.log`
-records only `outcome=failed`. Nothing in either points to the trust. Seen with
+`authority-denied`. The message says that Claude Code has not loaded graftling's plugin,
+that a project's plugin loads only once the folder trust is accepted, and how to accept
+it, and `host.log` records it once as `subagents-call refused: ...` (652). Seen with
 Claude Code 2.1.314 in print mode (650): on macOS the generated plugin loaded only once
 the folder was trusted; on Windows Server 2022 every call failed as above in an
 untrusted folder and was answered once the trust was recorded. Those runs recorded the

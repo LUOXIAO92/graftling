@@ -6,7 +6,7 @@
 name: Windows tests
 on:
   push:
-    branches: [agent/632-graftling-windows-ci, agent/633-graftling-windows-process, agent/634-graftling-windows-durable-writes, agent/635-graftling-windows-process-tree, agent/638-graftling-windows-paths-encoding, dev, agent/636-graftling-windows-named-pipe, agent/637-graftling-windows-process-listing, agent/639-graftling-windows-codex, agent/647-graftling-windows-claude, agent/648-graftling-windows-pi, agent/649-graftling-windows-dsh]
+    branches: [agent/632-graftling-windows-ci, agent/633-graftling-windows-process, agent/634-graftling-windows-durable-writes, agent/635-graftling-windows-process-tree, agent/638-graftling-windows-paths-encoding, dev, agent/636-graftling-windows-named-pipe, agent/637-graftling-windows-process-listing, agent/639-graftling-windows-codex, agent/647-graftling-windows-claude, agent/648-graftling-windows-pi, agent/649-graftling-windows-dsh, agent/652-graftling-windows-claude-host-polish]
   workflow_dispatch:
 permissions:
   contents: read
@@ -205,5 +205,74 @@ jobs:
         with:
           name: graftling-dsh-windows-${{ github.sha }}-${{ github.run_attempt }}
           path: test-results/dsh/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Real Claude Code as graftling's host on this runner (652), without a model or a login:
+  # .github/claude_real_entry.py runs Claude Code 2.1.314 (the release binary, its SHA-256 checked
+  # against the release manifest) against a local stub of the Messages API with a dummy token, in
+  # temporary home and config directories. Cases: the marketplace plugin (unsupported on native
+  # Windows, saying so), a call in a folder whose trust was not accepted, and a context step run by
+  # the Bash tool. It downloads Claude Code, so it runs only on 652's branch and when dispatched by
+  # hand, not on dev's routine pushes. No secret and no provider variable is used.
+  claude-real-entry:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/agent/652-graftling-windows-claude-host-polish'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PIP_NO_INPUT: '1'
+      CLAUDE_VERSION: '2.1.314'
+    steps:
+      - name: Keep symbolic links on this runner
+        run: git config --global core.symlinks true
+      - name: Check out the commit under test
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.13.7 x64
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13.7'
+          architecture: x64
+      - name: Install graftling and pinned test tools
+        run: |
+          python -m pip install --no-deps pip==25.3 setuptools==80.9.0 wheel==0.45.1 packaging==25.0 pytest==8.3.5 iniconfig==2.1.0 pluggy==1.6.0 colorama==0.4.6 PyYAML==6.0.2 websockets==15.0.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --no-deps --no-build-isolation -e .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fetch Claude Code for win32-x64
+        run: |
+          $base = "https://downloads.claude.ai/claude-code-releases/$env:CLAUDE_VERSION"
+          $dir = Join-Path $env:RUNNER_TEMP 'claude-code'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Invoke-WebRequest -UseBasicParsing -Uri "$base/manifest.json" -OutFile "$dir/manifest.json"
+          $want = (Get-Content -Raw "$dir/manifest.json" | ConvertFrom-Json).platforms.'win32-x64'.checksum
+          if ($want -notmatch '^[0-9a-f]{64}$') { throw 'the manifest names no SHA-256 for win32-x64' }
+          Invoke-WebRequest -UseBasicParsing -Uri "$base/win32-x64/claude.exe" -OutFile "$dir/claude.exe"
+          $got = (Get-FileHash -Algorithm SHA256 "$dir/claude.exe").Hash.ToLower()
+          if ($got -ne $want) { throw "claude.exe SHA-256 $got is not the manifest's $want" }
+          "Claude Code $env:CLAUDE_VERSION win32-x64: SHA-256 $got equals the manifest's"
+          "CLAUDE_EXE=$dir\claude.exe" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Run real Claude Code against graftling
+        timeout-minutes: 20
+        run: |
+          $python = python -c "import sys; print(sys.executable)"
+          python .github/claude_real_entry.py --claude $env:CLAUDE_EXE --python $python --work (Join-Path $env:RUNNER_TEMP 'real-entry') --out test-results/claude-real-entry
+          $code = $LASTEXITCODE
+          "claude_real_entry exit code: $code"
+          exit $code
+      - name: Retain the real Claude Code evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: graftling-claude-real-entry-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/claude-real-entry/
           if-no-files-found: error
           retention-days: 7

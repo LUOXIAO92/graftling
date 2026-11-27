@@ -674,16 +674,18 @@ After upgrading:
 - On Windows (647, 650) Claude Code hosts only through `configuration --write`, and a
   Claude child fails with `unsupported-runtime`: Claude Code has no OS sandbox on native
   Windows, and graftling runs Claude children only inside one. The marketplace plugin is
-  not supported there. Its launcher is written to refuse under a Windows `sh` with a line
-  naming `configuration --write` ([`PUBLIC_API.md`](PUBLIC_API.md) 1.1), but on a real
-  host that line did not appear: Claude Code showed the plugin's server only as
-  `failed`, with no explanation and no host started, with and without an `sh` on
-  `PATH`. Seen with Claude Code 2.1.314.
+  not supported there: Claude Code 2.1.314 fails its server before its `sh` launcher
+  runs, with and without an `sh` on `PATH` (650). At session start the plugin says so and
+  names `configuration --write`: in the transcript (in print mode a `ui_log` event), in
+  `/agents-context` and as a line in `host.log` ([`PUBLIC_API.md`](PUBLIC_API.md) 1.1;
+  652).
 - On Windows (650) a command run by a Runtime's shell tool cannot call graftling; use
   the MCP tool, which the Runtime starts itself. From Pi's bash tool the `subagents`
   command was refused with `authority-denied`. Under Claude Code, the plugin's context
-  step run from a Bash tool script was refused with 'The subagents host of another
-  Claude Code session (Claude Code pid N) owns this project.', although N was that same
-  session, and the `subagents` command there was refused with `authority-denied`. Seen
+  step run from a Bash tool script was refused, and the `subagents` command there was
+  refused with `authority-denied`. The context step's refusal now says that it was not
+  started by Claude Code itself but by a process under that Claude Code session, with its
+  pid (652); in 650 it read as the host of another Claude Code session, although it was
+  the same one. Seen
   with Claude Code 2.1.314 and Pi 1.4.0; a DSH tool was not tried. A same-user process
   that forges its parent is the weaker case above.

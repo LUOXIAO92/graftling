@@ -79,16 +79,23 @@ notes (`install/`) are public with their documented flags:
   (`invalid-config`), invalid DSH settings or a missing or unsupported DSH
   (the DSH codes in section 2), a `pi` entry as below, and whatever
   `AgentControl.require_connections()` refuses, each with its own code.
-  The `context` operation is the plugin's private channel. The plugin this
+  The `context` operation is the plugin's private channel; it exits 1 with one
+  line on stderr unless Claude Code itself started it. Started by a process under
+  the same Claude Code (such as its Bash tool), that line says so and names that
+  Claude Code's pid; otherwise it names the running host's Claude Code as another
+  session's, or the missing host (652). The plugin this
   `configuration` command writes associates and lists the `subagents` tool only;
   a package that adds its own tool writes its plugin as in 1.4.
   **Native Windows (647).** The files `configuration --write` generates are the way
-  to host there; the marketplace plugin is not supported (its `sh` launcher, run by
-  a Windows `sh`, refuses with one line on stderr and in `host.log` naming
-  `configuration --write`; without a `sh` Claude Code reports its own start
-  failure). On a real host (650, Claude Code 2.1.314) that line did not
-  surface: with and without a `sh`, Claude Code showed the plugin's server only
-  as `failed`, and no host started (README *Known limits*). Run from a venv,
+  to host there; the marketplace plugin is not supported. On a real host (650,
+  Claude Code 2.1.314) Claude Code failed the plugin's server before its `sh`
+  launcher ran, with and without a `sh`, so the launcher's own refusal never
+  surfaced. The plugin's module, which Claude Code runs there, says it instead
+  (652): at session start, when `OS` is `Windows_NT`, it logs one line naming
+  `configuration --write` (in print mode a `ui_log` event), appends the same line
+  to `host.log` (`GRAFTLING_DATA_ROOT` when absolute, else
+  `<Session cwd>/.agents-control`), prints it again for `/agents-context`, and
+  associates and starts nothing (README *Known limits*). Run from a venv,
   the written `graftling` server's `command` is the
   venv's base interpreter and its `env` is `{"__PYVENV_LAUNCHER__": <the venv's
   python>}`, and the plugin's `context` call starts that base interpreter too, so no
@@ -834,7 +841,11 @@ way.
   Preparing a tool that was not declared fails with `invalid-input`. The native
   cwd may be `cwd` or a directory inside it, and `make_call` always receives
   `cwd`. A native cwd outside `cwd` fails with `authority-denied`, and the message
-  names both directories.
+  names both directories. A call with no matching association fails with
+  `authority-denied`; while `NativeCalls.context` has not been called at all, the
+  message says that Claude Code has not loaded graftling's plugin, names the folder
+  trust as the usual cause, and is written once to stderr (the host's `host.log`)
+  (652).
 
 A declared tool gets the behaviour of `subagents`, except the display: each native
 call has its own association, overlapping calls each end only their own, one
