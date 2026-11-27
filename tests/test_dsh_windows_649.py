@@ -122,6 +122,59 @@ def test_dsh_plugin_runs_a_windows_venv_python_as_its_base_interpreter(tmp_path:
         assert windows == {'command': sys._base_executable, 'env': {'__PYVENV_LAUNCHER__': sys.executable}}
 
 
+SPAWN = '''
+import { spawn } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
+const {directPython} = await import(pathToFileURL(process.argv[1]).href);
+const {command, env} = directPython(process.argv[2]);
+const child = spawn(command, ['-I', '-c', 'import json, os, sys; print(json.dumps([os.getppid(), sys.prefix]))'],
+  {env: {...process.env, ...env}, stdio: ['ignore', 'pipe', 'inherit']});
+let out = '';
+child.stdout.on('data', data => { out += data; });
+child.on('close', code => console.log(JSON.stringify({node: process.pid, code, command, env, child: JSON.parse(out || 'null')})));
+'''
+
+
+def test_a_venv_python_the_dsh_plugin_starts_is_a_direct_child_running_as_the_venv(tmp_path: Path) -> None:
+    """A real venv's python through the plugin's directPython: DSH's node is its parent and it runs as the venv.
+
+    On Windows the venv's python.exe is a launcher, so only its base interpreter, started with
+    __PYVENV_LAUNCHER__, is node's direct child; the host's parent check and the MCP caller check need
+    exactly that. Off Windows the venv's python is started unchanged.
+    """
+    from test_dsh_standalone_host import STUBS
+
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is required')
+    venv = tmp_path / 'venv'
+    subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(venv)], check=True, timeout=120)
+    python = venv / ('Scripts/python.exe' if WINDOWS else 'bin/python')
+    modules = tmp_path / 'stub' / 'node_modules' / '@deepseek-ai'
+    for name, text in STUBS.items():
+        (modules / name).mkdir(parents=True)
+        (modules / name / 'package.json').write_text(json.dumps({'name': f'@deepseek-ai/{name}', 'type': 'module',
+                                                                 'main': 'index.js'}))
+        (modules / name / 'index.js').write_text(text)
+    environment = {key: value for key, value in os.environ.items()
+                   if key not in {'DSH_AGENT_PACKAGE', '__PYVENV_LAUNCHER__'}}
+    result = subprocess.run([node, '--input-type=module', '-e', SPAWN,
+                             str(Path(settings.__file__).with_name('plugin.mjs')), str(python)],
+                            env={**environment, 'GRAFTLING_DSH_PACKAGE': str(tmp_path / 'stub' / 'entry.js')},
+                            capture_output=True, text=True, encoding='utf-8', timeout=60)
+    assert result.returncode == 0, result.stderr
+    shown = json.loads(result.stdout)
+    assert shown['code'] == 0 and shown['child'] is not None, result.stdout + result.stderr
+    parent, prefix = shown['child']
+    assert parent == shown['node']
+    assert Path(prefix).resolve() == venv.resolve()
+    if WINDOWS:
+        assert os.path.normcase(shown['command']) != os.path.normcase(str(python))
+        assert os.path.normcase(shown['env']['__PYVENV_LAUNCHER__']) == os.path.normcase(str(python))
+    else:
+        assert shown['command'] == str(python) and shown['env'] == {}
+
+
 def installed_dsh() -> str:
     """The npm-installed DSH on Windows, else skip."""
     if not WINDOWS:
