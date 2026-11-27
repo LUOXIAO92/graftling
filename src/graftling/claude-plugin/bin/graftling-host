@@ -7,25 +7,42 @@
 # line in host.log of GRAFTLING_DATA_ROOT when that is an absolute path, else of
 # <project>/.agents-control. exec keeps this process the one Claude Code
 # started, which the host checks.
-if [ -n "${GRAFTLING_PYTHON:-}" ]; then
-  python=$GRAFTLING_PYTHON
-  named="GRAFTLING_PYTHON=$GRAFTLING_PYTHON"
+#
+# On native Windows (a Git Bash, MSYS or Cygwin sh) exec cannot keep this process,
+# so the host would never see Claude Code as its parent: this marketplace plugin is
+# not supported there, and says so in the same two places without starting Python
+# (647). The plugin files that configuration --write generates are the Windows way.
+case $(uname -s 2>/dev/null) in
+  MINGW*|MSYS*|CYGWIN*) native_windows=1 ;;
+  *) native_windows= ;;
+esac
+if [ -n "$native_windows" ]; then
+  message="graftling plugin: the subagents host did not start: the graftling marketplace plugin is not supported on native Windows. Disable it and generate this project's plugin files with configuration --write instead (graftling's install/claude-code.md, Generate the plugin files); then restart Claude Code."
 else
-  python=python3
-  named="python3 on PATH (GRAFTLING_PYTHON is not set)"
-fi
-if reason=$("$python" -c 'import sys
+  if [ -n "${GRAFTLING_PYTHON:-}" ]; then
+    python=$GRAFTLING_PYTHON
+    named="GRAFTLING_PYTHON=$GRAFTLING_PYTHON"
+  else
+    python=python3
+    named="python3 on PATH (GRAFTLING_PYTHON is not set)"
+  fi
+  if reason=$("$python" -c 'import sys
 if sys.version_info < (3, 12): sys.exit("Python %d.%d is older than 3.12" % sys.version_info[:2])
 import graftling.claude.host' 2>&1); then
-  exec "$python" -m graftling.claude.host "$@"
+    exec "$python" -m graftling.claude.host "$@"
+  fi
+  reason=$(printf '%s\n' "$reason" | tail -n 1)
+  version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")
+  message="graftling plugin: the subagents host did not start: $named cannot run graftling ($reason). Install graftling once with uv (uv tool install --managed-python \"git+https://github.com/LUOXIAO92/graftling.git\"; append @v${version:-<version>} to .git to match this plugin) and set GRAFTLING_PYTHON to that installation's python, \"\$(uv tool dir)/graftling/bin/python\", in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
 fi
-reason=$(printf '%s\n' "$reason" | tail -n 1)
-version=$(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../.claude-plugin/plugin.json")
-message="graftling plugin: the subagents host did not start: $named cannot run graftling ($reason). Install graftling once with uv (uv tool install --managed-python \"git+https://github.com/LUOXIAO92/graftling.git\"; append @v${version:-<version>} to .git to match this plugin) and set GRAFTLING_PYTHON to that installation's python, \"\$(uv tool dir)/graftling/bin/python\", in your shell or under env in ~/.claude/settings.json; then restart Claude Code."
 printf '%s\n' "$message" >&2
 if [ "$1" = serve ] && [ "$2" = --project ] && [ -d "$3" ]; then
   directory=$3/.agents-control
   case ${GRAFTLING_DATA_ROOT:-} in /*) directory=$GRAFTLING_DATA_ROOT ;; esac
+  # A Windows sh also takes a drive path (C:\... or C:/...) as absolute.
+  if [ -n "$native_windows" ]; then
+    case ${GRAFTLING_DATA_ROOT:-} in [A-Za-z]:\\*|[A-Za-z]:/*) directory=$GRAFTLING_DATA_ROOT ;; esac
+  fi
   mkdir -p "$directory" && printf '%s %s\n' "$(date +%Y-%m-%dT%H:%M:%S%z)" "$message" >> "$directory/host.log"
 fi
 exit 1

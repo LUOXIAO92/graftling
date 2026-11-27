@@ -108,6 +108,7 @@ def test_a_connection_endpoint_without_its_key_is_refused_alike_by_models_and_cr
     assert not claude.exists()
 
 
+@posix_only('a Claude child is refused on native Windows (647, W9), before this check')
 def test_a_host_claude_endpoint_without_its_key_is_refused_before_any_process(
     tmp_path: Path, claude: Path,
 ) -> None:

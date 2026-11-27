@@ -6,6 +6,7 @@ from copy import deepcopy
 import os
 from pathlib import Path
 import shutil
+import sys
 import threading
 from typing import Any, Callable, Mapping
 
@@ -18,6 +19,22 @@ from .settings import GATEWAY_KEY_REQUIRED, current_cli, native_claude, prepare
 
 # Native Claude effort levels; a model's own list may be narrower.
 EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+
+# Decision 1 (2026-11-25, W9): no Claude child on native Windows, and no switch that allows one.
+WINDOWS_CHILD_REFUSAL = ('A Claude child cannot run on native Windows: Claude Code has no OS sandbox there '
+                         '("On native Windows, Claude Code runs commands unsandboxed"), and graftling runs '
+                         'Claude children only inside that mandatory sandbox, without a bypass. Use a '
+                         'child on another Runtime (Codex), or run the host on macOS, Linux or WSL2.')
+
+
+def refuse_native_windows() -> None:
+    """Refuse a Claude child on native Windows before any setting is built or process started (W9).
+
+    Raises ``unsupported-runtime`` on ``sys.platform == 'win32'``; returns
+    on every other platform. No variable, option or setting changes this.
+    """
+    if sys.platform == 'win32':
+        raise AgentsError('unsupported-runtime', WINDOWS_CHILD_REFUSAL)
 
 
 def selected(configuration: Mapping[str, Any], selection: Mapping[str, Any]) -> dict:
@@ -81,7 +98,9 @@ class ClaudeDriver:
         ``workspace`` replaces the host cwd, and with it the native sandbox's
         working directory; every other grant stays as configured. ``tools`` is
         the create's tool choice (551), applied by ``ClaudeExecution.tool_arguments``.
+        Native Windows is refused first (``refuse_native_windows``).
         """
+        refuse_native_windows()
         if configuration is not None:
             raise AgentsError('invalid-config', 'This host uses its explicitly supplied Claude configuration.')
         if runtime != 'claude':
@@ -112,7 +131,11 @@ class ClaudeDriver:
         require_available(connection, executable=executable, home=home, logins=logins)
 
     def start(self, run: Run) -> None:
-        """Return after native binding, retaining ownership until actual stop."""
+        """Return after native binding, retaining ownership until actual stop.
+
+        A resume or send starts here, not in ``prepare``: native Windows is refused again.
+        """
+        refuse_native_windows()
         ready = threading.Event()
         failure = []
 
