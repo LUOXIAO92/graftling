@@ -172,18 +172,43 @@ async function projectMaterial($) {
   }
 }
 
+// On Windows a venv's Scripts\python.exe is CPython's venv launcher: it starts the
+// base python.exe as its child, so the host would see the launcher, not Claude Code,
+// as this call's parent and refuse it. There the base interpreter is started itself:
+// -I keeps the working directory and PYTHON* variables out of sys.path, and BOOT adds
+// only the venv's site-packages (venv, the argument after it) before running the host.
+const BOOT = 'import runpy, site, sys, sysconfig; venv = sys.argv.pop(1); '
+  + "site.addsitedir(sysconfig.get_path('purelib', vars={'base': venv, 'platbase': venv})); "
+  + "sys.argv[0] = 'graftling.claude.host'; runpy.run_module('graftling.claude.host', run_name='__main__', alter_sys=True)";
+
+// The argv start that runs graftling.claude.host with `python` (647).
+async function hostCommand($, python) {
+  const module = [python, '-m', 'graftling.claude.host'];
+  if ((await $.env.get('OS')) !== 'Windows_NT') return module;
+  // <venv>\Scripts\python.exe -> <venv>; a python without pyvenv.cfg there is no venv.
+  const venv = String(python).replace(/[\\/]+[^\\/]+[\\/]+[^\\/]+$/, '');
+  if (venv === String(python) || !(await $.fs.exists(`${venv}/pyvenv.cfg`))) return module;
+  const home = /^\s*home\s*=\s*(.+?)\s*$/m.exec(await $.fs.read(`${venv}/pyvenv.cfg`))?.[1];
+  const base = home && `${home.replace(/[\\/]+$/, '')}${home.includes('\\') ? '\\' : '/'}python.exe`;
+  if (!base || !(await $.fs.exists(base))) {
+    throw new Error(`graftling: ${venv}/pyvenv.cfg names no base interpreter `
+      + `(home = ${home ?? 'missing'}), so the host cannot be reached without the venv launcher.`);
+  }
+  return [base, '-I', '-c', BOOT, venv];
+}
+
 async function context($, document) {
   let command;
   if (PLUGIN) {
     // GRAFTLING_DATA_ROOT holds the plugin host's configuration when set (577).
     const dataRoot = await $.env.get('GRAFTLING_DATA_ROOT');
-    command = [await pluginPython($), '-m', 'graftling.claude.host', 'context',
+    command = [...await hostCommand($, await pluginPython($)), 'context',
       '--project-from', await $.session.cwd(), ...(dataRoot ? ['--data-root', dataRoot] : [])];
   } else {
     const python = await $.env.get('GRAFTLING_CLAUDE_HOST_PYTHON');
     const config = await $.env.get('GRAFTLING_CLAUDE_HOST_CONFIG');
     if (!python || !config) throw new Error('Native subagents host configuration is missing.');
-    command = [python, '-m', 'graftling.claude.host', 'context', '--config', config];
+    command = [...await hostCommand($, python), 'context', '--config', config];
   }
   let result;
   try {

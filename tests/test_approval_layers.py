@@ -25,6 +25,7 @@ from graftling.codex.driver import CodexDriver
 from graftling.discovery import handle_request
 from graftling.dsh.driver import DshDriver
 from graftling.pi.driver import PiDriver
+from posix_only import require_posix
 
 MAIN = Caller('test-host', None)
 FAKE_TOKEN = 'ghp_' + 'A' * 36
@@ -411,6 +412,8 @@ CWD_KEYS = {
 
 def test_workspace_changes_only_the_cwd_of_every_native_driver(runtime, native_drivers, tmp_path):
     """Native approval, sandbox, network and write settings stay exactly as the host set them."""
+    if runtime == 'claude':
+        require_posix('a Claude child is refused on native Windows (647, W9)')
     project, drivers = native_drivers
     driver = drivers[runtime]
     plain = driver.prepare(runtime, MAIN)
