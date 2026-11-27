@@ -300,27 +300,46 @@ def test_pi_host_from_a_venv_runs_as_a_direct_child_of_pi(tmp_path: Path) -> Non
     python = venv / 'Scripts' / 'python.exe'
     records = venv / 'starts-648.jsonl'
 
-    def started(word: str) -> list[dict]:
+    def every() -> str:
+        """All records so far, for every assertion message."""
+        return records.read_text(encoding='utf-8') if records.exists() else '(no records)'
+
+    def started(word: str) -> dict[int, dict]:
+        """The processes whose argv has ``word``, one record per pid.
+
+        A venv's ``import`` lines in .pth files run twice in one process: CPython 3.13's
+        ``site.venv`` calls ``addsitepackages(known_paths, [sys.prefix])`` and ``site.main`` then
+        calls ``addsitepackages`` again with the venv first in ``PREFIXES``; ``known_paths`` stops
+        only repeated path entries (Lib/site.py lines 631, 699, 703 and 207 in v3.13.7).
+        """
         lines = records.read_text(encoding='utf-8').splitlines() if records.exists() else []
-        return [item for item in map(json.loads, lines) if word in item['argv']]
+        found: dict[int, dict] = {}
+        for item in map(json.loads, lines):
+            if word in item['argv']:
+                found.setdefault(item['pid'], item)
+        return found
+
+    def in_venv(item: dict) -> bool:
+        return os.path.normcase(item['prefix']) == os.path.normcase(str(venv))
 
     # The shape: the venv's python.exe is a launcher whose child runs the venv.
     shape = subprocess.Popen([str(python), '-I', '-c', 'pass'])
-    assert shape.wait(60) == 0
-    [record] = started('pass')
-    assert record['ppid'] == shape.pid != record['pid'], record
-    assert os.path.normcase(record['prefix']) == os.path.normcase(str(venv))
+    assert shape.wait(60) == 0, every()
+    assert any(item['ppid'] == shape.pid != item['pid'] and in_venv(item) for item in started('pass').values()), (
+        f'no process ran as the venv as a child of its python.exe (pid {shape.pid}):\n{every()}')
 
     # No GRAFTLING_PYTHON: the extension finds the venv's Scripts\python.exe from its own location.
     report = run_pi(tmp_path, site / 'graftling/pi/extension.mjs', [STATUS, CREATE_PI])
     base = report['servers'][0]['command']
-    assert os.path.normcase(base) != os.path.normcase(str(python))
+    assert os.path.normcase(base) != os.path.normcase(str(python)), every()
     check_session(report, base, {'__PYVENV_LAUNCHER__': str(python)})
-    [host] = started('graftling.pi.host')
-    [mcp] = started('graftling.mcp')
-    for item in (host, mcp):
+    node = report['node_pid']
+    for word in ('graftling.pi.host', 'graftling.mcp'):
+        found = started(word)
         # A direct child of Pi's node, running as the venv, with the extension's flags.
-        assert item['ppid'] == report['node_pid'], (item, report['node_pid'])
-        assert os.path.normcase(item['prefix']) == os.path.normcase(str(venv)), item
-        assert item['argv'][1] == '-I', item
-    assert mcp['pid'] == report['mcp_pid']
+        assert any(item['ppid'] == node and in_venv(item) and item['argv'][1] == '-I' for item in found.values()), (
+            f'no {word} process ran as the venv as a direct child of node (pid {node}):\n{every()}')
+        # No launcher between: every such process is node's own child.
+        assert all(item['ppid'] == node for item in found.values()), (
+            f'a {word} process has a parent other than node (pid {node}):\n{every()}')
+    assert report['mcp_pid'] in started('graftling.mcp'), f"MCP server pid {report['mcp_pid']}:\n{every()}"
