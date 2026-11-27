@@ -13,14 +13,21 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
-## Unreleased
+## 0.11.0 (compatible; minor release by the user's decision of 2026-11-28)
 
 Native Windows support, in two rounds (632-651). Claude Code, Codex, Pi and DSH work
 as hosts on Windows; Codex and DSH also as children, while Claude and Pi children are
 refused there. POSIX behaviour is unchanged apart from two Claude Code host refusal
 messages, which now name their cause on every platform (652, under Changed). The README's *Windows* section lists the
-prerequisites and *Known limits* the remaining limits. Not yet released: the version
-number and its compatibility mark come with the release.
+prerequisites and *Known limits* the remaining limits.
+
+The release is compatible by section 7 of the public interface: error codes stay as
+they were and only message text changes, which section 1.2 says may change; what is
+refused on Windows never worked there; and what used to fail on Windows (the Codex
+parent host, listing and stopping marked processes) now works. Section 7 would make it
+a patch release; by the user's decision it raises the minor version. GraphTraj's range
+`graftling>=0.10.0,<0.11` excludes 0.11.0, so GraphTraj widens it to
+`graftling>=0.10.0,<0.12`.
 
 ### Added
 

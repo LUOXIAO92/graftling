@@ -13,7 +13,7 @@ list is internal.
 
 # The only definition of the distribution version; packaging and every
 # runtime report (MCP serverInfo, Codex clientInfo) read it from here.
-__version__ = "0.10.2"
+__version__ = "0.11.0"
 
 from importlib import import_module
 

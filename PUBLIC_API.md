@@ -2560,6 +2560,14 @@ Consumers must ignore result fields and archive fields they do not know.
 
 Recorded classifications:
 
+- 0.11.0 is compatible and raises the minor version by the user's decision of
+  2026-11-28, where these rules give a patch: native Windows support (632-652). On
+  POSIX only two `authority-denied` messages of the Claude Code host change (652); the
+  code is unchanged and messages may change (1.2). On Windows, what is now refused
+  (a Claude or Pi child, the marketplace plugin, a Runtime whose Trace link cannot be
+  created) never worked there, and what failed there before (the Codex parent host,
+  `stop_marked_processes`, the hosts) now works. New: the recorded `runtime_job`. A
+  GraphTraj on 0.11.0 needs a range that includes it: `graftling>=0.10.0,<0.12`.
 - 0.10.0 is incompatible and raises the minor version (613): a Claude connection with
   `base_url` and no `api_key_env` is now refused with `invalid-config` at host start,
   `create`, `models`, `discover_models` and every later launch, including send and
