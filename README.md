@@ -608,4 +608,7 @@ After upgrading:
   comparison was not made in other sandbox modes, in Remote Desktop sessions or with
   other versions. That the restricted sandbox token fails in the non-interactive
   session's window station or desktop is an inference.
+- On Windows (648) Pi works as a host but not as a child: creating a Pi child fails
+  with `unsupported-runtime`, because a Pi child runs only inside `srt`, whose Windows
+  support is still alpha.
 </content>
