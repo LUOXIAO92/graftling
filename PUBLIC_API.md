@@ -406,7 +406,7 @@ people and models and may change. Codes in use:
 | --- | --- |
 | `invalid-input` | malformed request, unknown or missing field, empty value |
 | `authority-denied` | no owning host, or the caller may not do this; also a `reply` that grants more than the request asked |
-| `unsupported-runtime` | no driver for the requested Runtime in this host |
+| `unsupported-runtime` | no driver for the requested Runtime in this host; also a Pi child on Windows (1.6) |
 | `invalid-config` | rejected driver configuration (any `configuration` in an independent host), an invalid `config.yml`, or a driver that cannot run the selected connection |
 | `invalid-preset` | `preset` is not declared, or uses another Runtime than `runtime` |
 | `invalid-model` | `model` is not a candidate, cannot be verified, or contradicts the preset |
@@ -931,6 +931,18 @@ interpreters of the environment whose site-packages holds the extension, then
 `python3` and `python` on `PATH`. If none does, the start stops with a message
 naming `GRAFTLING_PYTHON`. Pi 1.4.0 shows such a refusal as an extension
 error, and the Session goes on without the `subagents` tool.
+
+**Windows (648).** The Pi host works on Windows. Pi's process is `node` running
+Pi's entry, which npm's `pi.cmd` starts. The host and the MCP server must be
+direct children of that process. A venv's `Scripts\python.exe` is a launcher
+that starts the interpreter as its own child, so on Windows the extension
+starts the venv's base interpreter directly, with `__PYVENV_LAUNCHER__` naming
+the venv's Python, as CPython's `multiprocessing` does. Elsewhere the command
+is unchanged. The host's Session ends at its stdin's EOF, not on a signal.
+
+A Pi child is refused on Windows: `create` and the Claude and Codex hosts'
+`runtimes.pi` fail with `unsupported-runtime`. The message gives the reason:
+a Pi child runs only inside `srt`, whose Windows support is still alpha.
 
 A Pi child uses the `GRAFTLING_PYTHON` its owner sets. Pi child
 executions load the same file themselves, so a Pi child of any host needs no

@@ -21,6 +21,25 @@ from .execution import PiExecution, RPC_SECONDS
 # Native Pi thinking levels; a model's own list may be narrower.
 EFFORTS = ('off', 'minimal', 'low', 'medium', 'high', 'xhigh')
 
+# Why a Pi child is refused on Windows (648, Windows design decision 2).
+WINDOWS_CHILD_REFUSAL = (
+    'Pi children are not supported on Windows: a Pi child runs only inside srt '
+    "(@anthropic-ai/sandbox-runtime), whose Windows support is still alpha, and graftling never runs a "
+    'child outside its sandbox. The Pi host itself works on Windows; run Pi children from a macOS or '
+    'Linux host.')
+
+
+def require_platform() -> None:
+    """Refuse a Pi child on Windows with its reason, before any selection, sandbox or launch work.
+
+    Raises
+    ------
+    AgentsError
+        ``unsupported-runtime`` on Windows; nothing elsewhere.
+    """
+    if os.name == 'nt':
+        raise AgentsError('unsupported-runtime', WINDOWS_CHILD_REFUSAL)
+
 
 def _refuse_key_held_by_reviewer(request: Mapping[str, Any]) -> None:
     """Refuse a child whose only key for its model is the one its reviewer keeps from it.
@@ -188,6 +207,8 @@ class PiDriver:
     """
 
     supports_review = True
+    # AgentControl.create calls this first: a Pi child is refused on Windows (648).
+    require_platform = staticmethod(require_platform)
 
     def __init__(self, request: dict) -> None:
         """Keep a detached, already validated native launch configuration."""
@@ -224,6 +245,8 @@ class PiDriver:
 
     def start(self, run: Run) -> None:
         """Return after native Session binding, retaining ownership until actual stop."""
+        # A resume launches too; no Pi child runs on Windows (648).
+        require_platform()
         ready = threading.Event()
         failure: list[BaseException] = []
 

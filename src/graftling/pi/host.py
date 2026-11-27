@@ -35,7 +35,7 @@ from graftling.notices import notice_id
 from graftling.process import process_ancestors, process_arguments, process_executable
 from graftling.shutdown import CLOSE_SECONDS, exit_if_unconfirmed, stop_children
 from graftling.runtime import RuntimeAdapterError
-from .driver import PiDriver
+from .driver import PiDriver, require_platform
 from .execution import _validate, child_path
 
 # Top-level host configuration keys; each Runtime key holds that driver's settings.
@@ -212,8 +212,10 @@ def pi_child_driver(settings: Mapping[str, Any], cwd: Path, root: Path) -> PiDri
     ------
     AgentsError
         ``invalid-config`` for a wrong setting and ``runtime-unavailable`` for
-        a missing dependency, naming the field or the setting that fixes it.
+        a missing dependency, naming the field or the setting that fixes it;
+        ``unsupported-runtime`` on Windows, where no Pi child runs (648).
     """
+    require_platform()
     try:
         check_pi_settings(settings)
     except ValueError as error:

@@ -894,6 +894,9 @@ class AgentControl:
         driver = self.drivers.get(runtime)
         if driver is None:
             raise AgentsError("unsupported-runtime", f"No driver is available for Runtime {runtime!r}.")
+        # A driver refuses here a child this platform cannot run, before selection or launch (648).
+        if hasattr(driver, "require_platform"):
+            driver.require_platform()
         caller   = binding.caller
         self._require_root_control(caller)
         selection = self.select(runtime, preset=preset, model=model, reasoning_effort=reasoning_effort,

@@ -120,6 +120,8 @@ def driver_for(runtime, owner, tmp_path):
               'dsh': lambda: DshDriver(tmp_path, {})}[runtime]()
     driver.prepare = lambda runtime, caller, **options: {}
     driver.start = start
+    # The launch is a stand-in, so a platform refusal (a Pi child on Windows, 648) does not apply.
+    driver.require_platform = lambda: None
     return driver
 
 

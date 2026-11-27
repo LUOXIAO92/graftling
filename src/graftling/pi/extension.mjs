@@ -128,6 +128,26 @@ export function graftlingPython(environment = process.env, here = import.meta.ur
     + 'Set GRAFTLING_PYTHON to the Python graftling is installed in (docs/install/pi.md).');
 }
 
+/**
+ * How to start `python` as a direct child of this Pi process: `{command, env}`, where
+ * `env` is added to the child's environment (648).
+ * On Windows a venv's Scripts\python.exe is a redirector that starts the base interpreter
+ * as its own child, so the host and the MCP server would not be direct children of Pi
+ * and graftling's direct-parent and direct-child checks would refuse them. There the base
+ * interpreter is started directly with __PYVENV_LAUNCHER__ naming the venv's python, as
+ * CPython's own multiprocessing does (bpo-35797); it then runs as that venv. Outside a
+ * venv, if the probe fails, and on every other platform, `python` is returned unchanged.
+ */
+export function directPython(python, environment = process.env, platform = process.platform) {
+  if (platform !== 'win32') return {command: python, env: {}};
+  // -X utf8: the paths are printed as UTF-8, as read here; -I ignores PYTHONUTF8 (638).
+  const found = spawnSync(python, ['-I', '-X', 'utf8', '-c', 'import sys; print(sys.executable); print(sys._base_executable)'],
+    {encoding: 'utf8', env: environment, timeout: 20000});
+  const [executable, base] = found.status === 0 ? found.stdout.split(/\r?\n/) : [];
+  if (!executable || !base || executable.toLowerCase() === base.toLowerCase()) return {command: python, env: {}};
+  return {command: base, env: {__PYVENV_LAUNCHER__: executable}};
+}
+
 /** The Session's project directory for the default data root, or an error naming the two other ways. */
 function requireProjectDirectory(cwd) {
   let usable = typeof cwd === 'string' && isAbsolute(cwd);
@@ -188,8 +208,9 @@ export function deliverNotice(pi, notice, session, manager) {
  * Pi has taken it (``queued``) and ``shown`` reports it later. After ``close``
  * starts, a notice is neither injected nor acknowledged, so the host keeps it
  * held. ``ready`` tells the host once that it may deliver the notices it holds.
+ * ``pythonEnv`` is added to the host's environment (``directPython``'s ``env``).
  */
-export function startAgentHost(ctx, config, onNotice = () => {}, python = process.env.GRAFTLING_PYTHON) {
+export function startAgentHost(ctx, config, onNotice = () => {}, python = process.env.GRAFTLING_PYTHON, pythonEnv = {}) {
   return new Promise((resolve, reject) => {
     // Without a config the host uses GRAFTLING_DATA_ROOT, else <ctx.cwd>/.agents-control (572, 577).
     const child = spawn(python,
@@ -199,7 +220,7 @@ export function startAgentHost(ctx, config, onNotice = () => {}, python = proces
           GRAFTLING_PI_NODE: process.execPath,
           GRAFTLING_PI_ENTRY: process.argv[1],
           GRAFTLING_PI_MODEL: ctx.model?.id || '',
-          GRAFTLING_PI_PROVIDER: ctx.model?.provider || ''},
+          GRAFTLING_PI_PROVIDER: ctx.model?.provider || '', ...pythonEnv},
       });
     let diagnostic = '', output = '', failure, ready = false, closing = false, announced = false;
     child.stdout.setEncoding('utf8');
@@ -339,16 +360,18 @@ export function registerAgents(pi, { server = MCP_SERVER, displayServers = [] } 
       // whatever GRAFTLING_DATA_ROOT says (577).
       if (agentsConfig || !managed) {
         if (!agentsConfig && !process.env.GRAFTLING_DATA_ROOT) requireProjectDirectory(ctx.cwd);
-        const python = graftlingPython();
+        // Windows: the host and the MCP server start as Pi's direct children (648).
+        const {command: python, env: pythonEnv} = directPython(graftlingPython());
         independent.add(ctx.sessionManager);
         const session = ctx.sessionManager.getSessionId();
         sessionManager = ctx.sessionManager;
-        agentHost = await startAgentHost(ctx, agentsConfig, notice => deliverNotice(pi, notice, session, sessionManager), python);
+        agentHost = await startAgentHost(ctx, agentsConfig, notice => deliverNotice(pi, notice, session, sessionManager),
+          python, pythonEnv);
         try {
           pi.registerMcpServer(server, {
             command: python,
             args: ['-I', '-m', 'graftling.mcp'], cwd: ctx.cwd,
-            env: {GRAFTLING_CONNECTION: agentHost.connection}, exposure: 'direct',
+            env: {GRAFTLING_CONNECTION: agentHost.connection, ...pythonEnv}, exposure: 'direct',
           });
         } catch (error) { await closeHost(); throw error; }
         if (ctx.hasUI) readyTimer = setTimeout(() => agentHost?.ready(), READY_MS);
