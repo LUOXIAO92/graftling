@@ -588,4 +588,24 @@ After upgrading:
   start a child that names any process it can open as the child's parent, and the
   child then also joins that parent's job. A Runtime whose sandbox stops its commands
   from opening other processes closes this gap; a Runtime without a sandbox does not.
+- On Windows (645) a command that a Codex child's or Codex parent host's tool runs
+  inside Codex's Windows sandbox cannot reach the owner connection: the named pipe
+  refuses it with WinError 5, and the call fails with `operation-failed`
+  'The mapped Session owner did not acknowledge the operation: [WinError 5] Access is
+  denied.'. The error is raised in the caller's own exchange with the pipe, so the host
+  never sees the request. Inside Codex on Windows, use graftling only through its MCP
+  tools: Codex starts the MCP server outside its tool sandbox, and creating a child
+  through it worked where the command was refused. Calling graftling from a command
+  line, for example the `subagents` command, works on macOS and Linux but not inside
+  Codex's Windows sandbox. Seen with a Codex parent host's tool and
+  `[windows] sandbox = "unelevated"`; other sandbox modes were not tried. That the
+  pipe's access check denies Codex's restricted sandbox token is an inference.
+- On Windows (645) Codex's tool sandbox needs an interactive logon session. Under a
+  non-interactive logon, for example a session opened over OpenSSH, the tool processes
+  Codex starts fail during initialization (exit code -1073741502, 0xC0000142), with or
+  without graftling; in an interactive console session the same tools run. Observed on
+  Windows Server 2022 with Codex 0.172.0 and `[windows] sandbox = "unelevated"`; the
+  comparison was not made in other sandbox modes, in Remote Desktop sessions or with
+  other versions. That the restricted sandbox token fails in the non-interactive
+  session's window station or desktop is an inference.
 </content>

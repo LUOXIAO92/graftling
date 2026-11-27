@@ -1769,8 +1769,10 @@ Delivery rules:
   starts reaches the owner over its named pipe, and no Unix socket permission entry is
   written (`project_access` leaves `dangerously_allow_all_unix_sockets` out, and
   `CodexAppServer.fork_session` accepts `network_profile` and `unix_socket` but selects
-  Main's own profile). `CodexHost`'s Session ends with the parent's turn, not on a
-  signal: closing the service's stdin ends Codex.
+  Main's own profile). A tool process inside Codex's Windows sandbox does not reach
+  that pipe (645): it is refused with WinError 5, so on Windows Codex uses graftling
+  only through the MCP server (README *Known limits*). `CodexHost`'s Session ends
+  with the parent's turn, not on a signal: closing the service's stdin ends Codex.
 - A completed round of a child that still has running members is recorded,
   not pushed. All rounds stay readable through `status`.
 - A notice its parent cannot receive now is recorded `held`, stays readable
