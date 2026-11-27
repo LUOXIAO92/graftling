@@ -34,9 +34,22 @@ if os.name != 'nt':
     import fcntl
 
 
+def parent_pid() -> int:
+    """Return this process's parent: ``os.getppid()`` on POSIX.
+
+    Windows keeps a dead parent's PID, which a later process can reuse, so
+    there the parent counts only when it was created before this process
+    (``process_ancestors``, 633); otherwise 0, which no rule accepts.
+    """
+    if sys.platform != 'win32':
+        return os.getppid()
+    chain = process_ancestors(os.getpid())
+    return chain[1] if len(chain) > 1 else 0
+
+
 def native_parent(executable: Path, *, stage: str = 'serve') -> int:
     """Verify the actual native parent, not an environment assertion or PID flag."""
-    parent = os.getppid()
+    parent = parent_pid()
     actual = process_executable(parent)
     expected = executable.resolve()
     if parent <= 1 or actual is None or actual.resolve() != expected:
@@ -128,7 +141,7 @@ def live_channel(channel_file: Path) -> dict | None:
 def context_endpoint(channel_file: Path) -> dict:
     """Return the channel of this Claude process's live host, or exit reporting why there is none."""
     endpoint = live_channel(channel_file)
-    if endpoint is None or endpoint.get('parent') != os.getppid():
+    if endpoint is None or endpoint.get('parent') != parent_pid():
         report_missing_host(channel_file, endpoint)
     return endpoint
 
@@ -404,6 +417,30 @@ class IndependentCalls(NativeCalls):
         return {'acknowledged': True}
 
 
+def server_command() -> dict[str, object]:
+    """Return the ``.mcp.json`` ``command`` (and ``env``) that start this Python as the host.
+
+    POSIX, and Windows outside a venv: ``{'command': sys.executable}``.
+    Windows inside a venv: a venv's ``Scripts\\python.exe`` is CPython's venv
+    launcher, which starts the base ``python.exe`` as its child, so the host's
+    parent would be the launcher and ``native_parent`` would refuse it. Claude
+    Code starts the base interpreter itself instead, with
+    ``__PYVENV_LAUNCHER__`` naming the venv's python, as CPython's own
+    multiprocessing does on Windows (bpo-35797). Raises ``ValueError`` when
+    the base interpreter is missing.
+    """
+    if sys.platform != 'win32' or sys.prefix == sys.base_prefix:
+        return {'command': sys.executable}
+    base = Path(sys._base_executable)
+    if not base.is_file():
+        raise ValueError(f'The base interpreter {base} of the venv {sys.prefix} is missing.')
+    return {'command': str(base), 'env': {VENV_LAUNCHER: sys.executable}}
+
+
+# The variable a venv launcher sets for the base interpreter it starts (Windows).
+VENV_LAUNCHER = '__PYVENV_LAUNCHER__'
+
+
 def adoption_material(root: Path, claude: Path) -> dict[str, object]:
     """Return native plugin/MCP configuration without modifying trust or credentials."""
     root = root.resolve()
@@ -416,7 +453,7 @@ def adoption_material(root: Path, claude: Path) -> dict[str, object]:
                       'claude': os.path.abspath(claude),
                       'channel_file': kept['channel_file'], 'settings': {}},
         str(root / '.mcp.json'): {'mcpServers': {MCP_SERVER: {
-            'command': sys.executable,
+            **server_command(),
             'args': ['-m', 'graftling.claude.host', 'serve', '--config', str(config)],
         }}},
         str(root / '.claude/settings.local.json'): {'env': {
@@ -542,6 +579,10 @@ def found_configuration(start: Path, data_root: str | None = None) -> Path:
 def main() -> None:
     """Serve the native-owned MCP entry or install/forward its existing mod binding."""
     use_utf8_stdio()
+    if sys.platform == 'win32':
+        # Read once at interpreter start (server_command); a child must not inherit it, or
+        # any Python it starts would take this venv as its own.
+        os.environ.pop(VENV_LAUNCHER, None)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=['serve', 'context', 'configuration'])
     parser.add_argument('--config', type=Path)
@@ -620,8 +661,9 @@ def main() -> None:
     def authenticate(pid: int) -> None:
         """Accept context only from the direct child of this same native process."""
         chain = process_ancestors(pid)
-        if (os.getppid() != parent or len(chain) < 2 or chain[1] != parent
-                or process_executable(parent) != executable):
+        actual = process_executable(parent)
+        if (parent_pid() != parent or len(chain) < 2 or chain[1] != parent
+                or actual is None or actual.resolve() != executable):
             raise AgentsError('authority-denied', 'The sender is not owned by this native Claude host.')
 
     def call(identity: object, params: dict) -> dict:

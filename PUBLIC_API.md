@@ -82,6 +82,20 @@ notes (`install/`) are public with their documented flags:
   The `context` operation is the plugin's private channel. The plugin this
   `configuration` command writes associates and lists the `subagents` tool only;
   a package that adds its own tool writes its plugin as in 1.4.
+  **Native Windows (647).** The files `configuration --write` generates are the way
+  to host there; the marketplace plugin is not supported (its `sh` launcher, run by
+  a Windows `sh`, refuses with one line on stderr and in `host.log` naming
+  `configuration --write`; without a `sh` Claude Code reports its own start
+  failure). Run from a venv, the written `graftling` server's `command` is the
+  venv's base interpreter and its `env` is `{"__PYVENV_LAUNCHER__": <the venv's
+  python>}`, and the plugin's `context` call starts that base interpreter too, so no
+  venv launcher process stands between Claude Code and the host; POSIX output is
+  unchanged. On Windows a parent counts only when created before its child.
+  A Claude child is refused on native Windows: `create`, and a resume or `send`
+  that would start one, fail with `unsupported-runtime` before any setting is built
+  or process started, because Claude Code has no OS sandbox there and graftling
+  runs Claude children only inside it (decision of 2026-11-25). No variable,
+  option or setting allows one.
 - `python -m graftling.codex.host --settings <file> [--directory <dir>]
   [--output <file>] [--resume] <instruction>`. 0.8.0 (577): `--directory`
   is optional; without it the data root is `GRAFTLING_DATA_ROOT`, else
