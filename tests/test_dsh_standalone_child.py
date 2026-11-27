@@ -33,6 +33,11 @@ from dsh_standalone_peer import FakeDshService, install_dsh
 from posix_only import SH_SCRIPT, require_posix
 from test_codex_independent_control import native_settings  # noqa: F401 - pytest fixture
 
+
+def module_name(path: Path) -> str:
+    """How a profile-patch row names one of graftling's modules: the path, or on Windows its file URL (649)."""
+    return path.as_uri() if sys.platform == 'win32' else str(path)
+
 ROOT = Path(__file__).resolve().parents[1]
 KEY = 'never-shown-383-key'
 AMBIENT = {'DEEPSEEK_BASE_URL': 'https://ambient.invalid', 'DEEPSEEK_SEARCH_BASE_URL': 'https://ambient-search.invalid'}
@@ -323,7 +328,7 @@ def test_dsh_child_launch_needs_no_graphtraj_setting(tmp_path: Path, dsh: dict) 
     assert environment['GRAFTLING_CONNECTION'].startswith(str(tmp_path / '.scratch'))
     [plugin] = [row['insert'][0] for row in service.patches
                 if 'insert' in row and row['insert'][0]['id'] == 'agents-mcp']
-    assert Path(plugin['name']) == ROOT / 'src/graftling/dsh/plugin.mjs'
+    assert plugin['name'] == module_name(ROOT / 'src/graftling/dsh/plugin.mjs')
     assert plugin['config'] == {'mcpCommand': str(Path(sys.executable).absolute()),
                                 'mcpArgs': ['-I', '-m', 'graftling.mcp'],
                                 'mcpEnv': ['GRAFTLING_CONNECTION'], 'mcpServer': 'graftling'}
@@ -505,7 +510,7 @@ def test_dsh_child_runs_with_graphtraj_unimportable(tmp_path: Path) -> None:
     evidence = json.loads(result.stdout.splitlines()[-1])
     assert evidence['graphtraj_modules'] == []
     assert evidence['environment'] == ['DSH_AGENT_PACKAGE', 'GRAFTLING_CONNECTION']
-    assert evidence['plugin']['name'] == str(ROOT / 'src/graftling/dsh/plugin.mjs')
+    assert evidence['plugin']['name'] == module_name(ROOT / 'src/graftling/dsh/plugin.mjs')
     assert evidence['plugin']['config']['mcpArgs'] == ['-I', '-m', 'graftling.mcp']
 
 

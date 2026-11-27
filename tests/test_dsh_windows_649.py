@@ -85,6 +85,31 @@ def test_posix_ignores_the_npm_shim(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert dsh_package(tmp_path / 'dsh') == tmp_path.resolve().parent / 'package.json'
 
 
+def test_profile_patch_rows_name_graftling_modules_as_file_urls_on_windows(tmp_path: Path,
+                                                                            monkeypatch: pytest.MonkeyPatch) -> None:
+    """DSH's Loader imports a row's name as an ES module specifier: on Windows a file URL, never ``C:\\...``.
+
+    Node reads ``C:`` as a URL scheme (ERR_UNSUPPORTED_ESM_URL_SCHEME), so a row named by a Windows path never
+    loads and the child loses graftling's MCP and review rows (run 45996884900). Off Windows the path, as before.
+    """
+    import graftling.process_tree
+    from graftling.dsh.execution import _module_name
+
+    module = tmp_path / 'tools-\u6d4b\u8bd5-\u00fc' / 'plugin.mjs'
+    monkeypatch.setattr(graftling.process_tree, 'windows', lambda: False)
+    assert _module_name(module) == str(module)
+    monkeypatch.setattr(graftling.process_tree, 'windows', lambda: True)
+    name = _module_name(module)
+    assert name == module.as_uri() and name.startswith('file:///')
+    result = subprocess.run([shutil.which('node') or 'node', '--input-type=module', '-e',
+                             'import { fileURLToPath } from "node:url"; console.log(fileURLToPath(process.argv[1]));',
+                             name], capture_output=True, text=True, encoding='utf-8', timeout=30) \
+        if shutil.which('node') else None
+    if result is not None:
+        assert result.returncode == 0, result.stderr
+        assert Path(result.stdout.strip()) == module
+
+
 DIRECT = '''
 import { pathToFileURL } from 'node:url';
 const {directPython} = await import(pathToFileURL(process.argv[1]).href);

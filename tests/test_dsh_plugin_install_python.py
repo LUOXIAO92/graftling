@@ -42,7 +42,9 @@ LATIN1 = {'LC_ALL': 'en_US.ISO8859-1'}
 DRIVER = '''
 import { pathToFileURL } from 'node:url';
 const plugin = await import(pathToFileURL(process.argv[1]).href);
-const handlers = {}, attached = [];
+// attached: the Python each MCP server runs as (on Windows a venv's base interpreter is started as the venv,
+// named by __PYVENV_LAUNCHER__; 649); commands: the executable the plugin starts for it.
+const handlers = {}, attached = [], commands = [];
 const ctx = {
   on: (event, handler) => { handlers[event] = handler; },
   effect: () => {}, plugin: () => ({}), logger: { error: () => {} },
@@ -51,13 +53,17 @@ const ctx = {
 const agent = {
   session: { id: 'dsh-main', header: { version: 4, id: 'dsh-main', cwd: process.cwd(), isSeeded: false } },
   model: { current: () => ({ model: 'm' }) },
-  ctx: { plugin: (_client, options) => { attached.push(options.command); return { await: async () => {} }; } },
+  ctx: { plugin: (_client, options) => {
+    attached.push(options.env?.__PYVENV_LAUNCHER__ ?? options.command);
+    commands.push(options.command);
+    return { await: async () => {} };
+  } },
 };
 plugin.apply(ctx, {});
 let error = null;
 try { await handlers['agent/created']({ agent }); } catch (failure) { error = failure.message; }
 await handlers['session/disposed']({ id: 'dsh-main' });
-console.log(JSON.stringify({ attached, error }));
+console.log(JSON.stringify({ attached, commands, error }));
 '''
 
 
@@ -134,12 +140,22 @@ def start(tmp_path: Path, plugin: Path, **environment: str) -> dict:
 
 
 def test_the_linked_plugin_runs_the_python_of_its_installation(installation: Path, tmp_path: Path) -> None:
-    """No GRAFTLING_PYTHON: the host and the MCP server run the installation's own Python."""
+    """No GRAFTLING_PYTHON: the host and the MCP server run as the installation's own Python.
+
+    What each runs as: the host's sys.executable, and for the MCP server the Python the plugin names
+    (__PYVENV_LAUNCHER__ when it starts a venv's base interpreter). On Windows the plugin starts that base
+    interpreter, so both are direct children of DSH's node and still run as this installation (649).
+    """
     shown = start(tmp_path, linked(tmp_path, site_packages(installation) / 'graftling' / 'dsh'), **LATIN1)
     assert shown['error'] is None, shown['error']
     used = Path(shown['attached'][0])
     # A venv keeps its Python in bin/, on Windows in Scripts\.
     assert shown['attached'] == shown['host'] and used.parent == installation / ('Scripts' if os.name == 'nt' else 'bin')
+    if os.name == 'nt':
+        # The venv was made from this Python: its base interpreter is this one's.
+        assert [os.path.normcase(c) for c in shown['commands']] == [os.path.normcase(sys._base_executable)]
+    else:
+        assert shown['commands'] == shown['attached']
 
 
 def test_the_pi_extension_finds_the_python_of_its_installation(installation: Path, tmp_path: Path) -> None:

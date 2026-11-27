@@ -45,6 +45,19 @@ MCP_SERVER = 'graftling'
 REVIEW_HOOK_SECONDS = 10
 
 
+def _module_name(path: Path) -> str:
+    """The name a profile-patch row gives DSH's plugin Loader for one of graftling's own modules.
+
+    The Loader imports a row's name as an ES module specifier. A POSIX absolute path
+    is one; a Windows one (``C:\\...``) is not, because Node reads ``C:`` as a URL scheme
+    (ERR_UNSUPPORTED_ESM_URL_SCHEME), so the row would never load (649). On Windows the
+    name is the file URL; elsewhere the path, as before.
+    """
+    from graftling.process_tree import windows
+
+    return path.as_uri() if windows() else str(path)
+
+
 class _JsExpression(str):
     """One `!!js` expression kept exactly as the installed profile wrote it."""
 
@@ -342,7 +355,7 @@ class DshExecution:
             patches.append({'insert': [{'id': 'agents', 'name': self.request['plugin']}]})
         if self.request.get('mcp'):
             mcp = self.request['mcp']
-            patches.append({'insert': [{'id': 'agents-mcp', 'name': str(Path(__file__).with_name('plugin.mjs')),
+            patches.append({'insert': [{'id': 'agents-mcp', 'name': _module_name(Path(__file__).with_name('plugin.mjs')),
                                         'config': {'mcpCommand': mcp['command'], 'mcpArgs': mcp.get('args', []),
                                                    'mcpEnv': [self.connection_env,
                                                               *([EXTRA_TOOLS_ENV] if self.extra_tools else [])],
@@ -350,7 +363,7 @@ class DshExecution:
         if self.request.get('review'):
             # Review lets through only the owner's own entries on the server registered above: its agents
             # tool and every extra tool the owner declared (551; each keeps its own authorization).
-            patches.append({'insert': [{'id': 'agents-review', 'name': str(Path(__file__).with_name('review.mjs')),
+            patches.append({'insert': [{'id': 'agents-review', 'name': _module_name(Path(__file__).with_name('review.mjs')),
                                         'config': {'readyFile': str(self.review_ready),
                                                    **({'mcpServer': self.mcp_server,
                                                        **({'ownerTools': sorted(self.extra_tools)}

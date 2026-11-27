@@ -31,7 +31,10 @@ ctx.provide('shellEnv', { register: () => () => {} });
 const scopes = [];
 try {
   await ctx.plugin(Loader, { baseUrl: pathToFileURL(process.cwd() + '/').href }).await();
-  await ctx.loader.create({ name: pluginPath, config: { mcpCommand: python, mcpArgs: [server] } });
+  // As graftling's own profile-patch rows name it (dsh/execution.py _module_name): the Loader imports the name as an
+  // ES module specifier, and a Windows absolute path is not one (649).
+  const name = process.platform === 'win32' ? pathToFileURL(pluginPath).href : pluginPath;
+  await ctx.loader.create({ name, config: { mcpCommand: python, mcpArgs: [server] } });
   await ctx.loader.await();
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry).await();
   await ctx.plugin(inventory, {}).await();
