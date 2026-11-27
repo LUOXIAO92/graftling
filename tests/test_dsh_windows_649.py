@@ -3,7 +3,10 @@
 npm installs DSH on Windows as ``<prefix>\\dsh.cmd``, a shim that runs
 ``<prefix>\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js``; graftling reads the
 package from that target (``graftling.dsh.settings.dsh_entry``), not from the
-shim's own directory. The first tests check that resolution on any platform.
+shim's own directory. The first tests check that resolution on any platform, and
+the DSH plugin's ``directPython``: on Windows the host and the MCP server start a
+venv's base interpreter directly, so they are direct children of DSH's node, as
+the host's checks require (Pi's 648 made the same change for its extension).
 The installed-DSH tests run only on Windows with DSH installed (the
 dsh-windows-tests job of .github/workflows/windows.yml): the service starts
 without a credential, answers ``session/list`` and leaves no process behind its
@@ -80,6 +83,43 @@ def test_posix_ignores_the_npm_shim(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(settings, 'windows', lambda: False)
     assert dsh_entry(tmp_path / 'dsh.cmd') == (tmp_path / 'dsh.cmd').resolve()
     assert dsh_package(tmp_path / 'dsh') == tmp_path.resolve().parent / 'package.json'
+
+
+DIRECT = '''
+import { pathToFileURL } from 'node:url';
+const {directPython} = await import(pathToFileURL(process.argv[1]).href);
+console.log(JSON.stringify([directPython(process.argv[2], process.env, 'linux'),
+                            directPython(process.argv[3], process.env, 'win32')]));
+'''
+
+
+def test_dsh_plugin_runs_a_windows_venv_python_as_its_base_interpreter(tmp_path: Path) -> None:
+    """The host and MCP server command: unchanged off Windows; on Windows a venv's python becomes its base
+    interpreter with __PYVENV_LAUNCHER__, so both are direct children of DSH's node (as Pi's 648)."""
+    from test_dsh_standalone_host import STUBS
+
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is required')
+    modules = tmp_path / 'stub' / 'node_modules' / '@deepseek-ai'
+    for name, text in STUBS.items():
+        (modules / name).mkdir(parents=True)
+        (modules / name / 'package.json').write_text(json.dumps({'name': f'@deepseek-ai/{name}', 'type': 'module',
+                                                                 'main': 'index.js'}))
+        (modules / name / 'index.js').write_text(text)
+    environment = {key: value for key, value in os.environ.items() if key != 'DSH_AGENT_PACKAGE'}
+    result = subprocess.run([node, '--input-type=module', '-e', DIRECT,
+                             str(Path(settings.__file__).with_name('plugin.mjs')), str(tmp_path / 'not-run'),
+                             sys.executable],
+                            env={**environment, 'GRAFTLING_DSH_PACKAGE': str(tmp_path / 'stub' / 'entry.js')},
+                            capture_output=True, text=True, encoding='utf-8', timeout=60)
+    assert result.returncode == 0, result.stderr
+    posix, windows = json.loads(result.stdout)
+    assert posix == {'command': str(tmp_path / 'not-run'), 'env': {}}
+    if os.path.normcase(sys.executable) == os.path.normcase(sys._base_executable):
+        assert windows == {'command': sys.executable, 'env': {}}
+    else:
+        assert windows == {'command': sys._base_executable, 'env': {'__PYVENV_LAUNCHER__': sys.executable}}
 
 
 def installed_dsh() -> str:

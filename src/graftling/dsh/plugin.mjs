@@ -1,5 +1,5 @@
 /** Independent native context/display hooks and the installed official MCP client. */
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join } from 'node:path';
@@ -27,6 +27,23 @@ export const Config = z.object({ mcpCommand: z.string(), mcpArgs: z.array(String
 const READY_MS = 2000;
 // The Python found for this file's graftling installation, for every Session of this DSH.
 let found;
+
+/**
+ * The command and extra environment that run ``python`` as a direct child of this DSH (649, as Pi's 648).
+ * Off Windows: ``python`` unchanged. On Windows a venv's python.exe is a launcher that starts the real
+ * interpreter as its own child, but the host requires DSH's node as its parent and accepts only
+ * direct children of it as MCP callers. So a venv's base interpreter is started directly, with
+ * __PYVENV_LAUNCHER__ naming the venv's python, as the launcher itself does.
+ */
+export function directPython(python, environment = process.env, platform = process.platform) {
+  if (platform !== 'win32') return { command: python, env: {} };
+  // -X utf8: the paths are printed as UTF-8, as read here; -I ignores PYTHONUTF8 (638).
+  const found = spawnSync(python, ['-I', '-X', 'utf8', '-c', 'import sys; print(sys.executable); print(sys._base_executable)'],
+    { encoding: 'utf8', env: environment, timeout: 20000 });
+  const [executable, base] = found.status === 0 ? found.stdout.split(/\r?\n/) : [];
+  if (!executable || !base || executable.toLowerCase() === base.toLowerCase()) return { command: python, env: {} };
+  return { command: base, env: { __PYVENV_LAUNCHER__: executable } };
+}
 
 /** Whether ``candidate`` imports graftling from ``expected`` (its __init__.py), with -I.
  * -X utf8 makes the printed path UTF-8, as Node reads it: -I ignores PYTHONUTF8, and a
@@ -113,9 +130,10 @@ export function noticeMessage(notice, session) {
 export function startAgentHost(agent, environment, onNotice) {
   return new Promise((resolve, reject) => {
     const config = environment.GRAFTLING_DSH_CONFIG ? ['--config', environment.GRAFTLING_DSH_CONFIG] : [];
-    const child = spawn(environment.GRAFTLING_PYTHON, ['-I', '-m', 'graftling.dsh.host', ...config], {
+    const { command, env: pythonEnv } = directPython(environment.GRAFTLING_PYTHON, environment);
+    const child = spawn(command, ['-I', '-m', 'graftling.dsh.host', ...config], {
         cwd: agent.session.header.cwd, stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...environment, GRAFTLING_DSH_NODE: process.execPath, GRAFTLING_DSH_ENTRY: process.argv[1] },
+        env: { ...environment, ...pythonEnv, GRAFTLING_DSH_NODE: process.execPath, GRAFTLING_DSH_ENTRY: process.argv[1] },
       });
     let diagnostic = '', output = '', failure, ready = false, closing = false, announced = false;
     child.stdout.setEncoding('utf8');
@@ -257,8 +275,9 @@ function applyHost(ctx) {
     let host;
     try {
       host = await started;
-      await attachMcp(agent, MCP_SERVER, python, ['-I', '-m', 'graftling.mcp'],
-        { ...sessionEnvironment(agent), GRAFTLING_CONNECTION: host.connection });
+      const { command, env: pythonEnv } = directPython(python, environment);
+      await attachMcp(agent, MCP_SERVER, command, ['-I', '-m', 'graftling.mcp'],
+        { ...sessionEnvironment(agent), ...pythonEnv, GRAFTLING_CONNECTION: host.connection });
       announceReady(agent, host);
     } catch (error) {
       await close(id);
