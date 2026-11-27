@@ -102,6 +102,63 @@ Claude Code notes say what to run again.
 Coming from 0.7.0's DSH install from this repository's GitHub address, see
 [Moving from the 0.7.0 DSH install](docs/install/dsh.md#moving-from-the-070-dsh-install).
 
+### Windows
+
+graftling runs on native Windows. The real runs used Windows Server 2022 x64; other
+Windows versions have not been tried.
+
+| Runtime | As host on Windows | As child on Windows |
+| --- | --- | --- |
+| Claude Code | Yes, with `configuration --write` only. The marketplace plugin is not supported | No: `create` fails with `unsupported-runtime`, because Claude Code has no OS sandbox there |
+| Codex | Yes, `graftling.codex.host` | Yes |
+| Pi | Yes, the Pi extension | No: `create` fails with `unsupported-runtime`, because a Pi child runs only inside `srt`, whose Windows support is still alpha |
+| DSH | Yes, the DSH plugin | Yes |
+
+Seen on a real Windows host: the Claude Code (2.1.314), Pi (1.4.0) and DSH
+(0.2.2-rc.5) hosts each created a DSH child that answered, the Claude Code host refused
+a Claude child and the Pi host a Pi child (650); a Codex parent host created a Codex
+child through its MCP tool, and a Codex child's tools ran, stopped and were taken over
+(Codex 0.172.0; 640, 644).
+Other host and child pairs have not run with real Runtimes on Windows.
+
+Before you start:
+
+- **Developer Mode** (Settings > System > For developers), or administrator rights.
+  Every Runtime's Trace entry is a symbolic link to its native Session file. Where the
+  account cannot create one, starting the Runtime fails with `runtime-unavailable`:
+  "<Runtime> needs symbolic links, which this Windows account cannot create. Turn on
+  Windows Developer Mode (Settings > System > For developers) and start again." (638).
+- **uv**, and graftling installed with the `uv tool install --managed-python` command
+  above. The real runs used that command from PowerShell, on uv's own CPython. On Windows
+  the installation's Python is `Scripts\python.exe` under `<uv tool dir>\graftling`, not
+  `bin/python`; use that path wherever these notes write `$AGENTS_PYTHON`. The notes'
+  shell lines are POSIX and have not been walked as written on Windows.
+- **Git for Windows.** The real runs had Git for Windows 2.47.1 installed. Claude
+  Code's setup recommends it for its shell, and Pi runs its tools in Git Bash or
+  PowerShell (their own documentation). Running without it has not been tried.
+- **Node.js** for Pi and DSH, which are npm packages; DSH 0.2.2-rc.5 declares Node 24.9
+  or later. The real runs used Node 24.22.3 and `npm install -g`, and that npm skipped
+  the install scripts of the global packages (`npm warn install-scripts`). pnpm, which
+  `dsh plugin add` runs, then needed its own skipped script, `node install.js` in its
+  package directory, before it answered; DSH ran without its skipped scripts. Seen on
+  one host with pnpm 12.21.0, Pi 1.4.0 and DSH 0.2.2-rc.5; other npm versions and
+  settings have not been tried.
+- **An interactive logon session.** Codex's tools fail under a non-interactive logon,
+  such as an OpenSSH session ([Known limits](#known-limits)). The real Claude Code, Pi
+  and DSH runs were also made in an interactive console session; other logons have not
+  been tried with them.
+
+Then, per host:
+
+- **Claude Code:** generate the plugin files
+  ([note](docs/install/claude-code.md#generate-the-plugin-files)) and accept Claude Code's folder trust for the project, which print mode needs too
+  ([Start it](docs/install/claude-code.md#start-it)). Do not use the marketplace plugin
+  ([Known limits](#known-limits)).
+- **DSH:** with `--patch`, the patch names the plugin by a `file:` URL
+  ([note](docs/install/dsh.md#local-files---patch-for-one-invocation)).
+- **Every host:** call graftling through its MCP tool. A command run by a Runtime's
+  shell tool is refused ([Known limits](#known-limits)).
+
 ## Use the tool
 
 Ask your main Agent to use the `subagents` tool. It takes three actions: `discover`
@@ -499,6 +556,9 @@ Tests is expected to work and has not been seen to.
 | Grandchild notices | Go to the child that is the grandchild's parent, on any Runtime, once each; held while it is stopped. Tests | As Claude Code host | As Claude Code host | As Claude Code host |
 | Host shutdown | Stops every child this process runs, up to 10 seconds in total. Their ends are held for the next run. Real: a confirmed stop. Tests: an unconfirmed one, reported as `stop-unconfirmed` in `host.log`; a killed host's DSH child, whose process group a watcher stops and reports in `host.log` | The same, reported on stderr and in `stop_unconfirmed` in `--output`. Real: a confirmed stop. Tests: an unconfirmed one | The same, reported on stderr, and the extension's shutdown handler rejects. Tests | The same, reported on stderr and in DSH's logger. Tests |
 
+The table does not cover Windows. There, Claude and Pi children are refused; see
+[Windows](#windows).
+
 A Pi child has not yet run under a real host parent. Real Pi children have only run
 with a test parent through the Python interface. `ask_parent` from a real Pi child has
 not run at all.
@@ -611,4 +671,19 @@ After upgrading:
 - On Windows (648) Pi works as a host but not as a child: creating a Pi child fails
   with `unsupported-runtime`, because a Pi child runs only inside `srt`, whose Windows
   support is still alpha.
-</content>
+- On Windows (647, 650) Claude Code hosts only through `configuration --write`, and a
+  Claude child fails with `unsupported-runtime`: Claude Code has no OS sandbox on native
+  Windows, and graftling runs Claude children only inside one. The marketplace plugin is
+  not supported there. Its launcher is written to refuse under a Windows `sh` with a line
+  naming `configuration --write` ([`PUBLIC_API.md`](PUBLIC_API.md) 1.1), but on a real
+  host that line did not appear: Claude Code showed the plugin's server only as
+  `failed`, with no explanation and no host started, with and without an `sh` on
+  `PATH`. Seen with Claude Code 2.1.314.
+- On Windows (650) a command run by a Runtime's shell tool cannot call graftling; use
+  the MCP tool, which the Runtime starts itself. From Pi's bash tool the `subagents`
+  command was refused with `authority-denied`. Under Claude Code, the plugin's context
+  step run from a Bash tool script was refused with 'The subagents host of another
+  Claude Code session (Claude Code pid N) owns this project.', although N was that same
+  session, and the `subagents` command there was refused with `authority-denied`. Seen
+  with Claude Code 2.1.314 and Pi 1.4.0; a DSH tool was not tried. A same-user process
+  that forges its parent is the weaker case above.

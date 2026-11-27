@@ -10,6 +10,9 @@ a DSH plugin. Back to the [README](../../README.md).
   version cannot be read, is refused. The sources and real runs are DSH `0.2.2-alpha.2`.
 - pnpm, for `dsh plugin add`, which runs pnpm in the profile directory. `--patch` does
   not need it.
+- On Windows, the [README's Windows prerequisites](../../README.md#windows), including
+  what npm's skipped install scripts meant for pnpm. DSH 0.2.2-rc.5 ran there as host and
+  as child (649, 650).
 
 ## Install graftling
 
@@ -63,6 +66,13 @@ A Python counts only when it imports `graftling` from the plugin's own directory
 plugin and the Python package are always one installation. A plugin directory copied away
 from its installation, such as one installed from a Git address, is refused this way.
 
+On Windows the installation's paths are `<installation>\Lib\site-packages\graftling\dsh\`
+and `<installation>\Scripts\python.exe`, else `python.exe` there. A venv's
+`python.exe` is a launcher that starts the interpreter as its own child, so the plugin
+starts the venv's base interpreter directly, with `__PYVENV_LAUNCHER__` naming the
+venv's Python: the host and the MCP server are then direct children of DSH's `node`, as
+the host requires (649; seen on a real host, 650).
+
 ## Local files: `--patch` for one invocation
 
 Nothing is installed. Write a patch file that names the plugin, and pass it for this
@@ -77,6 +87,18 @@ EOF
 ```
 
 Then add `--patch /absolute/agents-host.patch.yml` to the `dsh` command below.
+
+On Windows, `name` must be the plugin's `file:` URL, not its path. DSH's plugin Loader
+imports the name as an ES module specifier, and Node reads a drive path such as
+`C:\...` as a URL scheme (`ERR_UNSUPPORTED_ESM_URL_SCHEME`); the Loader only logs that,
+so the row never loads (649). Print the URL with:
+
+```sh
+"$AGENTS_PYTHON" -c 'import graftling.dsh, pathlib; print((pathlib.Path(graftling.dsh.__file__).parent / "plugin.mjs").as_uri())'
+```
+
+graftling writes its own patch rows for DSH children this way on Windows. A hand-written
+`--patch` has not been run on a real Windows host; the real runs used `dsh plugin add`.
 
 ## Data root and configuration
 
@@ -339,4 +361,3 @@ The data root is unchanged, so held notices and children's records stay.
   Search and Fetch API provider is off. To keep official search beside a gateway, name
   the gateway's key in another variable.
 - A native DSH subagent gets no host and no `subagents` tool.
-</content>

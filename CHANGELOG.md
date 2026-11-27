@@ -13,6 +13,75 @@ version that identifies everything listed under it.
 
 The numbers in parentheses are the project's Task numbers.
 
+## Unreleased
+
+Native Windows support, in two rounds (632-651). Claude Code, Codex, Pi and DSH work
+as hosts on Windows; Codex and DSH also as children, while Claude and Pi children are
+refused there. POSIX behaviour is unchanged. The README's *Windows* section lists the
+prerequisites and *Known limits* the remaining limits. Not yet released: the version
+number and its compatibility mark come with the release.
+
+### Added
+
+- A Windows test workflow (`.github/workflows/windows.yml`, `windows-latest` x64, no
+  secrets) runs the suite file by file and records hangs (632).
+- Process facts on Windows: whether a process is alive, its creation time and its
+  parent. A parent counts only when it was created before its child, which makes the
+  Windows parent chain weaker than POSIX against a hostile process of the same user
+  (633).
+- Locks and durable writes on Windows: file locks through `LockFileEx`, durable
+  replacement of published files, and readers that retry a transient open refusal
+  (634).
+- Owned process trees: a Runtime's processes run in a named Job Object on Windows (a
+  process group on POSIX, as before), recorded as `runtime_job` beside `runtime_pid`;
+  only the DSH service's job is killed when its owner's handle closes (635).
+- The owner connection on Windows is a named pipe per host that only the host's own
+  user account can open; a caller talks only to a pipe its own account owns, and a
+  caller is accepted by its parent chain or, for a Runtime the owner started, by that
+  Runtime's job (636).
+- Tool and member processes are listed and stopped through the execution's job on
+  Windows; nothing is sampled or scanned (637).
+- Paths and encoding on Windows: text files and the Python probes state UTF-8, so
+  non-ASCII paths work under a non-UTF-8 code page, and the hosts' Python search finds
+  a venv's `Scripts\python.exe`. Every Runtime's Trace entry is a symbolic link, so
+  where the account cannot create one (no Developer Mode or administrator rights) the
+  Runtime is refused with `runtime-unavailable`, naming Developer Mode (638).
+- Codex on Windows: Codex children and the Codex parent host
+  (`python -m graftling.codex.host`), which no longer refuses there; no Unix socket
+  permission entry is written (639).
+- Claude Code host on Windows, through the files `configuration --write` generates:
+  in a venv the `graftling` server and the plugin's context call start the venv's base
+  interpreter with `__PYVENV_LAUNCHER__`, so no launcher process stands between Claude
+  Code and the host (647).
+- Pi host on Windows: the extension starts the host and the MCP server as direct
+  children of Pi's `node` in the same way (648).
+- DSH host and DSH children on Windows: graftling finds DSH's package behind npm's
+  `dsh.cmd`, the plugin starts the base interpreter in the same way, and graftling's
+  own DSH patch rows name their modules by `file:` URL (649).
+
+### Refused on Windows
+
+- A Claude child: `create`, and a resume or `send` that would start one, fail with
+  `unsupported-runtime`, because Claude Code has no OS sandbox on native Windows (647).
+- A Pi child: `create` and the Claude and Codex hosts' `runtimes.pi` fail with
+  `unsupported-runtime`, because a Pi child runs only inside `srt`, whose Windows
+  support is still alpha (648).
+- The Claude Code marketplace plugin is not supported. Its launcher is written to refuse
+  under a Windows `sh`, but on a real host Claude Code showed its server only as
+  `failed`, without that line (647, 650).
+
+### Documentation
+
+- Real Windows Server 2022 runs: Codex 0.172.0 children, tools, stop and takeover, and
+  the parent host's MCP call (640, 644); Codex's tools need an interactive logon
+  session, which is the logon type and not graftling (643); a tool inside Codex's
+  Windows sandbox reaches graftling only through MCP (645); the Claude Code 2.1.314,
+  Pi 1.4.0 and DSH 0.2.2-rc.5 hosts with a DSH child (650).
+- README *Windows* (prerequisites: Developer Mode, uv's managed Python, Git for
+  Windows, Node, an interactive logon) and *Known limits*; the Claude Code note on
+  folder trust in print mode; the DSH note's `file:` URL for `--patch` on Windows
+  (651).
+
 ## 0.10.2 (compatible)
 
 `import graftling` works on Windows again, and on Windows process listing and the Codex
@@ -1155,4 +1224,3 @@ range becomes `graftling>=0.3.0,<0.4`.
 - Merged later without a bump (388, fixes): `send` with `reports_only: true` is rejected
   with `not-implemented` by agents' own backend, which used to ignore the field and
   start new work, and envelope validation errors use the coded error structure.
-</content>

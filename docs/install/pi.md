@@ -10,6 +10,8 @@ the [README](../../README.md).
   agents; the sources and real runs are Pi `1.4.0`.
 - A Pi child also needs [its sandbox tools](../../README.md#what-a-pi-child-needs). A
   Claude, Codex or DSH child of a Pi host does not.
+- On Windows, the [README's Windows prerequisites](../../README.md#windows). There the
+  Pi host works, with Pi 1.4.0 on a real host (650), and a Pi child is refused.
 
 ## Install graftling
 
@@ -266,4 +268,3 @@ Set a model at `create` to choose another one for one child.
 - An extension in a connection's home can change a call's input after review, and a
   `mcp.json` server named `graftling` there gets the name the review exempts. That home is
   your own trust decision.
-</content>

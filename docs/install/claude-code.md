@@ -10,6 +10,8 @@ This makes a Claude Code Session the host of its child Agents. Back to the
   when a Claude child starts. The real runs used 2.1.312 and 2.1.314.
 - A directory you will start Claude Code from. It does not need to be a Git
   repository.
+- On Windows, the [README's Windows prerequisites](../../README.md#windows). There the
+  host works only with the generated plugin files, and Claude children are refused.
 
 ## Install graftling
 
@@ -40,6 +42,9 @@ Nothing is published to a public marketplace, and a checkout of the repository i
 marketplace: add the one inside your installation.
 
 ## Install the marketplace plugin
+
+Not on native Windows: there the plugin's server shows only as `failed`
+([Known limits](../../README.md#known-limits)). Generate the plugin files instead.
 
 > Seen on a real host only in print mode (`claude -p`), with the marketplace added from a
 > local checkout (before 581 moved it into the installation), the plugin installed at
@@ -196,6 +201,17 @@ trust and project MCP server prompts. Start or resume Claude Code from this exac
 directory: a host started from a subdirectory refuses, and elsewhere Claude Code does
 not load this project's `.mcp.json`.
 
+The folder trust is needed in print mode (`claude -p`) too. In a folder whose trust
+was not accepted, Claude Code 2.1.314 does not load the generated plugin, yet the
+`graftling` server still connects and the tool is offered; every call then fails with
+`authority-denied` 'No matching current native call association. ...', and `host.log`
+records only `outcome=failed`. Nothing in either points to the trust. Seen with
+Claude Code 2.1.314 in print mode (650): on macOS the generated plugin loaded only once
+the folder was trusted; on Windows Server 2022 every call failed as above in an
+untrusted folder and was answered once the trust was recorded. Those runs recorded the
+trust as `hasTrustDialogAccepted` for the project in Claude Code's own `.claude.json`;
+that the trust dialog records the same is an inference.
+
 > Not yet walked on a real host from a uv-only install: these steps run as written
 > in a clean environment. The same host ran on real Claude Code in earlier checks.
 
@@ -319,4 +335,3 @@ and any existing `control/`, `native/` and `sessions/` there. `channel_file` and
   later host process.
 - Only one host can run per project at a time. Another start is refused like the
   cases above.
-</content>

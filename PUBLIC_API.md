@@ -86,7 +86,10 @@ notes (`install/`) are public with their documented flags:
   to host there; the marketplace plugin is not supported (its `sh` launcher, run by
   a Windows `sh`, refuses with one line on stderr and in `host.log` naming
   `configuration --write`; without a `sh` Claude Code reports its own start
-  failure). Run from a venv, the written `graftling` server's `command` is the
+  failure). On a real host (650, Claude Code 2.1.314) that line did not
+  surface: with and without a `sh`, Claude Code showed the plugin's server only
+  as `failed`, and no host started (README *Known limits*). Run from a venv,
+  the written `graftling` server's `command` is the
   venv's base interpreter and its `env` is `{"__PYVENV_LAUNCHER__": <the venv's
   python>}`, and the plugin's `context` call starts that base interpreter too, so no
   venv launcher process stands between Claude Code and the host; POSIX output is
@@ -1078,7 +1081,8 @@ variable (section 2).
 
 Any profile works the same way (`web`, `tui`, `acp`, `sdk`). Without
 installing, a patch file with the row `{id: agents-host, name:
-<DSH_PACKAGE>/plugin.mjs}` under `insert`, passed with `dsh --profile <name>
+<DSH_PACKAGE>/plugin.mjs}` (on Windows that file's `file:` URL, below)
+under `insert`, passed with `dsh --profile <name>
 --patch <file>`, loads it for one invocation. `GRAFTLING_PYTHON`, when set,
 names the Python that has `graftling` installed and is used unchecked. The row does nothing inside a DSH
 that is itself an agents child (`GRAFTLING_CONNECTION` or
@@ -1125,6 +1129,20 @@ line `{"error": {"code", "message"}}` on stderr and exits `1`; the plugin's
 `hold_notices=True`;
 `create`'s `runtime` selects one, and `model`, `preset`, `connection` and
 `reasoning_effort` are resolved per child (section 2).
+
+**Windows (649).** The DSH host and DSH children work on Windows. npm installs
+`dsh.cmd`, a shim; graftling reads the `lib/bin.js` it runs from the shim to find
+DSH's package. As for Pi (1.6), the plugin starts a venv's base interpreter
+directly, with `__PYVENV_LAUNCHER__` naming the venv's Python, so the host and
+the MCP server are direct children of DSH's `node`; elsewhere the command is
+unchanged. DSH's plugin Loader imports a patch row's name as an ES module
+specifier, which a drive path is not, so on Windows graftling's own patch rows
+(`agents-mcp`, `agents-review`) name their module by its `file:` URL, and a
+hand-written `--patch` row must do the same; elsewhere they name the path, as
+before. The DSH service's job is killed when its owner's handle closes, so no
+watcher process is started. Seen on a real host with DSH 0.2.2-rc.5 (650):
+the host's calls, a DSH child's turn, its stop, and the service ending within
+0.5 s of its owner's hard kill.
 
 **Notices, delivery conditions and shutdown** are section 4.
 

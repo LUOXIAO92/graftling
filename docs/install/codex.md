@@ -8,6 +8,9 @@ This runs a Codex Session as the host of its child Agents. Back to the
 - [uv](https://docs.astral.sh/uv/). It provides Python 3.12 or later.
 - Codex, installed and logged in. There is no version floor in agents; the real runs
   used `codex-cli` 0.164.0, and some behaviour below is stated for that version.
+- On Windows, the [README's Windows prerequisites](../../README.md#windows): Codex's
+  tools need an interactive logon session, and inside Codex graftling is reachable only
+  through its MCP tool ([Known limits](../../README.md#known-limits); Codex 0.172.0).
 
 ## Install graftling
 
@@ -213,4 +216,3 @@ continue the parent; its children stay listed by `status`.
   exits non-zero. The parent cannot see it, because its run has ended. A run that
   raises writes no `--output`, so only the stderr line names those Agents.
 - A notice not yet sent when a resumed turn ends waits for the next `--resume`.
-</content>
