@@ -18,7 +18,7 @@ import yaml
 from graftling.claude.host import IndependentCalls
 from graftling.dsh import execution
 from graftling.dsh.errors import DshError
-from graftling.dsh.settings import catalog_providers, prepare
+from graftling.dsh.settings import catalog_providers, dsh_package, prepare
 from graftling.models import discover_models
 from dsh_standalone_peer import FakeDshService, install_dsh
 from test_dsh_standalone_child import claude_main, launch_patches, selected, stop_owned
@@ -173,7 +173,7 @@ def installed() -> str:
 
 
 def test_the_installed_dsh_serves_the_documented_providers(installed: str) -> None:
-    served = catalog_providers(str(Path(installed).resolve().parent.parent / 'package.json'))
+    served = catalog_providers(str(dsh_package(installed)))
     assert served is not None and {'openrouter', 'opencode-go', 'opencode'} <= set(served)
     assert 'deepseek-official' not in served
 

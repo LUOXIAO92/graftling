@@ -9,6 +9,8 @@ import sys
 
 import pytest
 
+from graftling.dsh.settings import dsh_entry
+
 def test_installed_dsh_official_mcp_client() -> None:
     """Use installed official client initialize/list/call over actual stdio."""
     node, dsh = shutil.which('node'), shutil.which('dsh')
@@ -16,7 +18,7 @@ def test_installed_dsh_official_mcp_client() -> None:
         pytest.skip('Installed DSH and Node are required for native MCP evidence.')
     root = Path(__file__).resolve().parents[1]
     completed = subprocess.run([
-        node, str(root / 'tests/fixtures/dsh_mcp.mjs'), str(Path(dsh).resolve()),
+        node, str(root / 'tests/fixtures/dsh_mcp.mjs'), str(dsh_entry(dsh)),
         sys.executable, str(root / 'tests/fixtures/dsh_mcp_server.py'), str(root / 'src'),
     ], capture_output=True, text=True, timeout=20)
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -32,7 +34,7 @@ def test_delivered_plugin_native_scopes(tmp_path: Path) -> None:
         pytest.skip('Installed DSH and Node are required for native MCP evidence.')
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run([
-        node, str(root / 'tests/fixtures/dsh_mcp_plugin.mjs'), str(Path(dsh).resolve()),
+        node, str(root / 'tests/fixtures/dsh_mcp_plugin.mjs'), str(dsh_entry(dsh)),
         str(root / 'src/graftling/dsh/plugin.mjs'), sys.executable,
         str(root / 'tests/fixtures/dsh_mcp_server.py'),
     ], cwd=tmp_path, env={**os.environ,
@@ -52,14 +54,14 @@ def test_browser_module_keeps_native_tool_card(registration_order: str) -> None:
     if node is None or dsh is None:
         pytest.skip('Installed DSH slots and Node are required for the browser projection fixture.')
     slots = subprocess.run([node, '-e', "require('module').createRequire(process.argv[1])"
-                            ".resolve('@deepseek-ai/dsh-client-ui-slots')", str(Path(dsh).resolve())],
+                            ".resolve('@deepseek-ai/dsh-client-ui-slots')", str(dsh_entry(dsh))],
                            capture_output=True, text=True, timeout=10)
     if slots.returncode != 0:
         pytest.skip('Installed DSH does not provide @deepseek-ai/dsh-client-ui-slots.')
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run([
         node, str(root / 'tests/fixtures/dsh_client_view.mjs'),
-        str(root / 'src/graftling/dsh/client.mjs'), str(Path(dsh).resolve()),
+        str(root / 'src/graftling/dsh/client.mjs'), str(dsh_entry(dsh)),
         registration_order,
     ], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr

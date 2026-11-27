@@ -19,6 +19,7 @@ import yaml
 import graftling
 from graftling import AgentsError, Caller
 from graftling.dsh import execution as dsh_execution
+from graftling.dsh.settings import dsh_package
 from graftling.pi.driver import PiDriver, apply_tools as pi_apply_tools
 from graftling.pi.execution import CONFIRM_TITLE, host_default_tools, tool_arguments
 from test_agents_server_name import node
@@ -228,7 +229,7 @@ def test_dsh_installed_preset_rows_are_selectable() -> None:
     executable = shutil.which('dsh')
     if executable is None:
         pytest.skip('Installed DSH is required for its own preset.')
-    package = Path(executable).resolve().parent.parent / 'package.json'
+    package = dsh_package(executable)
     preset = dsh_execution._deployment_agent_preset(package.parent, 'role text')
     if preset is None:
         pytest.skip('This DSH has no readable web-app preset.')

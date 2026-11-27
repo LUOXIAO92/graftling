@@ -109,11 +109,12 @@ def pytest_sessionstart(session: pytest.Session) -> None:
 def unsupported_dsh() -> Optional[str]:
     """Return why the installed DSH cannot back native tests, using the product check."""
     from graftling.dsh import dsh_version_refusal
+    from graftling.dsh.settings import dsh_package
 
     dsh = shutil.which("dsh")
     if dsh is None or shutil.which("node") is None:
         return "Installed DSH and Node are required."
-    return dsh_version_refusal(Path(dsh).resolve().parent.parent / "package.json")
+    return dsh_version_refusal(dsh_package(dsh))
 
 
 @pytest.fixture(autouse=True)

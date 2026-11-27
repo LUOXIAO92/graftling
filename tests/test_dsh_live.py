@@ -11,6 +11,7 @@ import sys
 import pytest
 from conftest import unsupported_dsh
 
+from graftling.dsh.settings import dsh_entry
 from graftling.sessions.dsh_live import DshLiveFrames
 from graftling.sessions.protocol import snapshot_event
 
@@ -70,7 +71,7 @@ def test_installed_native_relay_without_duplicate_model_content() -> None:
         pytest.skip(reason)
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run([
-        node, str(root / 'tests/fixtures/dsh_communication.mjs'), str(Path(dsh).resolve()),
+        node, str(root / 'tests/fixtures/dsh_communication.mjs'), str(dsh_entry(dsh)),
         str(root / 'src/graftling/dsh/communication.mjs'),
     ], capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stdout + result.stderr

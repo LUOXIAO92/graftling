@@ -13,7 +13,7 @@ from graftling.process_tree import tree_facts
 from graftling import AgentsError, Caller, Run
 from graftling.control import require_available, within_workspace
 from .execution import DshExecution
-from .settings import DEFAULT_PROVIDER, pi_ai_route, prepare
+from .settings import DEFAULT_PROVIDER, dsh_package, pi_ai_route, prepare
 
 # Native DSH effort levels; a model's own list may be narrower.
 EFFORTS = ('off', 'low', 'high', 'max')
@@ -111,8 +111,7 @@ class DshDriver:
         if provider not in (None, DEFAULT_PROVIDER):
             # 608: before discovery, so create names this reason rather than an unverifiable model.
             try:
-                pi_ai_route(provider, connection.get('api_key_env'),
-                            Path(executable).resolve().parent.parent / 'package.json')
+                pi_ai_route(provider, connection.get('api_key_env'), dsh_package(executable))
             except AgentsError as error:
                 raise AgentsError('invalid-config', f"Connection {connection.get('name', '')!r}: "
                                                     f'{error.message}') from None

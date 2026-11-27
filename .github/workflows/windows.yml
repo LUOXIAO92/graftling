@@ -111,16 +111,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Whether DSH runs on Windows at all (649, W11), without a credential. Evidence, not a gate:
-  # .github/dsh_windows_probe.py installs the pinned DSH with npm, records its package's platform
-  # facts, runs its CLI, graftling's DSH preflight, `dsh web` in a kill-on-close job, graftling's
-  # DshService (start, session/list, close) and the service's end when its owner is killed. Each
-  # probe's exit code and output are recorded; the script fails only when recording fails. Then
-  # graftling's DSH test files that need an installed DSH run against it, recorded, not gating.
-  # The windows-tests job above is unchanged. No provider variable is set or passed.
-  dsh-windows-probe:
+  # DSH on Windows (649, W11). DSH 0.2.2-rc.5 (the README's tested version) runs on this runner
+  # without a credential (run 45984855702). This job installs it with npm on Node 24.22.3 and runs
+  # every tests/test_*dsh*.py against it, one pytest per file (.github/run_test_files.py), under
+  # the same non-ASCII temporary directory as windows-tests. It gates: a failed install or a failed
+  # test fails the job, and the step script judges the skips. The windows-tests job above is
+  # unchanged and has no DSH. No provider variable is set or passed.
+  dsh-windows-tests:
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     defaults:
       run:
         shell: pwsh
@@ -156,29 +155,55 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip check
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Probe DSH on this runner
-        timeout-minutes: 30
+      # npm's download cache only (actions/cache v4.3.0): the install below still unpacks every
+      # package, runs every install script and must exit 0. The first run of a key fills it.
+      - name: Restore the npm download cache
+        id: npm-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: ~/AppData/Local/npm-cache
+          key: npm-cache-windows-node-24.22.3-dsh-0.2.2-rc.5
+      # Gating, with npm's own exit code; its output and the timing are kept in the artifact.
+      - name: Install DSH with npm
+        timeout-minutes: 40
         run: |
-          python .github/dsh_windows_probe.py --out test-results/dsh-probe --dsh-version $env:DSH_VERSION
+          New-Item -ItemType Directory -Force test-results/dsh | Out-Null
+          $start = Get-Date
+          npm install -g --foreground-scripts --no-audit --no-fund "@deepseek-ai/dsh@$env:DSH_VERSION" *> test-results/dsh/npm-install.txt
           $code = $LASTEXITCODE
-          "probe exit code: $code (0: every probe ran and was recorded, whatever it found)"
+          Get-Content -Tail 30 test-results/dsh/npm-install.txt
+          $facts = [ordered]@{ commit=$env:GITHUB_SHA; run=$env:GITHUB_RUN_ID; attempt=$env:GITHUB_RUN_ATTEMPT
+            os=[Environment]::OSVersion.VersionString; image=$env:ImageOS; image_version=$env:ImageVersion
+            arch=$env:PROCESSOR_ARCHITECTURE; python=(python --version); pytest=(python -m pytest --version)
+            node=(node --version); npm=(npm --version); codepage=(Get-Culture).TextInfo.ANSICodePage
+            dsh_requested=$env:DSH_VERSION; npm_exit=$code; install_seconds=[int]((Get-Date) - $start).TotalSeconds
+            npm_cache_hit='${{ steps.npm-cache.outputs.cache-hit }}'; npm_cache=(npm config get cache); npm_prefix=(npm prefix -g)
+            dsh=(Get-Command dsh -ErrorAction SilentlyContinue).Source
+            dsh_version=$(if ($code -eq 0) { dsh --version } else { 'not run: the install failed' }) }
+          $facts | ConvertTo-Json | Set-Content -Encoding utf8 test-results/dsh/environment.json
+          $facts | Format-Table -AutoSize | Out-String -Width 200
+          "npm install exit code: $code"
           exit $code
-      # The files whose tests skip with 'Installed DSH ... required' without a DSH. Recorded, not gating.
+      # Gating: every DSH test file, one pytest per file, as windows-tests runs the suite.
       - name: Run graftling's DSH test files against the installed DSH
-        if: always()
         timeout-minutes: 25
         run: |
-          New-Item -ItemType Directory -Force test-results/dsh-probe/tests | Out-Null
-          python .github/run_test_files.py --out test-results/dsh-probe/tests --file-limit 300 --total-limit 1200 tests/test_dsh_live.py tests/test_dsh_mcp.py tests/test_dsh_standalone_child.py tests/test_dsh_providers_608.py tests/test_pi_dsh_child_tools_551.py tests/test_pi_dsh_owner_tools_no_ask_551.py
+          $temp = Join-Path $env:RUNNER_TEMP ('graftling-' + [char]0x6D4B + [char]0x8BD5 + '-' + [char]0x00FC)
+          New-Item -ItemType Directory -Force $temp | Out-Null
+          $env:TEMP = $temp
+          $env:TMP = $temp
+          $files = Get-ChildItem tests -Filter 'test_*dsh*.py' | Sort-Object Name | ForEach-Object { "tests/$($_.Name)" }
+          "test files: $($files -join ' ')"
+          python .github/run_test_files.py --out test-results/dsh --file-limit 300 --total-limit 1200 @files
           $code = $LASTEXITCODE
-          "$code" | Set-Content -Encoding ascii test-results/dsh-probe/tests/run-exit-code.txt
-          "run_test_files exit code: $code (recorded, not gating)"
-          exit 0
-      - name: Retain the DSH probe results
+          "$code" | Set-Content -Encoding ascii test-results/dsh/run-exit-code.txt
+          "run_test_files exit code: $code"
+          exit $code
+      - name: Retain the DSH test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: graftling-dsh-probe-${{ github.sha }}-${{ github.run_attempt }}
-          path: test-results/dsh-probe/
+          name: graftling-dsh-windows-${{ github.sha }}-${{ github.run_attempt }}
+          path: test-results/dsh/
           if-no-files-found: error
           retention-days: 7

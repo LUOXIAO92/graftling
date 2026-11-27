@@ -431,7 +431,7 @@ def _dsh_route(connection: Mapping[str, Any]) -> list[dict]:
     names no ``api_key_env`` or that the installed DSH does not serve (608).
     """
     from graftling.dsh.errors import DshError
-    from graftling.dsh.settings import DEFAULT_PROVIDER, pi_ai_patch, pi_ai_route
+    from graftling.dsh.settings import DEFAULT_PROVIDER, dsh_package, pi_ai_patch, pi_ai_route
 
     provider = connection.get('provider') or DEFAULT_PROVIDER
     if provider == DEFAULT_PROVIDER:
@@ -443,7 +443,7 @@ def _dsh_route(connection: Mapping[str, Any]) -> list[dict]:
         if executable is not None or not connection.get('api_key_env'):
             # Without DSH the query itself reports the Runtime unavailable.
             pi_ai_route(provider, connection.get('api_key_env'),
-                        Path(executable or '.').resolve().parent.parent / 'package.json')
+                        dsh_package(executable or '.'))
     except DshError as error:
         raise ValueError(error.message) from None
     return [pi_ai_patch(provider, connection['api_key_env'], connection.get('base_url'))]

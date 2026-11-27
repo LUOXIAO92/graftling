@@ -9,6 +9,8 @@ import subprocess
 
 import pytest
 
+from graftling.dsh.settings import dsh_entry
+
 
 @pytest.mark.skipif(os.environ.get('TASK334_OFFICIAL_DSH') != '1', reason='Requires assigned official host slot.')
 def test_installed_dsh_model_mcp_and_same_session(tmp_path: Path) -> None:
@@ -68,7 +70,7 @@ def test_retained_official_trace_messages(tmp_path: Path) -> None:
     store = archive.store('dsh:' + header['id'])
     native = subprocess.run([
         shutil.which('node'), str(Path(__file__).parent / 'fixtures/dsh_compare_trace.mjs'),
-        str(Path(shutil.which('dsh')).resolve()), str(trace),
+        str(dsh_entry(shutil.which('dsh'))), str(trace),
     ], capture_output=True, text=True, check=True, timeout=10)
     assert store.messages() == json.loads(native.stdout)
     assert [row['native']['record'] for row in store.page(limit=1000)['events']] == events

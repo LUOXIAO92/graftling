@@ -11,6 +11,8 @@ import subprocess
 from typing import Mapping, Any
 from urllib.parse import urlsplit
 
+from graftling.process_tree import windows
+
 from .errors import DshError
 
 
@@ -35,6 +37,36 @@ const ids = m.builtinProviders().map((p) => p.id)
   .filter((id) => m.getBuiltinModels(id).length > 0 || m.getAllBuiltinModels(id).length === 0);
 process.stdout.write(JSON.stringify(ids));
 """
+
+
+# The script an npm .cmd shim runs: "%dp0%\node_modules\@deepseek-ai\dsh\lib\bin.js".
+_NPM_SHIM_TARGET = re.compile(r'"%dp0%\\([^"]+?\.[cm]?js)"', re.IGNORECASE)
+
+
+def dsh_entry(executable: str | Path) -> Path:
+    """Return the script the ``dsh`` executable runs.
+
+    POSIX: the executable resolved (npm links ``<prefix>/bin/dsh`` to the package's
+    ``lib/bin.js``). Windows: npm installs ``<prefix>\\dsh.cmd``, a shim that runs
+    ``<prefix>\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js``; that target is read
+    from the shim (649). A Windows executable that is no such shim is resolved as on
+    POSIX.
+    """
+    path = Path(executable)
+    if windows() and path.name:
+        shim = path if path.suffix.lower() in {'.cmd', '.bat'} else path.with_suffix('.cmd')
+        try:
+            match = _NPM_SHIM_TARGET.search(shim.read_text(encoding='utf-8', errors='replace'))
+        except OSError:
+            match = None
+        if match:
+            return (shim.parent / match.group(1).replace('\\', '/')).resolve()
+    return path.resolve()
+
+
+def dsh_package(executable: str | Path) -> Path:
+    """Return the ``package.json`` of the DSH that ``executable`` runs (its entry is ``lib/bin.js``)."""
+    return dsh_entry(executable).parent.parent / 'package.json'
 
 
 def version_order(version: str) -> tuple:
@@ -190,7 +222,7 @@ def prepare(configuration: Mapping[str, Any], cwd: Path) -> dict:
     executable = settings.get('executable') or shutil.which('dsh')
     if not executable:
         raise DshError('RUNTIME_UNAVAILABLE', 'Install the native DSH runtime first.')
-    package = Path(executable).resolve().parent.parent / 'package.json'
+    package = dsh_package(executable)
     refusal = dsh_version_refusal(package)
     if refusal is not None:
         raise DshError('RUNTIME_UNSUPPORTED', refusal)

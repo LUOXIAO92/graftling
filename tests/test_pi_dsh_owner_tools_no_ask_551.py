@@ -17,7 +17,7 @@ import pytest
 import graftling
 from graftling import AgentsError, AgentsResult
 from graftling.dsh import binding, execution
-from graftling.dsh.settings import prepare
+from graftling.dsh.settings import dsh_package, prepare
 from graftling.extra_tools import EXTRA_TOOLS_ENV
 from graftling.pi.execution import tool_arguments
 from test_agents_server_name import DSH, node
@@ -107,7 +107,7 @@ def test_dsh_apply_tools_keeps_an_mcp_deny_for_the_binding() -> None:
     executable = shutil.which('dsh')
     if executable is None:
         pytest.skip('Installed DSH is required for its own preset.')
-    request = {'package': str(Path(executable).resolve().parent.parent / 'package.json')}
+    request = {'package': str(dsh_package(executable))}
     execution.apply_tools(request, {'tools': None, 'disallowed_tools': ['mcp__graphtraj__tasks']})
     assert request['disallowed_tools'] == ['mcp__graphtraj__tasks']
 

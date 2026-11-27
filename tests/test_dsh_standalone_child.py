@@ -28,7 +28,7 @@ from graftling.codex.host import CodexHost
 from graftling.dsh import execution
 from graftling.dsh.errors import DshError
 from graftling.dsh.service import DshService
-from graftling.dsh.settings import prepare
+from graftling.dsh.settings import dsh_entry, dsh_package, prepare
 from dsh_standalone_peer import FakeDshService, install_dsh
 from posix_only import SH_SCRIPT, require_posix
 from test_codex_independent_control import native_settings  # noqa: F401 - pytest fixture
@@ -319,7 +319,7 @@ def test_dsh_child_launch_needs_no_graphtraj_setting(tmp_path: Path, dsh: dict) 
     [service] = FakeDshService.instances
     environment = service.environment
     assert not [name for name in environment if name.startswith('GRAPHTRAJ_')]
-    assert environment['DSH_AGENT_PACKAGE'] == str(Path(dsh['executable']).resolve().parent.parent / 'package.json')
+    assert environment['DSH_AGENT_PACKAGE'] == str(dsh_package(dsh['executable']))
     assert environment['GRAFTLING_CONNECTION'].startswith(str(tmp_path / '.scratch'))
     [plugin] = [row['insert'][0] for row in service.patches
                 if 'insert' in row and row['insert'][0]['id'] == 'agents-mcp']
@@ -535,10 +535,10 @@ def test_delivered_plugin_loads_from_dsh_agent_package_alone(tmp_path: Path) -> 
     node, dsh = shutil.which('node'), shutil.which('dsh')
     if node is None or dsh is None:
         pytest.skip('Installed DSH and Node are required for native plugin evidence.')
-    package = Path(dsh).resolve().parent.parent / 'package.json'
+    package = dsh_package(dsh)
     environment = {name: value for name, value in os.environ.items() if not name.startswith('GRAPHTRAJ_')}
     result = subprocess.run([
-        node, str(ROOT / 'tests/fixtures/dsh_mcp_plugin.mjs'), str(Path(dsh).resolve()),
+        node, str(ROOT / 'tests/fixtures/dsh_mcp_plugin.mjs'), str(dsh_entry(dsh)),
         str(ROOT / 'src/graftling/dsh/plugin.mjs'), sys.executable, str(ROOT / 'tests/fixtures/dsh_mcp_server.py'),
     ], cwd=tmp_path, env={**environment, 'DSH_AGENT_PACKAGE': str(package), 'PYTHONPATH': str(ROOT / 'src')},
         capture_output=True, text=True, timeout=30)
@@ -694,7 +694,7 @@ def test_installed_search_sends_the_key_where_the_row_says(
     assert dumped.returncode == 0, dumped.stderr
     rows = {row.get('id'): row for row in yaml.load(dumped.stdout, Loader=execution._PatchLoader)}
     search = subprocess.run([node, str(ROOT / 'tests/fixtures/dsh_search_request.mjs'),
-                             str(Path(installed).resolve().parent.parent), json.dumps(rows['web-search-deepseek']['config'])],
+                             str(dsh_package(installed).parent), json.dumps(rows['web-search-deepseek']['config'])],
                             cwd=tmp_path, env=environment, capture_output=True, text=True, timeout=30)
     assert search.returncode == 0, search.stderr
     assert json.loads(search.stdout) == {'url': destination, 'keyed': True}
@@ -721,7 +721,7 @@ def test_installed_dsh_resolves_only_the_connection_endpoint(tmp_path: Path, dsh
 
     def resolved(launch: dict) -> str:
         result = subprocess.run([node, str(ROOT / 'tests/fixtures/dsh_resolve_endpoint.mjs'),
-                                 str(Path(installed).resolve().parent.parent), json.dumps(row)],
+                                 str(dsh_package(installed).parent), json.dumps(row)],
                                 cwd=tmp_path, env=launch, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
         return result.stdout.strip()
