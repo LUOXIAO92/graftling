@@ -600,6 +600,10 @@ def test_a_request_notice_returns_promptly_while_pi_holds_it(pi_host_process: Ca
     assert len(process.pipe.lines) == 2 and len(process.notices.awaiting) == 2
     assert len(process.flush()) == 2  # still awaiting: not pushed again
     process.notices.acknowledge(process.pipe.lines[0]['id'], True)
+    # acknowledge settles a shown notice on its own thread: wait for it, not for the thread scheduler (654).
+    acknowledged = process.pipe.lines[0]['id'].rsplit(':', 1)[1]
+    wait_until(lambda: acknowledged not in [
+        notice['request'] for notice in process.control.held_notices(process.caller)])
     assert [notice['request'] for notice in process.control.held_notices(process.caller)] == [
         process.pipe.lines[1]['id'].rsplit(':', 1)[1]]
 
